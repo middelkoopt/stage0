@@ -1,0 +1,1072 @@
+<div class="panel-right-2 new-qos fadeInUp animated cmn-animation" id='AllVlanContent'>
+<div class="inner-padding-2">
+	<span class="heading-1">VLAN</span>
+	<p class="description-1">Select a VLAN mode for your switch. <span class="help-text-3">(One from the below options)</span></p>
+</div>
+<div class="vlan-wrapper clearfix">
+	<div class="vlan-left-view on-left fadeInRight animated cmn-animation">
+		<div class="preset-box">
+			<ul class="list-5">
+				<li>
+					<span moddes="NO VLANS" class="heading-8">NO VLANS</span>
+					<p class="description-1">No VLANs are applied in this mode.</p>
+					<span class="button-container-1" vlanMode="noVlan"><button class='activate-mode btn-3 btn-actv'>ACTIVATE MODE</button></span>
+				</li>
+				<li>
+					<span moddes="Basic Port-based VLAN" class="heading-8">Basic Port-Based VLAN</span>
+					<p class="description-1">Group ports together simply by port number.</p>
+					<span class="button-container-1" vlanMode="bscPotBsd"><button class='activate-mode btn-3 btn-actv'>ACTIVATE MODE</button></span>
+				</li>
+				<li>
+					<span moddes="Advanced Port-Based VLAN" class="heading-8">Advanced Port-Based VLAN</span>
+					<p class="description-1">Each port can join multiple VLAN groups.</p>
+					<span class="button-container-1" vlanMode="advPotBsd"><button class='activate-mode btn-3 btn-actv'>ACTIVATE MODE</button></span>
+				</li>
+				<li>
+					<span moddes="Basic 802.1Q VLAN" class="heading-8">Basic 802.1Q VLAN</span>
+					<p class="description-1">Configure VLAN with Access / Trunk Mode.</p>
+					<span class="button-container-1" vlanMode="bsc8021Q"><button class='activate-mode btn-3 btn-actv'>ACTIVATE MODE</button></span>
+				</li>
+				<li>
+					<span moddes="Advanced 802.1Q VLAN" class="heading-8">Advanced 802.1Q VLAN</span>
+					<p class="description-1">Group ports together by port number with 802.1Q and Voice VLAN parameters.</p>
+					<span class="button-container-1" vlanMode="adv8021Q"><span class='icon-checked-2'><span class='icon-I-check'></span></span><span class='status-text'>(Current Mode)</span></span>
+				</li>
+			</ul>
+		</div>
+	</div>
+	<div class="vlan-right-view on-left fadeInRight animated cmn-animation">
+
+
+<!--============================= Basic Port-Based vlan mode ===================================-->
+		<section page="bscPotBsdPage" class="hide">
+			<div main="1" class="detail-wrapper inner-padding fadeInRight animated cmn-animation">
+				<div class="item-4">
+					<span class="heading-8">Basic Port-Based VLAN</span>
+					<p class="description-1 item-2">The following lists the port members in each VLAN.</p>
+				</div>
+				<div class="table-container-3">
+					<div class="table-top table-top-2 help-text-3 table-top-5">
+						<span>Port</span><span>VLAN</span>
+					</div>
+					<ul id="bscPbdVlanList" class="ul-init vlan-port vlan-list-1">
+						BSC_POT_BSD_VLAN_PORT_LIST_KEY
+					</ul>
+				</div>
+				<div class="control-buttons-1">
+					<a href="javascript:void(0);" class="anchor-1" onclick="refreshPage('vlan', '#contentBlock')">CANCEL</a>
+					<a href="javascript:void(0);" class="anchor-2" onclick="VlanBscP.submitPotBsdVlan()">APPLY</a>
+				</div>
+			</div>
+		</section>
+
+
+<!--============================= Advanced Port-Based vlan mode ================================-->
+		<section page="advPotBsdPage" class="hide">
+			<div main="2" id='Pmain' class='fadeInRight animated cmn-animation'>
+				<div class="item-4">
+					<span class="heading-8">Advanced Port-Based VLAN</span>
+					<p class="description-1 item-2">The following lists the port members in each VLAN.</p>
+				</div>
+				<div class="table-container-2">
+					<div class="table-top table-top-3 help-text-3">
+						<span>VLAN ID</span><span>VLAN Name</span><span>Port Members</span>
+					</div>
+					<ul class="ul-init table-content-2">
+						<! TABLE INSERT2>
+						<li class="SHOW_LINE_KEY">
+						<! PARAM STOP2>
+							<div class="li-header li-header-2">
+								<span Pvid>ADV_POT_BSD_VLAN_ID_KEY</span>
+								<! PARAM STOP2>
+								<span Pvnm class='hid-txt' untrans>ADV_POT_BSD_VLAN_NAME_KEY</span>
+								<! PARAM STOP2>
+								<span Pmem>
+									<span>ADV_POT_BSD_VLAN_MEM_KEY</span>
+									<! PARAM STOP2>
+									<i class="tb-arrow"><span class="icon-I-arrow-down"></span></i>
+								</span>
+							</div>
+							<div class="li-btn control-buttons-1" style="display: block;">
+								<a href="javascript:void(0);" class="anchor-2" onclick="editOrDeltPVlan(this, '0')">EDIT</a>
+								<a href="javascript:void(0);" class="anchor-2" onclick="editOrDeltPVlan(this, '1')">DELETE</a>
+							</div>
+						</li>
+						<! TABLE STOP2>
+					</ul>
+					<div class="table-bottom-2"><button class="add-vlan btn-3 btn-actv" onclick="addVlan(2)">ADD VLAN</button></div>
+				</div>
+			</div>
+			<div detail="2" id='Pdetail' class="inner-padding hide fadeInRight animated cmn-animation">
+				<div class="item-5">
+					<span class="heading-8">Advanced Port-Based VLAN</span>
+				</div>
+				<div class="text-area item-1">
+					<label class="label-1">VLAN Name (1 - 20 characters)</label>
+					<input box-vnm="2" id='boxPvnm' maxlength='20' onkeypress='checkStrLen(this, 20)' onkeyup='checkStrLen(this, 20)' class="input-1" type="text" value="SEL_ADV_POT_BSD_VLAN_NAME_KEY">
+				</div>
+				<div class="text-area item-1">
+					<label class="label-1" id="vlan-id-tip"></label>
+					<input box-vid="2" id='boxPvid' maxlength="2" onkeypress="checkForNumber(1,window.totalPorts,this)" onkeyup='checkForNumber(1,window.totalPorts,this)' class="input-1 text-line-disable" type="text" value="SEL_ADV_POT_BSD_VLAN_ID_KEY" disabled>
+				</div>
+				<div class="table-container-3">
+					<div class="table-top-4">
+						<p class="description-1">The following lists the port members in each VLAN.</p>
+						<div class="control-buttons-3">
+							<a id='selAll' href="javascript:void(0);" class="anchor-2">Select All</a>
+							<a id='rmvAll' href="javascript:void(0);" class="anchor-2">Remove All</a>
+						</div>
+					</div>
+					<ul class="ul-init vlan-port">
+						ADV_POT_BSD_VLAN_PORT_LIST_KEY
+					</ul>
+				</div>
+				<div class="control-buttons-1">
+					<a href="javascript:void(0);" class="anchor-1" onclick="$('#Pmain').removeClass('hide');$('#Pdetail').addClass('hide')">CANCEL</a>
+					<a href="javascript:void(0);" class="anchor-2" onclick="submitPvlanCfg()">APPLY</a>
+				</div>
+			</div>
+		</section>
+
+
+<!--================================= Basic 802.1Q vlan Mode ==================================-->
+		<section page="bsc8021QPage" id="dqSec" class="hide">
+			<div class="preset-box">
+				<ul class="ul-init vlan-tab">
+					<li show="detail-1" class="show-detail" onclick="toggleVlanTab(this)">PORT Configuration</li>
+					<li show="detail-2" onclick="toggleVlanTab(this)">Edit VLAN</li>
+				</ul>
+				<div detail-1 class="detail-wrapper inner-padding fadeInRight animated cmn-animation">
+					<div class="item-3">
+						<span class="heading-8">802.1Q-BASED PORT CONFIGURATION</span>
+						<p class="description-1 item-2">If the port connects to an end device such as a PC or gaming device, then set up the port as an access port. If the port connects to a VLAN device such as a switch, then set up as a trunk port.</p>
+					</div>
+					<div class="table-container-1">
+						<div class="table-top-1"><span>Port</span><span>Mode</span><span>VLAN</span></div>
+						<table id='QcnfTbl' class="table-content-1">
+							<tbody>
+							<! TABLE INSERT>
+							<tr>
+								<td Qcnftbldata="potNum">BSC_Q_POT_NUM_KEY<! PARAM STOP></td><td>
+									<div class="custom-dropdown">
+										<div class="dropdown ful-wid vlan-tb-1">
+											<button class="btn btn-default dropdown-toggle ful-wid" type="button" data-toggle="dropdown" onclick="dropDownMenu(this);">
+												<span class="hid-txt selectItem" Qcnftbldata="potMod" style="width:calc(100% - 19px);">BSC_Q_POT_MOD_KEY</span>
+												<! PARAM STOP>
+												<span class="caret"></span>
+											</button>
+											<ul class="dropdown-menu vlan-tb-3">
+												<li acsSel class="waves-effect waves-gray"><a href="javascript:void(0);" class='hid-txt'>Access</a></li>
+												<li trkSel class="waves-effect waves-gray"><a class="hid-txt" title="Trunk (uplink)" href="javascript:void(0);">Trunk (uplink)</a></li>
+											</ul>
+										</div>
+										<div class="clearfix"></div>
+									</div>
+								</td><td>
+									<section acsVid class="SHOW_ACCESS_KEY">
+									<! PARAM STOP>
+										<div class="custom-dropdown">
+											<div class="dropdown ful-wid vlan-tb-1">
+												<button class="btn btn-default dropdown-toggle ful-wid" type="button" data-toggle="dropdown" onclick="dropDownMenu(this);">
+													<span class="selectItem hid-txt vlan-tb-4 wid-1" Qcnftbldata="acsVid">BSC_Q_POT_VLAN_ID_NAME_KEY</span>
+													<! PARAM STOP>
+													<span class="caret"></span>
+												</button>
+												<ul qVlist class="dropdown-menu vlan-tb-3">
+													<div class='scroll-content' style='max-height: 340px;'>
+													Q_VLAN_LIST
+													<! PARAM STOP>
+													<li Qpot="BSC_Q_PORT" hidDetail class='add-vlan li-last waves-effect waves-gray' onclick='addQVlan()'><a href='javascript:void(0);'>Add VLAN...</a></li>
+													<! PARAM STOP>
+													</div>
+												</ul>
+											</div>
+											<div class="clearfix"></div>
+										</div>
+									</section>
+									<section trkVid class="SHOW_TRUNK_KEY">
+									<! PARAM STOP>
+										<input type="text" trans class="input-1 vlan-tb-2 vlan-tb-3 hid-txt" value="BSC_Q_TRUNK_VID_STR_KEY" Qcnftbldata="trkVid" disabled withborder>
+										<! PARAM STOP>
+									</section>
+								</td>
+							</tr>
+							<! TABLE STOP>
+							</tbody>
+						</table>
+					</div>
+					<div class="control-buttons-1 vlan-btn-1">
+						<a href="javascript:void(0);" class="anchor-1" onclick="refreshPage('vlan', '#contentBlock')">CANCEL</a>
+						<a href="javascript:void(0);" class="anchor-2" onclick="submitQvlanCfg('cur')">SAVE</a>
+					</div>
+				</div>
+				<div detail-2 class="detail-wrapper hide fadeInRight animated cmn-animation">
+          <! IF MGMT VLAN ENABLED1>
+          <div class="item-4 pb-none">
+            <label class="label-3">Management VLAN</label>
+          </div>
+          <div class="table-container-4">
+            <div class="text-area item-2">
+              <label class="label-1">Management VLAN ID<span> </span><i>(1 to 4093)</i></label>
+              <input name="mgmtVlan" maxlength="4" onkeypress="checkForNumber(1, 4093, this)" onkeyup="checkForNumber(1, 4093, this)" class="input-1" type="text" value="BASIC_MGMT_VLAN_KEY" data-save>
+            </div>
+            <div class="control-buttons-1">
+              <a href="javascript:void(0);" class="anchor-1" onclick="recoverMgmtVlan(this)">CANCEL</a>
+              <a href="javascript:void(0);" class="anchor-2" onclick="submitBqvMgmtVlan(this)">APPLY</a>
+            </div>
+          </div>
+          <! IF MGMT VLAN ENABLED END1>
+
+					<div class="item-4">
+						<span class="heading-8">802.1Q-BASED VLAN CONFIGURATIONS (BASIC MODE)</span>
+					</div>
+					<div class="table-container-2">
+						<div class="table-top table-top-2 help-text-3">
+							<span>VLAN ID</span><span>VLAN Name</span>
+						</div>
+						<ul id='QVTbl' class="ul-init table-content-2">
+							<! TABLE INSERT1>
+							<li>
+								<div class="li-header li-header-1">
+									<span Qvid>BSC_Q_VLAN_ID_KEY</span>
+									<! PARAM STOP1>
+									<span Qvnm untrans class='hid-txt'>BSC_Q_VLAN_NAME_KEY</span>
+									<! PARAM STOP1>
+									<span><span Qpri>&nbsp;</span>
+									<i class="tb-arrow"><span class="icon-I-arrow-down"></span></i></span>
+								</div>
+								<div class="li-btn control-buttons-1">
+									<a editQ showDetail href="javascript:void(0);" class="anchor-2" onclick="editQVlan(this)">EDIT</a>
+									<a href="javascript:void(0);" class="anchor-2" onclick="deltQVlan(this)">DELETE</a>
+								</div>
+							</li>
+							<! TABLE STOP1>
+						</ul>
+						<div class="table-bottom-2"><button class="add-vlan btn-3 btn-actv" showDetail onclick="addQVlan()">ADD VLAN</button></div>
+					</div>
+				</div>
+			</div>
+			<div class="preset-box vlan-box-container hide">
+				<div class="vlan-box" id='vlanBox'>
+					<div class="inner-padding">
+						<span class="heading-1">BASIC 802.1Q VLAN</span>
+						<div class="text-area item-1">
+							<label class="label-1">VLAN Name (1 - 20 characters)</label>
+							<input id='boxQvnm' maxlength='20' onkeypress='checkStrLen(this, 20)' onkeyup='checkStrLen(this, 20)' class="input-1" type="text" value="">
+						</div>
+						<div class="text-area item-1">
+							<label class="label-1">VLAN ID (A number value between 1 - 4093)</label>
+							<input id='boxQvid' maxlength="4" onkeypress='checkForNumber(1,4093,this)' onkeyup='checkForNumber(1,4093,this)' class="input-1" type="text" value="">
+						</div>
+						<div class="control-buttons-1 vlan-tb-5">
+							<a href="javascript:void(0);" class="anchor-1" id="closeBox">CANCEL</a>
+							<a href="javascript:void(0);" class="anchor-2" onclick="submitAddQVlan()">APPLY</a>
+						</div>
+					</div>
+				</div>
+			</div>
+		</section>
+
+
+<!--============================= Advanced 802.1Q vlan Mode ===================================-->
+		<section page="adv8021QPage" class="">
+			<div main="4" class='fadeInRight animated cmn-animation'>
+				<div class="item-4">
+					<span class="heading-8">Advanced 802.1Q VLAN</span>
+					<p class="description-1 item-2">The following lists the port members in each VLAN.</p>
+				</div>
+				<div class="table-container-2">
+					<div class="table-top table-top-3 help-text-3 table-top-6">
+						<span>VLAN ID</span><span>VLAN Name</span><span>Port Members</span>
+					</div>
+					<ul id="AQVTbl" class="ul-init table-content-2">
+						<li><div class='li-header li-header-2 li-header-5'><span></span><span list-vid='4'>1</span>
+<span list-vnm='4' class='hid-txt' untrans>Default</span><span><span>
+16  </span><i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></span>
+<input list-vhidmem='4' type='hidden' value='3333333333333332'></div>
+<div class='li-btn control-buttons-1' style='display: block;'><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.editVlan(this)'>EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteVlan(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-2 li-header-5'><span></span><span list-vid='4'>2</span>
+<span list-vnm='4' class='hid-txt' untrans>untagged</span><span><span>
+9  10  11  12  </span><i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></span>
+<input list-vhidmem='4' type='hidden' value='3333333322223333'></div>
+<div class='li-btn control-buttons-1' style='display: block;'><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.editVlan(this)'>EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteVlan(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-2 li-header-5'><span></span><span list-vid='4'>3</span>
+<span list-vnm='4' class='hid-txt' untrans>pinet</span><span><span>
+1  2  3  4  5  6  7  8  9  10  11  12  </span><i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></span>
+<input list-vhidmem='4' type='hidden' value='1212111111113333'></div>
+<div class='li-btn control-buttons-1' style='display: block;'><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.editVlan(this)'>EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteVlan(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-2 li-header-5'><span></span><span list-vid='4'>4</span>
+<span list-vnm='4' class='hid-txt' untrans>cable</span><span><span>
+14  </span><i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></span>
+<input list-vhidmem='4' type='hidden' value='3333333333333233'></div>
+<div class='li-btn control-buttons-1' style='display: block;'><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.editVlan(this)'>EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteVlan(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-2 li-header-5'><span></span><span list-vid='4'>5</span>
+<span list-vnm='4' class='hid-txt' untrans>piwulf</span><span><span>
+1  2  3  4  5  6  7  8  </span><i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></span>
+<input list-vhidmem='4' type='hidden' value='2121222233333333'></div>
+<div class='li-btn control-buttons-1' style='display: block;'><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.editVlan(this)'>EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteVlan(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-2 li-header-5'><span></span><span list-vid='4'>23</span>
+<span list-vnm='4' class='hid-txt' untrans>coffee</span><span><span>
+1  2  3  4  9  10  11  12  13  15  16  </span><i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></span>
+<input list-vhidmem='4' type='hidden' value='1111333311112321'></div>
+<div class='li-btn control-buttons-1' style='display: block;'><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.editVlan(this)'>EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteVlan(this)'>DELETE</a></div></li>
+
+					</ul>
+					<input type="hidden" id="voVlanId" value="0">
+					<! IF AUTO-CAMERA VLAN ENABLED1>
+					<input type="hidden" id="camVlanId" value="0">
+					<! IF AUTO-CAMERA VLAN ENABLED END1>
+					<! IF AUTO-WIFI VLAN ENABLED1>
+					<input type="hidden" id="wifiVlanId" value="0">
+					<! IF AUTO-WIFI VLAN ENABLED END1>
+					<div class="table-bottom-2"><button class="add-vlan btn-3 btn-actv" onclick="addVlan(4)">ADD VLAN</button></div>
+				</div>
+				<div class="item-4">
+					<label class="label-3">PVID Table</label>
+					<p class="description-1" style="margin-top:0" withsubtag>You may also check the <a onclick="$('[main=4]').addClass('hide');$('[detail=pvidMain]').removeClass('hide');">PVID Table</a> to identify or edit the PVID of each port.</p>
+				</div>
+        <! IF MGMT VLAN ENABLED2>
+        <div class="item-4 pb-none">
+          <label class="label-3">Management VLAN</label>
+        </div>
+        <div class="table-container-4">
+          <div class="text-area item-2">
+            <label class="label-1">Management VLAN ID<span> </span><i>(1 to 4094)</i></label>
+            <input name="mgmtVlan" maxlength="4" onkeypress="checkForNumber(1, 4094, this)" onkeyup="checkForNumber(1, 4094, this)" class="input-1" type="text" value="23" data-save>
+          </div>
+          <div class="control-buttons-1">
+            <a href="javascript:void(0);" class="anchor-1" onclick="recoverMgmtVlan(this)">CANCEL</a>
+            <a href="javascript:void(0);" class="anchor-2" onclick="submitAqvMgmtVlan(this)">APPLY</a>
+          </div>
+        </div>
+        <! IF MGMT VLAN ENABLED END2>
+			</div>
+			<div detail="4" class="inner-padding hide fadeInRight animated cmn-animation">
+				<div class="item-5">
+					<span class="heading-8">Advanced 802.1Q VLAN</span>
+				</div>
+				<div class="text-area item-1">
+					<label class="label-1">VLAN Name (1 - 20 characters)</label>
+					<input box-vnm="4" maxlength='20' onkeypress='checkStrLen(this, 20)' onkeyup='checkStrLen(this, 20)' class="input-1" type="text" value="">
+				</div>
+				<div class="text-area item-1">
+					<label class="label-1">VLAN ID (A number value between 1 - 4094)</label>
+					<input box-vid="4" maxlength="4" onkeypress='checkForNumber(1,4094,this)' onkeyup='checkForNumber(1,4094,this)' class="input-1 text-line-disable" type="text" value="" disabled>
+				</div>
+				<div class="table-container-3">
+					<div class="table-top-4">
+						<p class="description-1">The following lists the port members in each VLAN.</p>
+						<div class="control-buttons-4">
+							<span class="vlan-tab-txt">Port</span>
+							<a sel-all="3" href="javascript:void(0);" class="anchor-2 right">Exclude All</a>
+							<a sel-all="2" href="javascript:void(0);" class="anchor-2 right">Untag All</a>
+							<a sel-all="1" href="javascript:void(0);" class="anchor-2 right">Tag All</a>
+						</div>
+					</div>
+					<ul box-tb="4" class="ul-init vlan-port vlan-port-2">
+						<li><div class='pot-txt'><span>Port 1</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>k52</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 2</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>k53</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 3</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' data-status='unnamed'>unnamed</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 4</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>k41</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 5</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>k81</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 6</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>k82</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 7</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>k83</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 8</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>k400</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 9</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' data-status='unnamed'>unnamed</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 10</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' data-status='unnamed'>unnamed</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 11</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>box</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 12</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>pilab</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 13</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>coffee</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 14</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>cable</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 15</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' untrans>uplink</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+<li><div class='pot-txt'><span>Port 16</span><span>&nbsp;-&nbsp;</span><span class='hid-txt' data-status='unnamed'>unnamed</span></div>
+<div class='pot-icon right'><span box-pot='1'>T</span><span box-pot='2'>U</span><span box-pot='3'>E</span></div></li>
+
+					</ul>
+				</div>
+        <div>
+
+        <div class="vlan-type">
+          <div class="item-6">
+            <label class="label-3">Voice VLAN</label>
+            <p class="description-1" style="margin-top:0;">Enable for a voice VLAN.</p>
+            <div class="clearfix"></div>
+            <div class="custom-switch-1">
+              <div class="body-text switch-container">
+                <label class="switch-control" onclick="toggleSwitch(this);">
+                  <input id="voVlanState" class="ios-switch bigswitch" type="checkbox" data-save="">
+                  <div class="switchWrapper"><div></div></div>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div id="voVlanCfg" class="hide">
+            <div class="item-6">
+              <label class="label-3 mt-25">Class of Service</label>
+              <p class="description-1">Set Up Priority for VLAN</p>
+              <div class="custom-dropdown mb-15">
+                <div class="dropdown">
+                  <button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown" onclick="dropDownMenu(this);">
+                    <span class="selectItem" id="voCos" data-save="">6</span>
+                    <span class="caret"></span>
+                  </button>
+                  <ul class="dropdown-menu">
+                    <li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>0</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>1</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>2</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>3</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>4</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>5</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>6</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>7</a></li>
+
+                  </ul>
+                </div>
+                <div class="clearfix"></div>
+              </div>
+            </div>
+            <div class="item-6">
+              <label class="label-3 mt-25">OUI Table</label>
+              <p class="description-1" style="margin-top:0;" withsubtag>View or edit the <a onclick="VlanAdvQ.showOui('voOui');">OUI Settings</a> for voice VLAN.</p>
+            </div>
+          </div>
+        </div>
+
+        <! IF AUTO-CAMERA VLAN ENABLED2>
+        <div class="vlan-type">
+          <div class="item-6">
+            <label class="label-3">Auto-Camera VLAN</label>
+            <p class="description-1" style="margin-top:0;">Enable for an auto-camera VLAN.</p>
+            <div class="clearfix"></div>
+            <div class="custom-switch-1">
+              <div class="body-text switch-container">
+                <label class="switch-control" onclick="toggleSwitch(this);">
+                  <input id="camVlanState" class="ios-switch bigswitch" type="checkbox" data-save="">
+                  <div class="switchWrapper"><div></div></div>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div id="camVlanCfg" class="hide">
+            <div class="item-6">
+              <label class="label-3 mt-25">Class of Service</label>
+              <p class="description-1">Set Up Priority for VLAN</p>
+              <div class="custom-dropdown mb-15">
+                <div class="dropdown">
+                  <button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown" onclick="dropDownMenu(this);">
+                    <span class="selectItem" id="camCos" data-save="">6</span>
+                    <span class="caret"></span>
+                  </button>
+                  <ul class="dropdown-menu">
+                    <li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>0</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>1</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>2</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>3</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>4</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>5</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>6</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>7</a></li>
+
+                  </ul>
+                </div>
+                <div class="clearfix"></div>
+              </div>
+            </div>
+            <div class="item-6">
+              <label class="label-3 mt-25">OUI Table</label>
+              <p class="description-1" style="margin-top:0;" withsubtag>View or edit the <a onclick="VlanAdvQ.showOui('camOui');">OUI Settings</a> for auto-camera VLAN.</p>
+            </div>
+          </div>
+        </div>
+        <! IF AUTO-CAMERA VLAN ENABLED END2>
+
+        <! IF AUTO-WIFI VLAN ENABLED2>
+        <div class="vlan-type">
+          <div class="item-6">
+            <label class="label-3">Auto-WiFi VLAN</label>
+            <p class="description-1" style="margin-top:0;">Enable for an auto-WiFi VLAN.</p>
+            <div class="clearfix"></div>
+            <div class="custom-switch-1">
+              <div class="body-text switch-container">
+                <label class="switch-control" onclick="toggleSwitch(this);">
+                  <input id="wifiVlanState" class="ios-switch bigswitch" type="checkbox" data-save="">
+                  <div class="switchWrapper"><div></div></div>
+                </label>
+              </div>
+            </div>
+          </div>
+          <div id="wifiVlanCfg" class="hide">
+            <div class="item-6">
+              <label class="label-3 mt-25">Class of Service</label>
+              <p class="description-1">Set Up Priority for VLAN</p>
+              <div class="custom-dropdown mb-15">
+                <div class="dropdown">
+                  <button class="btn btn-default dropdown-toggle" type="button" data-toggle="dropdown" onclick="dropDownMenu(this);">
+                    <span class="selectItem" id="wifiCos" data-save="">6</span>
+                    <span class="caret"></span>
+                  </button>
+                  <ul class="dropdown-menu">
+                    <li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>0</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>1</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>2</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>3</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>4</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>5</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>6</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>7</a></li>
+
+                  </ul>
+                </div>
+                <div class="clearfix"></div>
+              </div>
+            </div>
+            <div class="item-6">
+              <label class="label-3 mt-25">OUI Table</label>
+              <p class="description-1" style="margin-top:0;" withsubtag>View or edit the <a onclick="VlanAdvQ.showOui('wifiOui');">OUI Settings</a> for auto-wifi VLAN.</p>
+            </div>
+          </div>
+        </div>
+        <! IF AUTO-WIFI VLAN ENABLED END2>
+
+				<div class="control-buttons-1">
+					<a href="javascript:void(0);" class="anchor-1" onclick="$('[main=4]').removeClass('hide');$('[detail=4]').addClass('hide')">CANCEL</a>
+					<a href="javascript:void(0);" class="anchor-2" onclick="VlanAdvQ.createVlan()">APPLY</a>
+				</div>
+        </div>
+			</div>
+			<div detail="pvidMain" class="inner-padding hide fadeInRight animated cmn-animation">
+				<div class="item-4">
+					<span class="heading-8">Port and VLAN IDs</span>
+					<p class="description-1 item-2">The following lists the port members in each VLAN.</p>
+				</div>
+				<div class="table-container-3">
+					<div class="table-top table-top-2 help-text-3 tb-top">
+				        <span style="width:50%;">Port</span><span>VLAN(*denotes PVID)</span>
+				    </div>
+					<ul id="pvidList" class="ul-init vlan-port pvid-list pvid-list-1">
+						<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>1</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>k52</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>3, 5*, 23</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>2</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>k53</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>3*, 5, 23</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>3</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' data-status='unnamed'>unnamed</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>3, 5*, 23</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>4</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>k41</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>3*, 5, 23</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>5</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>k81</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>3, 5*</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>6</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>k82</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>3, 5*</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>7</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>k83</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>3, 5*</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>8</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>k400</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>3, 5*</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>9</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' data-status='unnamed'>unnamed</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>2, 3*, 23</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>10</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' data-status='unnamed'>unnamed</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>2*, 3, 23</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>11</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>box</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>2*, 3, 23</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>12</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>pilab</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>2*, 3, 23</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>13</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>coffee</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>23*</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>14</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>cable</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>4*</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>15</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' untrans>uplink</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>23*</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+<li><div class='col-1 col-1-1'><div class='li-pot-wrapper port-icon-style-1 li-pot top-1'><span class='icon-I-port-empty port-light-gray'></span><span class='port-count'>16</span></div>
+<div class='port-name wid-3'><span class='hid-txt wid-full' data-status='unnamed'>unnamed</span></div></div>
+<div class='col-2 col-2-2' style='max-width:270px;'><span class='hid-txt pvid-table-vlan-list'>1*, 23</span></div>
+<i class='tb-arrow arrow-right arrow-pos'><span class='icon-I-arrow-down'></span></i></li>
+
+					</ul>
+				</div>
+				<div class="control-buttons-1">
+					<a href="javascript:void(0);" class="anchor-2" onclick="$('[main=4]').removeClass('hide');$('[detail=pvidMain]').addClass('hide');">BACK</a>
+				</div>
+			</div>
+			<div detail="pvidDetail" class="inner-padding hide fadeInRight animated cmn-animation">
+				<div id="curPotPvid" class="row-1"></div>
+				<p class="description-1 item-2">Select the PVID for this port</p>
+				<div class="custom-dropdown" style="max-width: 370px; margin: 15px 0 20px;">
+					<div class="dropdown ful-wid vlan-tb-1">
+						<button class="btn btn-default dropdown-toggle ful-wid" type="button" data-toggle="dropdown" onclick="dropDownMenu(this);">
+							<span id="selPvid" class="selectItem hid-txt vlan-tb-4 wid-1">1 - Default</span>
+							<span class="caret"></span>
+						</button>
+						<ul id="qVlanList" qVlist class="dropdown-menu vlan-tb-3">
+							<div class='scroll-content' style='max-height: 450px;'>
+							<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>1 - Default</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>2 - untagged</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>3 - pinet</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>4 - cable</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>5 - piwulf</a></li>
+<li class='waves-effect waves-gray'><a href='javascript:void(0);' class='hid-txt'>23 - coffee</a></li>
+
+							</div>
+						</ul>
+					</div>
+					<div class="clearfix"></div>
+				</div>
+				<div class="control-buttons-1">
+					<a href="javascript:void(0);" class="anchor-1" onclick="$('[detail=pvidMain]').removeClass('hide');$('[detail=pvidDetail]').addClass('hide')">CANCEL</a>
+					<a href="javascript:void(0);" class="anchor-2" onclick="VlanAdvQ.submitPvid()">APPLY</a>
+				</div>
+			</div>
+			<div detail="ouiMain" id="voOui" class="inner-padding hide fadeInRight animated cmn-animation">
+				<div class="item-4">
+					<span class="heading-8">Voice VLAN</span>
+				</div>
+				<div class="table-container-2">
+					<div class="table-top table-top-4 help-text-3 wid-4">
+						<span>Telephony OUIs</span><span>Description</span>
+					</div>
+					<ul class="ul-init table-content-2">
+						<li><div class='li-header li-header-4 wid-4'><span list-tele='4'>00:01:e3</span>
+<span list-desc='4' class='hid-txt' untrans>SIEMENS</span>
+<i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></div><div class='li-btn control-buttons-1' style='display: block;'>
+<a href='javascript:void(0);' class='anchor-2' onclick="VlanAdvQ.editOui(this, 'voOui')">EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteOui(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-4 wid-4'><span list-tele='4'>00:03:6b</span>
+<span list-desc='4' class='hid-txt' untrans>Cisco1</span>
+<i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></div><div class='li-btn control-buttons-1' style='display: block;'>
+<a href='javascript:void(0);' class='anchor-2' onclick="VlanAdvQ.editOui(this, 'voOui')">EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteOui(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-4 wid-4'><span list-tele='4'>00:04:0d</span>
+<span list-desc='4' class='hid-txt' untrans>AVAYA1</span>
+<i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></div><div class='li-btn control-buttons-1' style='display: block;'>
+<a href='javascript:void(0);' class='anchor-2' onclick="VlanAdvQ.editOui(this, 'voOui')">EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteOui(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-4 wid-4'><span list-tele='4'>00:04:13</span>
+<span list-desc='4' class='hid-txt' untrans>Snom</span>
+<i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></div><div class='li-btn control-buttons-1' style='display: block;'>
+<a href='javascript:void(0);' class='anchor-2' onclick="VlanAdvQ.editOui(this, 'voOui')">EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteOui(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-4 wid-4'><span list-tele='4'>00:12:43</span>
+<span list-desc='4' class='hid-txt' untrans>Cisco2</span>
+<i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></div><div class='li-btn control-buttons-1' style='display: block;'>
+<a href='javascript:void(0);' class='anchor-2' onclick="VlanAdvQ.editOui(this, 'voOui')">EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteOui(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-4 wid-4'><span list-tele='4'>00:1b:4f</span>
+<span list-desc='4' class='hid-txt' untrans>AVAYA2</span>
+<i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></div><div class='li-btn control-buttons-1' style='display: block;'>
+<a href='javascript:void(0);' class='anchor-2' onclick="VlanAdvQ.editOui(this, 'voOui')">EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteOui(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-4 wid-4'><span list-tele='4'>00:60:b9</span>
+<span list-desc='4' class='hid-txt' untrans>NITSUKO</span>
+<i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></div><div class='li-btn control-buttons-1' style='display: block;'>
+<a href='javascript:void(0);' class='anchor-2' onclick="VlanAdvQ.editOui(this, 'voOui')">EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteOui(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-4 wid-4'><span list-tele='4'>00:d0:1e</span>
+<span list-desc='4' class='hid-txt' untrans>PINTEL</span>
+<i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></div><div class='li-btn control-buttons-1' style='display: block;'>
+<a href='javascript:void(0);' class='anchor-2' onclick="VlanAdvQ.editOui(this, 'voOui')">EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteOui(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-4 wid-4'><span list-tele='4'>00:e0:75</span>
+<span list-desc='4' class='hid-txt' untrans>VERILINK</span>
+<i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></div><div class='li-btn control-buttons-1' style='display: block;'>
+<a href='javascript:void(0);' class='anchor-2' onclick="VlanAdvQ.editOui(this, 'voOui')">EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteOui(this)'>DELETE</a></div></li>
+<li><div class='li-header li-header-4 wid-4'><span list-tele='4'>00:e0:bb</span>
+<span list-desc='4' class='hid-txt' untrans>3COM</span>
+<i class='tb-arrow'><span class='icon-I-arrow-down'></span></i></div><div class='li-btn control-buttons-1' style='display: block;'>
+<a href='javascript:void(0);' class='anchor-2' onclick="VlanAdvQ.editOui(this, 'voOui')">EDIT</a><a href='javascript:void(0);' class='anchor-2' onclick='VlanAdvQ.deleteOui(this)'>DELETE</a></div></li>
+
+					</ul>
+					<div class="table-bottom-2"><button class="add-vlan btn-3 btn-actv" onclick="VlanAdvQ.addOui('voOui')">ADD OUI</button></div>
+				</div>
+				<div class="control-buttons-1">
+					<a href="javascript:void(0);" class="anchor-2" onclick="VlanAdvQ.ouiBack();">BACK</a>
+				</div>
+			</div>
+			<! IF AUTO-CAMERA VLAN ENABLED3>
+			<div detail="ouiMain" id="camOui" class="inner-padding hide fadeInRight animated cmn-animation">
+				<div class="item-4">
+					<span class="heading-8">Auto-Camera VLAN</span>
+				</div>
+				<div class="table-container-2">
+					<div class="table-top table-top-4 help-text-3 wid-4">
+						<span>Auto-Camera OUIs</span><span>Description</span>
+					</div>
+					<ul class="ul-init table-content-2">
+						
+					</ul>
+					<div class="table-bottom-2"><button class="add-vlan btn-3 btn-actv" onclick="VlanAdvQ.addOui('camOui')">ADD OUI</button></div>
+				</div>
+				<div class="control-buttons-1">
+					<a href="javascript:void(0);" class="anchor-2" onclick="VlanAdvQ.ouiBack();">BACK</a>
+				</div>
+			</div>
+			<! IF AUTO-CAMERA VLAN ENABLED END3>
+			<! IF AUTO-WIFI VLAN ENABLED3>
+			<div detail="ouiMain" id="wifiOui" class="inner-padding hide fadeInRight animated cmn-animation">
+				<div class="item-4">
+					<span class="heading-8">Auto-WiFi VLAN</span>
+				</div>
+				<div class="table-container-2">
+					<div class="table-top table-top-4 help-text-3 wid-4">
+						<span>Auto-WiFi OUIs</span><span>Description</span>
+					</div>
+					<ul class="ul-init table-content-2">
+						
+					</ul>
+					<div class="table-bottom-2"><button class="add-vlan btn-3 btn-actv" onclick="VlanAdvQ.addOui('wifiOui')">ADD OUI</button></div>
+				</div>
+				<div class="control-buttons-1">
+					<a href="javascript:void(0);" class="anchor-2" onclick="VlanAdvQ.ouiBack();">BACK</a>
+				</div>
+			</div>
+			<! IF AUTO-WIFI VLAN ENABLED END3>
+			<div detail="ouiDetail" class="inner-padding hide fadeInRight animated cmn-animation">
+				<div class="item-5">
+					<span class="heading-8">OUI ENTRY</span>
+				</div>
+				<div class="text-area item-1">
+					<label class="label-1">Telephony OUI</label>
+					<input id='tele' maxlength='8' class="input-1" type="text" value="">
+				</div>
+				<div class="text-area item-1">
+					<label class="label-1">Description</label>
+					<input id='desc' maxlength='32' class="input-1" type="text" value="">
+				</div>
+				<input id='preTele' type="hidden" value="">
+				<div class="control-buttons-1">
+					<a href="javascript:void(0);" class="anchor-1" onclick="$(VlanAdvQ.currentOui).removeClass('hide');$('[detail=ouiDetail]').addClass('hide');">CANCEL</a>
+					<a href="javascript:void(0);" class="anchor-2" onclick="VlanAdvQ.submitOui()">APPLY</a>
+				</div>
+			</div>
+		</section>
+	</div>
+</div>
+
+
+<!--=================================== LAG information  =======================================-->
+<div id="lagInfo" class="hide">
+
+	<input type="hidden" id="lag_1" status="disable" member="0000000000000000">
+
+	<input type="hidden" id="lag_2" status="disable" member="0000000000000000">
+
+	<input type="hidden" id="lag_3" status="disable" member="0000000000000000">
+
+	<input type="hidden" id="lag_4" status="disable" member="0000000000000000">
+
+	<input type="hidden" id="lag_5" status="disable" member="0000000000000000">
+
+	<input type="hidden" id="lag_6" status="disable" member="0000000000000000">
+
+	<input type="hidden" id="lag_7" status="disable" member="0000000000000000">
+
+	<input type="hidden" id="lag_8" status="disable" member="0000000000000000">
+
+</div>
+
+</div>
+<script type="text/javascript">
+function initEvents(){
+	$('[showDetail]').click(function(){
+		detailFlag = true;
+	});
+	$('[hidDetail]').click(function(){
+		detailFlag = false;
+	});
+
+	/* 8021q vlan: pre selectOptions */
+	$('#QcnfTbl').on('click', ".dropdown ul li:not('.add-vlan')", function(){
+		text = $(this).find("a").text();
+		var selectItem = $(this).parents('.dropdown').find(".selectItem");
+		selectItem.text(text);
+		if ($(this).parents('.dropdown').hasClass("open")){
+			$(this).parents('.dropdown').removeClass("open");
+		}
+		addTitle();
+    });
+
+	/* 8021q vlan cfg: show or hide relative item when changing 8021q port mode */
+	$('#QcnfTbl').on('click', '[acsSel]', function(){
+		$(this).parents('td').next().find('[acsVid]').removeClass('hide').next().addClass('hide');
+		//$(this).parents('td').next().next().find('[acsPvid]').removeClass('hide').next().addClass('hide');
+	});
+	$('#QcnfTbl').on('click', '[trkSel]', function(){
+		$(this).parents('td').next().find('[trkVid]').removeClass('hide').prev().addClass('hide');
+		//$(this).parents('td').next().next().find('[trkPvid]').removeClass('hide').prev().addClass('hide');
+	});
+
+	/* 8021q vlan cfg: fill pvid val with cur vlan id */
+	$('#QcnfTbl').on('click', "[qVlist]>li:not('.add-vlan')", function(){
+		text = $(this).find('a').text();
+		text = text.substring(0, text.indexOf(' -'));
+		//$(this).parents('td').next().find('[Qcnftbldata=acsPvid]').val(text);
+	});
+
+	/* 8021q vlan cfg: change trs' html to the same in one lag */
+	$('#QcnfTbl').on('keyup', "[type='text']", function(){
+		var curPotNum = $(this).parents('tr').find("[Qcnftbldata='potNum']").text();
+		syncVlanCfgDisplayByLagInfo(curPotNum);
+	});
+	$('#QcnfTbl').on('click', "[qVlist]>li:not('.add-vlan'), [acsSel], [trkSel]", function(){
+		var curPotNum = $(this).parents('tr').find("[Qcnftbldata='potNum']").text();
+		syncVlanCfgDisplayByLagInfo(curPotNum);
+	});
+}
+function submitQvlanCfg(){
+	if(getDQVlanCfgInfo()){
+	    var datas,
+	        QvlanCfgArr = getDQVlanCfgInfo();
+
+	    datas = '&DQ_PAGE=vlanPortCfg' + '&PORT_MOD=' + QvlanCfgArr[0] + '&PORT_VLAN_ID=' + QvlanCfgArr[1];
+
+	    createVlanXhr('bsc8021QPage', datas, "bqv");
+    }
+}
+
+function toggleSlide(){
+	$('.li-btn').hide();
+	$('.li-header').click(function(){
+		if($(this).find('.tb-arrow > span').hasClass('icon-I-arrow-up')){
+			$(this).find('.tb-arrow > span').removeClass('icon-I-arrow-up').addClass('icon-I-arrow-down');
+			$(this).next().stop().slideUp('fast');
+		}else{
+			$('.li-btn').stop().slideUp();
+			$('.tb-arrow > span').removeClass('icon-I-arrow-up').addClass('icon-I-arrow-down');
+			$(this).find('.tb-arrow > span').removeClass('icon-I-arrow-down').addClass('icon-I-arrow-up');
+			$(this).next().stop().slideDown('fast');
+		}
+	});
+}
+function changeVlanMod(){
+	$('.activate-mode').click(function(){
+		vlanMod = $(this).parent().attr('vlanMode');
+		var modMsg = $(this).parents('li').find('[moddes]').attr("moddes");
+		showModel('submit', 'VLAN','Warning: Changing the VLAN mode to ' + modMsg + ' erases all of the current VLAN settings. Do you want to continue?', submitVlanMod);
+	});
+}
+function submitVlanMod(){
+	var datas = '&VLAN_MOD_SET=' + vlanMod;
+	createVlanXhr('', datas, 'vlan');
+}
+function groupOpera(){
+	$('#selAll').click(function(){
+		$('.port-dash-check').prop('checked', true);
+	});
+	$('#rmvAll').click(function(){
+		$('.port-dash-check').prop('checked', false);
+	});
+}
+function addTitle(){
+	$('.hid-txt').each(function(){
+		$(this).attr('title', $(this).text() == '' ? $(this).val() : $(this).text());
+	});
+}
+function hidFirstDelBtn(){
+	var i, j, k,
+		$Pvid = $('[Pvid]'),
+		$Qvid = $('[Qvid]'),
+		$advQvid = $('[list-vid=4]'),
+		lenP = $Pvid.length,
+		lenQ = $Qvid.length,
+		lenAdvQ = $advQvid.length;
+
+	for(i=0; i<lenP; i++){
+		if($Pvid.eq(i).text() === '1'){
+			$Pvid.eq(i).parent().next().find('a').eq(1).hide();
+			break;
+		}
+	}
+	for(j=0; j<lenQ; j++){
+		if($Qvid.eq(j).text() === '1'){
+			$Qvid.eq(j).parent().next().find('a').eq(1).hide();
+			break;
+		}
+	}
+	for(k=0; k<lenAdvQ; k++){
+		if($advQvid.eq(k).text() === '1'){
+			$advQvid.eq(k).parent().next().find('a').eq(1).hide();
+		}
+		switch ($advQvid.eq(k).text()) {
+			case $("#voVlanId").val():
+				$advQvid.eq(k).prev().addClass("icon-phone");
+				break;
+			case $("#camVlanId").val():
+				$advQvid.eq(k).prev().addClass("icon-camera");
+				break;
+			case $("#wifiVlanId").val():
+				$advQvid.eq(k).prev().addClass("icon-wifi");
+				break;
+		}
+	}
+}
+function initMoreEvents(){
+	$("[detail=4]").on("click", "[sel-all]", function(){
+		VlanAdvQ.grupOpra(this);
+	});
+
+	$("[detail=4]").on("click", "[box-pot]", function(){
+		VlanAdvQ.clickPot(this);
+	});
+
+  $("[detail=4]").on("click", "#voVlanState", function(){
+    VlanAdvQ.isVoVlanCfg(this);
+    VlanAdvQ.turnOffOtherVlan(this);
+  });
+
+  $("[detail=4]").on("click", "#camVlanState", function(){
+    VlanAdvQ.isCamVlanCfg(this);
+    VlanAdvQ.turnOffOtherVlan(this);
+  });
+
+  $("[detail=4]").on("click", "#wifiVlanState", function(){
+    VlanAdvQ.isWifiVlanCfg(this);
+    VlanAdvQ.turnOffOtherVlan(this);
+  });
+
+    $("[detail=pvidMain]").on("click", "#pvidList > li", function(){
+        var potContent = $(this).find(".col-1").html();
+        $("#curPotPvid").html(potContent);
+        // Make the current PVID preselected in the dropdown menu.
+        var vlanList = $(this).find(".pvid-table-vlan-list").text();
+        var vlans = vlanList.split(", ");
+        var currentVlan = 1;
+        for (var i = 0; i < vlans.length; i++) {
+            if (vlans[i].substr(-1) === "*") {
+                currentVlan = vlans[i].substr(0, vlans[i].length - 1);
+                break;
+            }
+        }
+        $("#qVlanList li a").each(function(index, ele){
+            if ($(ele).text().split(" - ")[0] === currentVlan) {
+                $("#selPvid").text($(ele).text());
+                return;
+            }
+        });
+        $("[detail=pvidDetail]").removeClass("hide");
+        $("[detail=pvidMain]").addClass("hide");
+    });
+
+    selectOptions();//may influence former
+}
+
+function recoverMgmtVlan(ths) {
+    var $mgmtVlan = $(ths).parent().siblings().find("[name=mgmtVlan]");
+    $mgmtVlan.val($mgmtVlan.prop("data-save"));
+}
+
+function submitBqvMgmtVlan(ths) {
+    var $mgmtVlanInput = $(ths).parent().siblings().find("[name=mgmtVlan]");
+    var id = $mgmtVlanInput.val();
+    var reg = /^(?:[1-9]\d{0,2}|[1-3]\d{3}|40[0-8]\d|409[0-3])$/;
+    if (id === "") {
+        showModel("alert", "BASIC 802.1Q VLAN", "Management VLAN ID cannot be empty.");
+        return;
+    }
+    if (!reg.test(id)) {
+        showModel("alert", "BASIC 802.1Q VLAN", "Value (@" + id + "@) is out of range for 'Management VLAN ID'. The valid range is 1 to 4093.");
+        return;
+    }
+    if (id !== $mgmtVlanInput.prop("data-save")) {
+        var vlanIdExists = false;
+        $("#QVTbl li [qvid]").each(function(i, ele){
+            if ($(ele).text() === id) {
+                vlanIdExists = true;
+                return false;
+            }
+        });
+        if (vlanIdExists) {
+            showModel("submit", "BASIC 802.1Q VLAN", "Management access will be lost on MGMT VLAN configuration.", function(){
+                createVlanXhr("bsc8021QPage", "&DQ_PAGE=vlanMgmt&mgmtVlanId=" + id, "bqv", "[detail-2]", "[detail-1]");
+            });
+        } else {
+            showModel("alert", "BASIC 802.1Q VLAN", "Failed to set Management VLAN ID with empty VLAN.");
+        }
+    }
+    else {
+        createVlanXhr("bsc8021QPage", "&DQ_PAGE=vlanMgmt&mgmtVlanId=" + id, "bqv", "[detail-2]", "[detail-1]");
+    }
+}
+function submitAqvMgmtVlan(ths) {
+    var $mgmtVlanInput = $(ths).parent().siblings().find("[name=mgmtVlan]");
+    var id = $mgmtVlanInput.val();
+    var reg = /^(?:[1-9]\d{0,2}|[1-3]\d{3}|40[0-8]\d|409[0-4])$/;
+    if (id === "") {
+        showModel("alert", "ADVANCED 802.1Q VLAN", "Management VLAN ID cannot be empty.");
+        return;
+    }
+    if (!reg.test(id)){
+        showModel("alert", "ADVANCED 802.1Q VLAN", "Value (@" + id + "@) is out of range for 'Management VLAN ID'. The valid range is 1 to 4094.");
+        return;
+    }
+    if (id !== $mgmtVlanInput.prop("data-save")) {
+        var vlanIdExists = false;
+        $("#AQVTbl li [list-vid]").each(function(i, ele){
+            if ($(ele).text() === id) {
+                vlanIdExists = true;
+                return false;
+            }
+        });
+        if (vlanIdExists) {
+            showModel("submit", "ADVANCED 802.1Q VLAN", "Management access will be lost on MGMT VLAN configuration.", function(){
+                createVlanXhr("adv8021QPage", "&ACTION=vlanMgmt&mgmtVlanId=" + id, "aqv");
+            });
+        } else {
+            showModel("alert", "ADVANCED 802.1Q VLAN", "Failed to set Management VLAN ID with empty VLAN.");
+        }
+    }
+    else {
+        createVlanXhr("adv8021QPage", "&ACTION=vlanMgmt&mgmtVlanId=" + id, "aqv");
+    }
+}
+
+$(document).ready(function(){
+	initEvents();
+	enableTextLabel();
+	toggleSlide();
+	changeVlanMod();
+	groupOpera();
+	addTitle();
+	hidFirstDelBtn();
+	initMoreEvents();
+	backupData($("[name=mgmtVlan]").parent());
+	$(".scroll-content").mCustomScrollbar({
+		scrollInertia: 500,
+		mouseWheel: true,
+		mouseWheelPixels: 200
+	});
+	$("#vlan-id-tip").text(MultLang.transParmLang('VLAN ID (A number value between 1 - @' + window.totalPorts + '@)'));
+});
+</script>

@@ -1,0 +1,118 @@
+package config
+
+import (
+	"os"
+	"path/filepath"
+	"strings"
+	"testing"
+)
+
+func write(t *testing.T, name, body string, mode os.FileMode) string {
+	t.Helper()
+	p := filepath.Join(t.TempDir(), name)
+	if err := os.WriteFile(p, []byte(body), mode); err != nil {
+		t.Fatal(err)
+	}
+	return p
+}
+
+func TestLoadSite(t *testing.T) {
+	p := write(t, "site.yaml", `
+switches:
+  - name: lab
+    address: switch.example
+`, 0o644)
+	s, err := LoadSite(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Switches) != 1 {
+		t.Fatalf("switches = %+v", s.Switches)
+	}
+	sw := s.Switches[0]
+	if sw.Name != "lab" || sw.Address != "switch.example" || sw.Driver != "gs316ep" {
+		t.Errorf("switch = %+v (driver should default to gs316ep)", sw)
+	}
+}
+
+func TestLoadSiteErrors(t *testing.T) {
+	tests := map[string]string{
+		"unknown field":     "switches:\n  - name: a\n    adress: x\n",
+		"missing name":      "switches:\n  - address: x\n",
+		"missing address":   "switches:\n  - name: a\n",
+		"duplicate name":    "switches:\n  - {name: a, address: x}\n  - {name: a, address: y}\n",
+		"unknown driver":    "switches:\n  - {name: a, address: x, driver: cisco}\n",
+		"unknown top-level": "nodes: []\nswitchs: []\n",
+	}
+	for name, body := range tests {
+		t.Run(name, func(t *testing.T) {
+			if _, err := LoadSite(write(t, "site.yaml", body, 0o644)); err == nil {
+				t.Error("want error")
+			}
+		})
+	}
+}
+
+func TestLoadSiteMissingFile(t *testing.T) {
+	_, err := LoadSite(filepath.Join(t.TempDir(), "nope.yaml"))
+	if err == nil || !strings.Contains(err.Error(), "nope.yaml") {
+		t.Errorf("err = %v, want it to name the file", err)
+	}
+}
+
+func TestSiteSwitch(t *testing.T) {
+	s := &Site{Switches: []Switch{{Name: "a"}, {Name: "b"}}}
+	if sw, err := s.Switch("b"); err != nil || sw.Name != "b" {
+		t.Errorf("Switch(b) = %+v, %v", sw, err)
+	}
+	if sw, err := s.Switch(""); err == nil {
+		t.Errorf("Switch(\"\") with two switches = %+v, want ambiguity error", sw)
+	}
+	if _, err := s.Switch("c"); err == nil {
+		t.Error("Switch(c): want error")
+	}
+	one := &Site{Switches: []Switch{{Name: "only"}}}
+	if sw, err := one.Switch(""); err != nil || sw.Name != "only" {
+		t.Errorf("Switch(\"\") with one switch = %+v, %v", sw, err)
+	}
+}
+
+func TestLoadSecrets(t *testing.T) {
+	p := write(t, ".secrets", "switches:\n  lab:\n    password: hunter2\n", 0o600)
+	s, err := LoadSecrets(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if s.Switches["lab"].Password != "hunter2" {
+		t.Errorf("secrets = %+v", s)
+	}
+}
+
+func TestLoadSecretsRejectsOpenPermissions(t *testing.T) {
+	p := write(t, ".secrets", "switches: {}\n", 0o644)
+	_, err := LoadSecrets(p)
+	if err == nil || !strings.Contains(err.Error(), "chmod 600") {
+		t.Errorf("err = %v, want a permissions error", err)
+	}
+}
+
+func TestLoadSecretsMissingIsEmpty(t *testing.T) {
+	s, err := LoadSecrets(filepath.Join(t.TempDir(), ".secrets"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.Switches) != 0 {
+		t.Errorf("secrets = %+v, want empty", s)
+	}
+}
+
+func TestSecretErrorsDoNotLeakValues(t *testing.T) {
+	p := write(t, ".secrets", "switches:\n  lab:\n    pasword: hunter2\n", 0o600)
+	_, err := LoadSecrets(p)
+	if err == nil {
+		t.Fatal("want error for unknown field")
+	}
+	if strings.Contains(err.Error(), "hunter2") {
+		t.Errorf("error leaks the secret: %v", err)
+	}
+}

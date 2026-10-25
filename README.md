@@ -1,16 +1,12 @@
 # Stage0
 
-Cluster bootstrap tool. [index.md](index.md) lists what's here.
+Stage0 installs one head node — a base OS on disk, reachable over SSH — from
+nothing but this repo and a connection to the provisioning network, so stage-1
+provisioners can be CI-tested on real and virtual hardware. Raspberry Pi 5
+first. Early: it can read the lab switch (`stage0 get ports`, `stage0 get
+vlans`); see [`docs/development.md`](docs/development.md).
 
-## Waymark
-
-One file in this repo is **Waymark**: a small, static seed distilled from my
-Cairn framework on 2026-10-24. Cairn is a full framework for sustained
-human–AI work; Waymark keeps only what one project or one session needs. It
-does not track Cairn — back-ports are made by hand, when experience earns them.
-
-- [`AGENTS.md`](AGENTS.md) — the project template, and this repo's own
-  always-loaded rules. Copy it into another repo as `AGENTS.md`.
-
-The name lives here and nowhere in the files themselves: a session that read
-"Waymark" in `AGENTS.md` would go looking for a framework that isn't there.
+- [`ROADMAP.md`](ROADMAP.md) — the plan and the intended design.
+- [`handoff.md`](handoff.md) — where work stands now, and open decisions.
+- [`docs/index.md`](docs/index.md) — how things work and verified facts.
+- [`AGENTS.md`](AGENTS.md) — rules for AI sessions in this repo.

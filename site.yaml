@@ -1,0 +1,5 @@
+# Stage0 site configuration. Credentials go in .secrets (git-ignored, mode
+# 600), keyed by the switch name used here.
+switches:
+  - name: switch
+    address: switch.coffee.lan
