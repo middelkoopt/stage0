@@ -6,6 +6,10 @@ on every session, so keep it short. Project knowledge lives in the files below,
 not here. Tool-specific files (such as `CLAUDE.md`) only point at this one and
 hold nothing of their own.
 
+**This project:** Stage0 installs one head node (a base OS on disk, reachable
+over SSH) from nothing but this repo and a connection to the provisioning
+network, so stage-1 provisioners can be CI-tested. Raspberry Pi 5 first.
+
 **Premise:** files persist, conversations don't. The repo is the memory. Every
 session starts cold and rebuilds context by reading, so nothing important lives
 only in a chat or a tool's memory.
@@ -18,9 +22,7 @@ only in a chat or a tool's memory.
    2. whatever the handoff says to read first;
    3. the item the request names, if any (a file, issue, PR);
    4. `docs/index.md` if you need background, then only the docs the task
-      needs;
-   5. `JOURNAL.md` when the task touches a past decision or changes how the
-      project works.
+      needs.
 2. **State what you read, what you skipped and why, and what you take the task
    to be.**
 3. **Pause before acting, not before learning.** Ask only what the files can't
@@ -39,11 +41,9 @@ before;** if a file named here doesn't exist yet, skip it.
 
 | File | Horizon | Holds | Create it when |
 | --- | --- | --- | --- |
-| `handoff.md` | present | Where work is *right now* | Day one |
-| `docs/` + `docs/index.md` | timeless | How the project works | First how-it-works note |
-| `JOURNAL.md` | past | Decisions and *why*, incl. rejected paths | First decision worth teaching a successor |
-| `log.md` | past | What happened, for long or unattended runs | First long or unattended run |
-| `ROADMAP.md` | future | Planned but not built | First planned item beyond "Next session" |
+| `handoff.md` | present | Status, open decisions, next steps | Day one |
+| `docs/` + `docs/index.md` | timeless | How it works as built (design, procedures, gotchas) and verified facts about the systems we work with | First as-built note or verified fact |
+| `ROADMAP.md` | future | Planned work and the intended design; a part's design moves to `docs/` once it's built | First planned item beyond "Next session" |
 
 One folder sits outside the horizons: `tools/` holds scripts for recurring
 work. Check it before building, and add a script the second time you'd
@@ -54,28 +54,28 @@ re-derive the same one-off.
 
 ```markdown
 # <project> Handoff
-<one line: what this is + what to read first at session start>
+<!-- one line: what this is + what to read first at session start -->
 
 ## Status (YYYY-MM-DD)
 <!-- 1–3 lines: working? verified? blocked on what? -->
+
+## Open decisions
+<!-- label: question — recommendation; what turns on it. Delete when decided:
+     the outcome goes to the file that owns it, the why to the commit message. -->
 
 ## Next session
 <!-- the queued next steps (not "someday": that's ROADMAP) -->
 ```
 
 Anything else in it is a leak: design and gotchas go to `docs/`; "what we did"
-goes to git log or `log.md`.
+goes to git log.
 
 **Docs describe only what exists,** so a session can trust them completely.
-Design, conventions, gotchas and procedures go there; list each doc in
-`docs/index.md`. Never document a mechanism that doesn't exist yet.
+Design, conventions, gotchas, procedures and verified external facts go there;
+list each doc in `docs/index.md`. Never document a mechanism that doesn't exist
+yet.
 
 **The roadmap holds what's planned,** clearly labeled. Prune done items.
-
-**The journal** holds the *why*, not the *what*, and most arcs don't earn an
-entry. It is append-only: you may polish an entry you just wrote before it's
-committed, and fix typos or broken links anytime, but a decision that turned
-out wrong gets a *new* entry that supersedes it — never a silent rewrite.
 
 ## How we work
 
@@ -124,8 +124,8 @@ An **arc** is one coherent piece of work — a task or a design — however many
 turns or sessions it takes. When an arc closes, or a session ends with one
 still open:
 
-1. Decide whether it earned a `JOURNAL.md` entry. If so, write the *why* now,
-   while the context is live; a *why* deferred to a colder session is lost.
+1. Fold what it taught into `docs/` (knowledge) or this file (behavior) now,
+   while the context is live; a lesson deferred to a colder session is lost.
 2. Rewrite `handoff.md` to the current state.
 3. Commit, once the human agrees.
 
@@ -137,21 +137,23 @@ under-written.
 ## Keeping it healthy
 
 - **Add structure only after a real failure justifies it.** A fix is earned by
-  one incident (note the lesson in the journal if it's a decision); a general
-  rule or method waits until the pattern recurs.
+  one incident; a general rule or method waits until the pattern recurs.
 - **Maintenance is subtraction.** Periodically remove what no longer serves a
   live use — especially from this file, `docs/` and `ROADMAP.md`. "Is it still
-  true?" isn't the test; "what does it still do for us?" is. Don't prune the
-  journal or log for weight.
-- **Distill up.** When a journal insight has matured, restate it as a rule in
-  `docs/`, and keep the journal entry.
-- **Date config docs.** Mark them `> Last verified: YYYY-MM-DD`; check the date
-  before trusting one and re-stamp when you verify.
+  true?" isn't the test; "what does it still do for us?" is.
+- **Date verified facts.** Mark docs holding them `> Last verified: YYYY-MM-DD`;
+  check the date before trusting one and re-stamp when you verify.
 - **The human owns judgment and catches drift;** the AI writes and curates
   under review.
 
 ## Key facts
 
-*None yet.* Add only project-specific facts that cause damage if wrong — where
+Add only project-specific facts that cause damage if wrong — where
 secrets live, what must never be pushed or shared, deploy targets, which branch
 others work from. One line each, linking to the doc that owns it.
+
+- Credentials (switch, BMC) live in `.secrets`, which is git-ignored; never
+  commit, print or paste its contents. See [`ROADMAP.md`](ROADMAP.md#components-one-static-go-binary).
+- The lab switch and nodes are shared and live: switch VLAN or PoE changes and
+  node power cycles need an explicit yes each time. See
+  [`docs/development.md`](docs/development.md#gs316ep-notes).
