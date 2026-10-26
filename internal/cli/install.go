@@ -33,8 +33,11 @@ import (
 const (
 	reachWait = time.Minute      // lease to answering ping and SSH
 	agentWait = 20 * time.Minute // power on to STAGE0-INSTALLED
-	readyWait = 10 * time.Minute // power cycle to the installed system's prompt
 )
+
+// readyWait is the time from the power cycle to the installed system's
+// prompt (a variable so tests can shorten it).
+var readyWait = 10 * time.Minute
 
 // initrdName is stage0's initramfs in the served boot files, named so it
 // can't clash with the image's own.
@@ -309,26 +312,34 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	say("%s: rebooting from %s", node.Name, disk)
 	rctx, cancel := context.WithTimeout(ctx, readyWait)
 	defer cancel()
+waitReady:
 	for node.Console != nil && res.Ready == "" {
 		select {
 		case <-rctx.Done():
-			return fmt.Errorf("%s: installed, but no %q on the console (console: %s): %w", node.Name, img.Ready, res.Log, rctx.Err())
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			// A quiet console isn't a failed install: the lease and ping
+			// and SSH decide, as for a node without a console.
+			say("%s: no %q on the console (console: %s); checking the network instead", node.Name, img.Ready, res.Log)
+			break waitReady
 		case e := <-w.events:
 			if e.kind == readyEvent {
 				res.Ready = e.text
 			}
 		}
 	}
+	quiet := node.Console == nil || res.Ready == "" // up only if the network says so
 	res.Seconds = time.Since(start).Round(time.Second).Seconds()
-	if node.Console != nil {
+	if !quiet {
 		say("%s: up (%q on the console) after %.0f s", node.Name, res.Ready, res.Seconds)
 	}
 	// Without a console, the lease and ping and SSH are how it shows it's up.
 	leaseWait := addressWait
-	if node.Console == nil {
+	if quiet {
 		leaseWait = readyWait
 	}
-	if res.MAC == "" && node.Console == nil {
+	if res.MAC == "" && quiet {
 		return fmt.Errorf("%s: no MAC with a lease in the agent's report, so no way to tell it's up", node.Name)
 	}
 	if res.MAC != "" {
@@ -342,12 +353,12 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 			if r.OK() {
 				say("%s: %s answers ping and ssh (%s); keep `stage0 serve %s` running to keep the address\n  ssh root@%s",
 					node.Name, res.IPv4, r.SSH, n.Name, res.IPv4)
-			} else if node.Console == nil {
+			} else if quiet {
 				return fmt.Errorf("%s: installed and leased %s, but not reachable: %s", node.Name, res.IPv4, r.Err)
 			} else {
 				say("%s: %s is leased but not reachable yet: %s", node.Name, res.IPv4, r.Err)
 			}
-		} else if node.Console == nil {
+		} else if quiet {
 			return fmt.Errorf("%s: installed, but its system never asked stage0 for its address %s", node.Name, res.IPv4)
 		} else {
 			say("%s: its system has not asked stage0 for its address %s yet", node.Name, res.IPv4)

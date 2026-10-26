@@ -85,8 +85,9 @@ The agent reports to `install` over HTTP (`stage0.report=`: POSTs of its
 report, result or error to `serve`'s `/stage0/report/<kind>`, the one
 write `serve` accepts) and on the serial console. With a console,
 `install` follows it throughout (`logs/<node>.log`) and waits for the
-image's `ready` pattern after the reboot; without one, the node is up when
-its installed system takes its lease and answers ping and SSH. serve's log
+image's `ready` pattern after the reboot; without one, or if the console
+stays quiet (a Pi 4 without `enable_uart=1`), the node is up when its
+installed system takes its lease and answers ping and SSH. serve's log
 is `logs/<node>-serve.log`. On an agent error `install` powers the node off
 and stops. The steps can also be run by hand with `build initrd`, `build
 seed`, `serve`, `power` and `console`.

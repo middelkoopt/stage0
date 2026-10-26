@@ -77,9 +77,10 @@ in the `.CHECKSUM` file beside it). Raw size 3,508,535,296 bytes.
 `https://repo.almalinux.org/almalinux/10/raspberrypi/images/` (323 MB;
 SHA-256 in `CHECKSUM` there). Raw size 3,040,870,400 bytes.
 
-- **Installs and boots on a Pi 400** (k400, 2026-10-26): written in
-  160 s, up in about 7 minutes, sshd answering, root logs in with the
-  site's keys (the kernel-command-line credential works here too).
+- **Installs and boots on a Pi 400 and a Pi 5** (k400, k52, 2026-10-26):
+  written in about 160 s, sshd answering, root logs in with the site's
+  keys (the kernel-command-line credential works here too). On the Pi 5
+  the firmware runs `kernel8.img` (there is no `kernel_2712.img`).
 
 - **Layout:** GPT. Partition 1 (from LBA 8192, type "Microsoft basic
   data", FAT, label `CIDATA`) is the boot partition; ext4 root on
@@ -112,8 +113,10 @@ SHA-256 in `CHECKSUM` there). Raw size 3,040,870,400 bytes.
   (no user, no hostname).
 - **SSH is off unless the boot partition has a file named `ssh`**; the
   image config adds an empty one (`bootFiles`).
-- **Installs and boots on a Pi 5** (k52, 2026-10-26): written in 97 s, up
-  in 4 minutes with hostname `k52` (seeded `user-data`), root logging in
+- **Installs and boots on a Pi 5 and a Pi 400** (k52, k400,
+  2026-10-26). On k400 without `enable_uart=1` the system came up but its
+  console stayed silent; the image config now ensures it. On k52: written
+  in 97 s, up in 4 minutes with hostname `k52` (seeded `user-data`), root logging in
   with the site's keys (the kernel-command-line credential), sshd
   `OpenSSH_10.0p2 Debian-7+deb13u4`, root filesystem grown to the disk
   (116.9 GB).

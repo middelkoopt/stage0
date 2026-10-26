@@ -470,3 +470,25 @@ func TestInstallWithoutConsole(t *testing.T) {
 		t.Errorf("mentions a console:\n%s", out)
 	}
 }
+
+func TestInstallSilentConsole(t *testing.T) {
+	// The console goes quiet after the agent (a Pi 4 without enable_uart):
+	// the lease and ping and SSH still show the node is up.
+	env := newInstallEnv(t, []string{
+		"<dhcp-pxe>",
+		`STAGE0-REPORT {"interfaces":[{"name":"eth0","mac":"d8:3a:dd:c5:c1:f3"}]}` + "\r\n",
+		`STAGE0-INSTALLED {"disk":"/dev/mmcblk0","bytes":1}` + "\r\n",
+		"<rebooted>",
+		"<dhcp-plain>",
+	})
+	readyWaitSave := readyWait
+	readyWait = 500 * time.Millisecond
+	defer func() { readyWait = readyWaitSave }()
+	out, err := env.run(t)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out, "no \"login: \" on the console") || !strings.Contains(out, "answers ping and ssh") {
+		t.Errorf("output:\n%s", out)
+	}
+}

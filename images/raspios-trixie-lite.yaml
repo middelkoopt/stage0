@@ -9,3 +9,7 @@ cmdline: console=serial0,115200 console=tty1 root=PARTUUID=27b94958-02 rootfstyp
 # An empty "ssh" on the boot partition turns its SSH server on.
 bootFiles:
   ssh: ""
+
+# A Pi 4's GPIO serial console (serial0) is off without enable_uart.
+config:
+  - enable_uart=1
