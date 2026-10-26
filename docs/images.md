@@ -29,7 +29,12 @@ in the `.CHECKSUM` file beside it). Raw size 3,508,535,296 bytes.
   10.2" and `localhost login:` on the debug connector.
 - **First boot as shipped:** user `rocky`, password `rockylinux` (works on
   the serial console); the root filesystem stays 2.3 GB (not grown to the
-  disk); the wired interface is `end0` and asks for DHCP; no SSH key.
+  disk; `/usr/bin/rootfs-expand` is there to do it); the wired interface is
+  `end0` (NetworkManager 1.56) and asks for DHCP; no SSH key.
+- **No cloud-init** (`rpm -q cloud-init`: not installed), so first-boot
+  settings have to be files written into the root filesystem. `systemctl
+  is-enabled sshd` says enabled while `rpm -q openssh-server` says not
+  installed; unexplained.
 - k53 runs this release from a boot partition without `kernel_2712.img`, so
   its firmware uses `kernel8.img` with `initramfs8`; that `initramfs8` is
   for 6.6.77 while its `kernel8.img` is 6.12.103 (inferred from the file

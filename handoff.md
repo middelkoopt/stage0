@@ -27,9 +27,11 @@ run by hand (see Next session 1).
    for `STAGE0-INSTALLED`, stop answering it, power-cycle, wait for
    `login:`), with the per-image settings (`docs/images.md`) in one config
    file per image.
-2. First boot that's useful: SSH key and hostname via the seed (cloud-init
-   if the image has it), grow the root filesystem, and an address on
-   `piwulf` for the new head.
+2. First boot that's useful: SSH key, hostname and an address on `piwulf`
+   for the new head, and growing the root filesystem. The Rocky image has
+   no cloud-init, so these are files in the root filesystem (ext4, which
+   the agent's kernel mounts); open: how the seed names its target
+   partition.
 3. Update the Pi EEPROM firmware on the free nodes (allowed); ideally a
    small netbooted updater.
 4. k53 is powered off (it may run DHCP on piwulf); it may be powered and
