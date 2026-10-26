@@ -91,9 +91,28 @@ Nothing is mounted or written inside the installed root filesystem. On k52
 shows `k52 login:` on the console. The kernel takes at most 2047 bytes of
 command line, which bounds the number of keys.
 
+## Reaching the installed node
+
 After the install nothing gives the node an IPv4 address on the
-provisioning network; it is reachable by its IPv6 link-local address
-(`ping -6 ff02::1%eth0.3`, then `ip -6 neigh`).
+provisioning network (deferred: OO1 in [`ROADMAP.md`](../ROADMAP.md#next));
+it is reached by its IPv6 link-local address. The address is a
+NetworkManager "stable privacy" one, new with every install, so stage0
+finds it on the wire: `install` prints it at the end, and
+
+```
+$ ./stage0 get address k52
+k52: fe80::85bf:1b4d:1ae2:1427%eth0.3
+  ssh root@fe80::85bf:1b4d:1ae2:1427%eth0.3
+```
+
+looks it up any time (an echo to `ff02::1` on the network's interface, then
+the neighbour table, matched against the MACs the agent reported; no root
+needed). With the lab key, add `-i ~/.cache/stage0/ssh/id_ed25519` to the
+`ssh` command.
+
+`install` keeps a record of each node it installs (the agent's report,
+the result) in `~/.local/state/stage0/nodes/<node>.json`
+(`$XDG_STATE_HOME`, or `--state`); `get address` needs it for the MAC.
 
 ## The agent's command line
 

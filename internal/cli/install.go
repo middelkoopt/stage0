@@ -45,6 +45,7 @@ type installResult struct {
 	Installed json.RawMessage `json:"installed,omitempty"`
 	Ready     string          `json:"ready,omitempty"`
 	Seconds   float64         `json:"seconds"`
+	Address   string          `json:"address,omitempty"` // IPv6, found on the network after boot
 	Log       string          `json:"log"`
 	ServeLog  string          `json:"serveLog"`
 }
@@ -278,6 +279,17 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}
 	res.Seconds = time.Since(start).Round(time.Second).Seconds()
 	say("%s: up (%q on the console) after %.0f s", node.Name, res.Ready, res.Seconds)
+	if err := a.saveRecord(res); err != nil {
+		return err
+	}
+	fctx, cancel := context.WithTimeout(ctx, addressWait)
+	defer cancel()
+	if addr, err := a.address(fctx, res, n); err != nil {
+		say("%s: no IPv6 address found yet (%v); try: stage0 get address %s", node.Name, err, node.Name)
+	} else {
+		res.Address = addr
+		say("%s: %s\n  ssh root@%s", node.Name, addr, addr)
+	}
 	if a.output == "json" {
 		return a.writeJSON(res)
 	}

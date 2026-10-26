@@ -30,6 +30,7 @@ func (a *App) getCommand() *cobra.Command {
 		return r.Status(ctx)
 	}
 
+	get.AddCommand(a.addressCommand())
 	get.AddCommand(&cobra.Command{
 		Use:   "ports",
 		Short: "Switch ports: label, link, PoE and VLANs",

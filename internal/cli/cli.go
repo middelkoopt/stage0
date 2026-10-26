@@ -7,6 +7,8 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
+	"net/netip"
 	"os"
 	"time"
 
@@ -15,6 +17,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/console"
 	"github.com/middelkoopt/stage0/internal/initrd"
+	"github.com/middelkoopt/stage0/internal/neigh"
 	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/netswitch/gs316ep"
 )
@@ -27,18 +30,20 @@ type App struct {
 	OpenNetwork func(context.Context, config.Network) (Sockets, error)
 	CheckStatic func(path string) error
 	Executable  func() (string, error) // this binary, packed as the agent
+	FindAddress func(ctx context.Context, ifname string, macs []net.HardwareAddr) ([]netip.Addr, error)
 
 	sitePath    string
 	secretsPath string
 	output      string
 	timeout     time.Duration
 	switchName  string
+	statePath   string
 	dryRun      bool
 }
 
 // New returns the stage0 root command wired to the real world.
 func New() *cobra.Command {
-	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic, Executable: os.Executable}).Command()
+	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic, Executable: os.Executable, FindAddress: neigh.Find}).Command()
 }
 
 // Command builds the command tree.
@@ -55,6 +60,7 @@ func (a *App) Command() *cobra.Command {
 	f.StringVarP(&a.output, "output", "o", "text", "output format: text or json")
 	f.DurationVar(&a.timeout, "timeout", 30*time.Second, "time limit for the whole command")
 	f.StringVar(&a.switchName, "switch", "", "switch to use (default: the only one in the site config)")
+	f.StringVar(&a.statePath, "state", "", "records of installed nodes (default: $XDG_STATE_HOME/stage0 or ~/.local/state/stage0)")
 
 	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand(), a.installCommand())
 	return root

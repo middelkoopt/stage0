@@ -12,6 +12,7 @@ import (
 	"net"
 	"net/http"
 	"net/http/httptest"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -85,6 +86,7 @@ func (s *scripted) Write(p []byte) (int, error) { return len(p), nil }
 func (s *scripted) Close() error                { return nil }
 
 type installEnv struct {
+	state  string
 	app    *App
 	sw     *fakeSwitch
 	cache  string
@@ -119,21 +121,29 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 		},
 		CheckStatic: func(string) error { return nil },
 		Executable:  func() (string, error) { return agent, nil },
+		FindAddress: func(_ context.Context, ifname string, macs []net.HardwareAddr) ([]netip.Addr, error) {
+			if ifname != "eth0.3" || len(macs) != 1 || macs[0].String() != "d8:3a:dd:c5:c1:f3" {
+				t.Errorf("looked up %v on %s", macs, ifname)
+			}
+			return []netip.Addr{netip.MustParseAddr("fe80::5662:976b:2c19:7e38")}, nil
+		},
 	}
+	env.state = filepath.Join(dir, "state")
 	return env
 }
 
 func (e *installEnv) run(t *testing.T, args ...string) (string, error) {
 	t.Helper()
 	t.Chdir(t.TempDir()) // logs/ goes here
-	return runApp(t, e.app, append([]string{"install", "k53", "--image", "test",
+	return runApp(t, e.app, append([]string{"--state", e.state, "install", "k53", "--image", "test",
 		"--images", e.images, "--cache", e.cache, "--timeout", "20s"}, args...)...)
 }
 
 func TestInstall(t *testing.T) {
 	env := newInstallEnv(t, []string{
 		"bootloader...\r\n",
-		`STAGE0-REPORT {"model":"Raspberry Pi 5","disks":[{"name":"mmcblk0","bytes":128000000000}]}` + "\r\n",
+		`STAGE0-REPORT {"model":"Raspberry Pi 5","disks":[{"name":"mmcblk0","bytes":128000000000}],` +
+			`"interfaces":[{"name":"eth0","mac":"d8:3a:dd:c5:c1:f3","state":"up"}]}` + "\r\n",
 		"STAGE0-PROGRESS 256 MB written, 5 s\r\n",
 		`STAGE0-INSTALLED {"disk":"/dev/mmcblk0","bytes":3508535296,"seconds":104.9,"seeded":["cmdline.txt"]}` + "\r\n",
 		"<rebooted>",
@@ -148,12 +158,17 @@ func TestInstall(t *testing.T) {
 		Disk      string          `json:"disk"`
 		Installed json.RawMessage `json:"installed"`
 		Ready     string          `json:"ready"`
+		Address   string          `json:"address"`
 	}
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if res.Node != "k53" || res.Disk != "mmcblk0" || !strings.Contains(string(res.Installed), "3508535296") || res.Ready != "login: " {
+	if res.Node != "k53" || res.Disk != "mmcblk0" || !strings.Contains(string(res.Installed), "3508535296") ||
+		res.Ready != "login: " || res.Address != "fe80::5662:976b:2c19:7e38%eth0.3" {
 		t.Errorf("result %+v", res)
+	}
+	if b, err := os.ReadFile(filepath.Join(env.state, "nodes", "k53.json")); err != nil || !strings.Contains(string(b), "d8:3a:dd:c5:c1:f3") {
+		t.Errorf("install record: %s, %v", b, err)
 	}
 	// Off and on to netboot, then off and on to boot from disk.
 	if got := strings.Join(env.sw.writes, ","); got != "poe 2 false,poe 2 true,poe 2 false,poe 2 true" {
@@ -211,5 +226,28 @@ func TestInstallWrongVLAN(t *testing.T) {
 	}
 	if len(env.sw.writes) != 0 {
 		t.Errorf("switch writes %v", env.sw.writes)
+	}
+}
+
+func TestGetAddress(t *testing.T) {
+	state := t.TempDir()
+	os.MkdirAll(filepath.Join(state, "nodes"), 0o755)
+	os.WriteFile(filepath.Join(state, "nodes", "k53.json"),
+		[]byte(`{"node":"k53","report":{"interfaces":[{"name":"eth0","mac":"d8:3a:dd:c5:c1:f3"}]}}`), 0o644)
+	app := &App{FindAddress: func(_ context.Context, ifname string, macs []net.HardwareAddr) ([]netip.Addr, error) {
+		if ifname != "eth0.3" || len(macs) != 1 || macs[0].String() != "d8:3a:dd:c5:c1:f3" {
+			t.Errorf("looked up %v on %s", macs, ifname)
+		}
+		return []netip.Addr{netip.MustParseAddr("fe80::1")}, nil
+	}}
+	out, err := runApp(t, app, "--state", state, "get", "address", "k53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(out, "fe80::1%eth0.3") || !strings.Contains(out, "ssh root@fe80::1%eth0.3") {
+		t.Errorf("output %q", out)
+	}
+	if _, err := runApp(t, app, "--state", state, "get", "address", "k41"); err == nil || !strings.Contains(err.Error(), "install") {
+		t.Errorf("node never installed: err = %v", err)
 	}
 }

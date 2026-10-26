@@ -20,7 +20,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | Path | What |
 | --- | --- |
 | `cmd/stage0` | `main`: signal handling, exit code; runs the agent instead when it is PID 1 |
-| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`, `build initrd`, `build seed`, `install`); every command supports `-o json`, write commands `--dry-run` |
+| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`, `build initrd`, `build seed`, `install`, `get address`); every command supports `-o json`, write commands `--dry-run` |
 | `internal/config` | `site.yaml` (committed: switches, nodes with console and install disk, networks with their VLAN) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
 | `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients, then the same MACs' kernels (`ip=dhcp`, no vendor class) with the same address; in-memory leases; the Pi's option 43 |
 | `internal/httpd` | Read-only HTTP (port 80) from the same root, every request logged; for images too big or slow for TFTP |
@@ -30,6 +30,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/image` | Image config files (`images/<name>.yaml`), download and SHA-256 check into the cache, boot files out of the image's boot partition |
 | `internal/ptable` | GPT and MBR partition tables of a disk image |
 | `internal/fat` | Read-only FAT12/16/32 as an `io/fs.FS`, long names included |
+| `internal/neigh` | Finds a MAC's IPv6 addresses on an interface: echo to `ff02::1`, then the netlink neighbour table |
 | `internal/cpio` | newc cpio reader and writer (the initramfs format), no root or host tools |
 | `internal/console` | Serial console capture: copy to screen and log, stop on a pattern (`--until`) |
 | `internal/netswitch` | Switch model (ports, PoE, VLANs), port and VLAN lookup, change planning, the `Reader` and `Controller` interfaces |
