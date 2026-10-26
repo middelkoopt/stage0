@@ -61,6 +61,7 @@ type installResult struct {
 
 func (a *App) installCommand() *cobra.Command {
 	var imageName, imagesDir, cacheDir, disk, network string
+	var setPort bool
 	cmd := &cobra.Command{
 		Use:   "install <node> --image NAME",
 		Short: "Install an image on a node: netboot the agent, write the disk, boot it",
@@ -70,8 +71,8 @@ func (a *App) installCommand() *cobra.Command {
 			"  power the node off and on, and follow its console while the agent writes\n" +
 			"  the disk; stop serving, power it off and on again, and wait for the\n" +
 			"  installed system's prompt.\n" +
-			"The node's switch port must already be on the network's VLAN (stage0 set\n" +
-			"port). Console output goes to logs/<node>.log, serve's to logs/<node>-serve.log.",
+			"The node's switch port must be on the network's VLAN: --set-port moves it\n" +
+			"there (stage0 set port does it by hand). Console output goes to logs/<node>.log, serve's to logs/<node>-serve.log.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.checkOutput(); err != nil {
@@ -95,6 +96,7 @@ func (a *App) installCommand() *cobra.Command {
 			}
 			return a.install(ctx, installOptions{
 				node: args[0], image: imageName, images: imagesDir, cache: cacheDir, disk: disk, network: network,
+				setPort: setPort,
 			})
 		},
 	}
@@ -104,11 +106,13 @@ func (a *App) installCommand() *cobra.Command {
 	f.StringVar(&cacheDir, "cache", "", "where images and staged boot files go (default: the user cache dir/stage0)")
 	f.StringVar(&disk, "disk", "", "disk to write, e.g. mmcblk0 (default: the node's disk in site.yaml)")
 	f.StringVar(&network, "network", "", "network to install over (default: the only one in site.yaml)")
+	f.BoolVar(&setPort, "set-port", false, "move the node's port to the network's VLAN first (its old PVID stays tagged)")
 	return cmd
 }
 
 type installOptions struct {
 	node, image, images, cache, disk, network string
+	setPort                                   bool
 }
 
 func (a *App) install(ctx context.Context, o installOptions) error {
@@ -172,9 +176,19 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		if err != nil {
 			return fmt.Errorf("network %q: %w", n.Name, err)
 		}
-		if port.PVID != v.ID {
-			return fmt.Errorf("%s has PVID %d, not %s(%d); move it first: stage0 set port %s --pvid %s",
+		if port.PVID != v.ID && !o.setPort {
+			return fmt.Errorf("%s has PVID %d, not %s(%d); move it with --set-port or: stage0 set port %s --pvid %s",
 				label(port), port.PVID, v.Name, v.ID, node.Name, v.Name)
+		}
+		if port.PVID != v.ID {
+			// The old PVID stays, tagged, so nothing the port carried is lost.
+			tagged := slices.DeleteFunc(append(slices.Clone(port.Tagged), port.PVID), func(id int) bool { return id == v.ID })
+			slices.Sort(tagged)
+			ch, err := sw.SetVLANs(ctx, port.ID, v.ID, tagged)
+			if err != nil {
+				return err
+			}
+			say("%s: %s -> %s", label(port), showVLANs(st, ch.Before), showVLANs(st, ch.After))
 		}
 	}
 
@@ -189,7 +203,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}
 	say("image %s: %s", img.Name, imgPath)
 	run := filepath.Join(o.cache, "run", node.Name)
-	if err := a.stage(run, imgPath, img, installed, disk, n.Server.String(), filepath.Join(o.cache, "boot", img.SHA256)); err != nil {
+	if err := a.stage(run, imgPath, img, installed, node.Hostname, disk, n.Server.String(), filepath.Join(o.cache, "boot", img.SHA256)); err != nil {
 		return err
 	}
 	say("staged boot files in %s", run)
@@ -376,7 +390,7 @@ func (a *App) powerCycle(ctx context.Context, sw netswitch.Controller, port int)
 // stage builds the directory serve offers the node: the image's boot files
 // with stage0's initramfs added to config.txt, a cmdline.txt carrying the
 // agent's plan, the seed, and the image itself under images/.
-func (a *App) stage(run, imgPath string, img image.Config, installed, disk, server, bootCache string) error {
+func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, disk, server, bootCache string) error {
 	if _, err := os.Stat(bootCache); err != nil {
 		tmp := bootCache + ".tmp"
 		os.RemoveAll(tmp)
@@ -435,6 +449,13 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, disk, serv
 	}
 	if len(img.Config) > 0 {
 		if err := os.WriteFile(filepath.Join(seed, "config.txt"), image.EnsureConfig(cfg, img.Config), 0o644); err != nil {
+			return err
+		}
+	}
+	// cloud-init images (user-data on the boot partition) would otherwise
+	// set their own hostname at first boot.
+	if ud, err := os.ReadFile(filepath.Join(bootCache, "user-data")); err == nil {
+		if err := os.WriteFile(filepath.Join(seed, "user-data"), image.SetCloudInitHostname(ud, hostname), 0o644); err != nil {
 			return err
 		}
 	}

@@ -146,6 +146,27 @@ func EnsureConfig(cfg []byte, lines []string) []byte {
 	return out
 }
 
+// SetCloudInitHostname returns cloud-init user-data with its top-level
+// hostname set, editing only that line (or appending it), so the rest of
+// the file, comments included, stays as shipped.
+func SetCloudInitHostname(userData []byte, hostname string) []byte {
+	var out []byte
+	found := false
+	for l := range strings.Lines(string(userData)) {
+		if strings.HasPrefix(l, "hostname:") {
+			l, found = "hostname: "+hostname+"\n", true
+		}
+		out = append(out, l...)
+	}
+	if !found {
+		if len(out) > 0 && out[len(out)-1] != '\n' {
+			out = append(out, '\n')
+		}
+		out = append(out, "hostname: "+hostname+"\n"...)
+	}
+	return out
+}
+
 // File is the image's file name, from its URL.
 func (c Config) File() string { return path.Base(c.URL) }
 

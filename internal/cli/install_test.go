@@ -389,3 +389,16 @@ func TestCheck(t *testing.T) {
 		t.Errorf("unreachable: err = %v", err)
 	}
 }
+
+func TestInstallSetPort(t *testing.T) {
+	env := newInstallEnv(t, []string{"STAGE0-ERROR install: stop here\r\n"})
+	env.sw.st.Ports[1].PVID, env.sw.st.Ports[1].Tagged = 5, []int{3, 23} // k53 on piwulf, pinet tagged
+	_, err := env.run(t, "--set-port")
+	if err == nil || !strings.Contains(err.Error(), "stop here") {
+		t.Fatalf("err = %v", err)
+	}
+	// PVID pinet(3), the old PVID piwulf(5) kept tagged; then off and on.
+	if got := strings.Join(env.sw.writes, ","); !strings.HasPrefix(got, "vlans 2 3 [5 23],poe 2 false,poe 2 true") {
+		t.Errorf("switch writes %s", got)
+	}
+}

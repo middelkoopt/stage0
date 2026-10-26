@@ -50,8 +50,17 @@ in the `.CHECKSUM` file beside it). Raw size 3,508,535,296 bytes.
   On k400 the first agent boot without it printed nothing after the
   firmware and never fetched the image (its first console write probably
   blocked; inferred). `images/rocky-10.2-rpi.yaml` ensures it.
+- **It doesn't boot a Pi 400 from its SD card** (k400, 2026-10-26, three
+  installs): the EEPROM bootloader reads `config.txt` and starts
+  `start4.elf` from partition 1, but `start4.elf` then can't read the
+  partition at all (with `uart_2ndstage=1`: "Failed to load Device Tree
+  file", "Failed to open command line file 'cmdline.txt'", "No compatible
+  kernel found"), including files stage0 never touches. Over TFTP the same
+  `start4.elf` and `kernel8.img` run the agent fine. Unverified guess: the
+  boot partition's GPT type (EFI System; Alma's image uses Microsoft basic
+  data).
 - **On a Pi 400 the firmware picks `kernel8.img`**, which runs the agent
-  (k400, 2026-10-26); writing the image to its SD card took 378 s
+  over TFTP (k400, 2026-10-26); writing the image to its SD card took 378 s
   (k52's: 101 s).
 - **No cloud-init:** no `/usr/bin/cloud-init`, no `/etc/cloud`.
 - **`rpm -q` is unreliable on this image:** `rpm -qa` skips 51 packages
@@ -61,3 +70,27 @@ in the `.CHECKSUM` file beside it). Raw size 3,508,535,296 bytes.
   its firmware uses `kernel8.img` with `initramfs8`; that `initramfs8` is
   for 6.6.77 while its `kernel8.img` is 6.12.103 (inferred from the file
   lists; how k53 got that way is unknown).
+
+## AlmaLinux 10.1 Raspberry Pi
+
+`AlmaLinux-10-RaspberryPi-gpt-10.1-20260520.aarch64.raw.xz` from
+`https://repo.almalinux.org/almalinux/10/raspberrypi/images/` (323 MB;
+SHA-256 in `CHECKSUM` there). Raw size 3,040,870,400 bytes.
+
+- **Installs and boots on a Pi 400** (k400, 2026-10-26): written in
+  160 s, up in about 7 minutes, sshd answering, root logs in with the
+  site's keys (the kernel-command-line credential works here too).
+
+- **Layout:** GPT. Partition 1 (from LBA 8192, type "Microsoft basic
+  data", FAT, label `CIDATA`) is the boot partition; ext4 root on
+  partition 2, PARTUUID `3939c54e-e3fe-45cd-9c75-cf4ba65823d2`.
+- **Boot files:** `kernel8.img` + `initramfs8` (6.12.47, v8), no
+  `kernel_2712.img`. `config.txt` sets `auto_initramfs=1` and
+  `enable_uart=1`; `cmdline.txt` names the root by PARTUUID.
+- **cloud-init NoCloud** from the boot partition (`user-data`,
+  `meta-data`): the shipped `user-data` sets hostname `almalinux.local`,
+  creates user `almalinux` (sudo, a password hash, no SSH key) and turns
+  SSH password login off. Its README: add an SSH key to `user-data` before
+  first boot. Left as shipped, cloud-init overrides stage0's
+  `systemd.hostname=` with `almalinux.local`; stage0 seeds `user-data` with
+  the node's hostname instead.

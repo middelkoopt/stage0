@@ -23,8 +23,9 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
 - **`site.yaml`:** the node with a `console` and a `disk` (optionally a
   `hostname`, default its name), `sshKeys` (public keys for root on
   installed nodes), and one network with the `vlan` the node's port must be
-  on. `install` checks the port's PVID and stops if it is wrong; it does
-  not move ports.
+  on. `install` checks the port's PVID and stops if it is wrong, unless
+  `--set-port` is given: then it makes the network's VLAN the port's PVID
+  and keeps the old PVID tagged.
 
 ## The sequence
 
@@ -93,6 +94,11 @@ The installed system's `cmdline.txt` is the image's `cmdline` plus:
   to `/root/.ssh/authorized_keys` at boot (base64 because keys contain
   spaces). Public keys only: any user can read `/proc/cmdline`.
 
+For images with cloud-init `user-data` on their boot partition (AlmaLinux),
+the seed also carries that file with its top-level `hostname:` set to the
+node's (otherwise cloud-init sets its own at first boot); the rest of it
+stays as shipped.
+
 Nothing is mounted or written inside the installed root filesystem. On k52
 (Rocky 10.2) the result logs in as `ssh root@<node>` with a site key and
 shows `k52 login:` on the console. The kernel takes at most 2047 bytes of
@@ -123,6 +129,9 @@ k52: fe80::a9e7:2c9a:8c3d:d7c9%eth0.3
   addresses that answer; no root needed).
 
 With the lab key, add `-i ~/.cache/stage0/ssh/id_ed25519` to `ssh`.
+
+`install` also checks that the IPv4 address answers ping and that its SSH
+server greets (`SSH-2.0-…`); `./stage0 check <node>` repeats that check.
 
 `install` keeps a record of each node it installs (the agent's report, the
 MAC it netbooted on, its network and IPv4 address) in

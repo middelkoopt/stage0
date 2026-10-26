@@ -190,3 +190,14 @@ func TestEnsureConfig(t *testing.T) {
 		t.Errorf("no final newline: %q", got)
 	}
 }
+
+func TestSetCloudInitHostname(t *testing.T) {
+	in := "#cloud-config\n# comment\nhostname: almalinux.local\nssh_pwauth: false\nusers:\n  - name: almalinux\n    hostname: nested-stays\n"
+	want := "#cloud-config\n# comment\nhostname: k400\nssh_pwauth: false\nusers:\n  - name: almalinux\n    hostname: nested-stays\n"
+	if got := string(SetCloudInitHostname([]byte(in), "k400")); got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+	if got := string(SetCloudInitHostname([]byte("#cloud-config\nssh_pwauth: false"), "k400")); got != "#cloud-config\nssh_pwauth: false\nhostname: k400\n" {
+		t.Errorf("no hostname key: got %q", got)
+	}
+}

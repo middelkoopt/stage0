@@ -5,23 +5,25 @@ for how an install works and [`docs/development.md`](docs/development.md)
 for code.
 
 ## Status (2026-10-26)
-**`./stage0 install k52 --image rocky-10.2-rpi` installs Rocky 10.2 on k52
-(Pi 5) in 4 minutes and leaves it reachable as `ssh root@10.0.3.100`**
-(site keys, hostname `k52`; IPv6 link-local too): stage0 keeps the node's
-lease for its installed system, so NetworkManager's connection stays up
-([`docs/install.md`](docs/install.md#reaching-the-installed-node)). The
-lease lasts 24 h; `stage0 serve pinet` renews it. Uncommitted.
+**Two images, two boards:** `stage0 install k52 --image rocky-10.2-rpi`
+(Pi 5) and `stage0 install k400 --image alma-10.1-rpi` (Pi 400) both end
+with the node answering ping and SSH at its stage0 lease (`10.0.3.100`,
+`10.0.3.101`), site keys, its hostname. The Rocky image doesn't boot a
+Pi 400 (firmware can't read its boot partition; see
+[`docs/images.md`](docs/images.md)). Both nodes are on.
 
 ## Open decisions
-(none)
+- **WW1** How stage0 gets `CAP_NET_RAW` for router advertisements: a
+  setcap'd copy installed once, a small helper, or skip RAs. Your `sudo`
+  "ask" rule prompts for every setcap after a rebuild.
+- **WW2** What VLAN `install` should move a node's port to afterwards
+  (stage 0.5); the head also needs to stay reachable from stage0.
 
 ## Next session
-1. Try the same install on k400 (Pi 400, port 8, now on piwulf; move it to
-   pinet first): the firmware should pick `kernel8.img`.
-2. Then the roadmap's next items ([`ROADMAP.md`](ROADMAP.md#next)): "node
-   reports up", moving ports, more images. IPv4 for installed nodes (OO1),
-   growing the root filesystem (OO2) and the seed's `root/` (GG2) are
-   deferred there.
+1. [`ROADMAP.md`](ROADMAP.md#next) item 2: the agent reports to stage0
+   over HTTP, so `install` works without a serial console.
+2. Then item 4 (Raspberry Pi OS or Ubuntu for Pi: MBR, cloud-init), or
+   milestone 2 (the QEMU test bed).
 3. k53 is powered off (it may run DHCP on piwulf); it may be powered and
    used as root, stopping (not disabling) its services. Its `sudo` needs a
    password stage0 doesn't have.

@@ -1,0 +1,8 @@
+# AlmaLinux 10.1 Raspberry Pi image (GPT). Its boot partition is labelled
+# CIDATA and carries cloud-init NoCloud user-data and meta-data. Facts:
+# docs/images.md.
+url: https://repo.almalinux.org/almalinux/10/raspberrypi/images/AlmaLinux-10-RaspberryPi-gpt-10.1-20260520.aarch64.raw.xz
+sha256: bb4315d4659916c42de5f064c6e8b49647786902852ddd2d4be97916b95376ef
+
+# As shipped (it already names the root by PARTUUID and sets enable_uart).
+cmdline: console=serial0,115200 console=tty1 root=PARTUUID=3939c54e-e3fe-45cd-9c75-cf4ba65823d2 rootfstype=ext4 rootwait

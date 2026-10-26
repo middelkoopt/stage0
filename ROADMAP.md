@@ -44,15 +44,17 @@ reboot.
    - cloud-init NoCloud served by `serve`'s HTTP
      (`ds=nocloud;s=http://…/`), for images that have cloud-init (Rocky Pi
      does not).
-2. **Node reports "up"**: a signal stage0 can wait for other than the
-   console's login prompt (e.g. an HTTP call from first boot, or SSH
-   answering).
-3. **Moving ports:** `install` moves the node's port to the network's VLAN
-   before it starts and to the cluster VLAN after (stage 0.0, 0.5), once
-   the network config names both.
-4. **More images:** a second config file (a Pi 4 / Pi 400 run of the same
-   Rocky image; Raspberry Pi OS or Ubuntu for Pi, which use MBR and
-   cloud-init).
+2. **Node reports "up" without a console:** `install` now checks ping and
+   SSH after the lease, but still needs the console to know when the agent
+   is done and the system has booted. Next: the agent reports to stage0
+   over HTTP, so nodes without a serial console can be installed.
+3. **Moving ports after the install** (stage 0.5): to a cluster VLAN, once
+   decided what it is (the head needs stage0's network too). Moving to the
+   provisioning VLAN before is built (`install --set-port`).
+4. **More images:** Raspberry Pi OS or Ubuntu for Pi (MBR, cloud-init).
+   Built: Rocky 10.2 (Pi 5; doesn't boot a Pi 4) and AlmaLinux 10.1 (Pi 4).
+5. **Router advertisements**, for a stable IPv6 address; needs
+   `CAP_NET_RAW` for stage0 (a decision for the human).
 
 ## Install routes
 
