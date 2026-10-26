@@ -20,13 +20,16 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | Path | What |
 | --- | --- |
 | `cmd/stage0` | `main`: signal handling, exit code; runs the agent instead when it is PID 1 |
-| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`, `build initrd`, `build seed`); every command supports `-o json`, write commands `--dry-run` |
-| `internal/config` | `site.yaml` (committed: switches, nodes, networks) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
+| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`, `build initrd`, `build seed`, `install`); every command supports `-o json`, write commands `--dry-run` |
+| `internal/config` | `site.yaml` (committed: switches, nodes with console and install disk, networks with their VLAN) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
 | `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients, then the same MACs' kernels (`ip=dhcp`, no vendor class) with the same address; in-memory leases; the Pi's option 43 |
 | `internal/httpd` | Read-only HTTP (port 80) from the same root, every request logged; for images too big or slow for TFTP |
 | `internal/tftpd` | Read-only TFTP from one directory (confined with `os.Root`), every request logged |
 | `internal/agent` | stage0 on the node (PID 1 of its initramfs): prints `STAGE0-REPORT {json}` (disks, interfaces, payload SHA-256); writes an xz image to a disk only when the kernel command line has `stage0.disk=` and a matching `stage0.sha256=`; fetches it first from `stage0.url=` (HTTP, with `ip=dhcp`) or uses `/payload`; then unpacks `stage0.seed=` (a cpio of first-boot files) over the image's first (FAT) partition |
 | `internal/initrd` | Builds that initramfs: the static stage0 binary as `/init`, `/dev/console`, optional `/payload`; and seeds (`build seed`) |
+| `internal/image` | Image config files (`images/<name>.yaml`), download and SHA-256 check into the cache, boot files out of the image's boot partition |
+| `internal/ptable` | GPT and MBR partition tables of a disk image |
+| `internal/fat` | Read-only FAT12/16/32 as an `io/fs.FS`, long names included |
 | `internal/cpio` | newc cpio reader and writer (the initramfs format), no root or host tools |
 | `internal/console` | Serial console capture: copy to screen and log, stop on a pattern (`--until`) |
 | `internal/netswitch` | Switch model (ports, PoE, VLANs), port and VLAN lookup, change planning, the `Reader` and `Controller` interfaces |
@@ -36,7 +39,10 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 
 - **Tests first.** Hardware behavior is captured as fixtures in `testdata/`
   (redact serials, MACs and session tokens) and replayed by fakes, so
-  `go test ./...` never touches the lab.
+  `go test ./...` never touches the lab. Disk and FAT fixtures come from
+  `tools/make-fixtures.sh`. Checks against real images run only when
+  `STAGE0_TEST_IMAGE` (raw), `STAGE0_TEST_IMAGE_XZ` or
+  `STAGE0_TEST_INITRAMFS` names one.
 - **Strict parsing.** Drivers fail on text they don't recognize rather than
   guessing; a firmware change should show up as a test failure.
 - **Nodes are named by their switch-port label** (a port number also works).

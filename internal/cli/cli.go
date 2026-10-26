@@ -26,6 +26,7 @@ type App struct {
 	OpenConsole func(device string, baud int) (io.ReadWriteCloser, error)
 	OpenNetwork func(context.Context, config.Network) (Sockets, error)
 	CheckStatic func(path string) error
+	Executable  func() (string, error) // this binary, packed as the agent
 
 	sitePath    string
 	secretsPath string
@@ -37,7 +38,7 @@ type App struct {
 
 // New returns the stage0 root command wired to the real world.
 func New() *cobra.Command {
-	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic}).Command()
+	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic, Executable: os.Executable}).Command()
 }
 
 // Command builds the command tree.
@@ -55,7 +56,7 @@ func (a *App) Command() *cobra.Command {
 	f.DurationVar(&a.timeout, "timeout", 30*time.Second, "time limit for the whole command")
 	f.StringVar(&a.switchName, "switch", "", "switch to use (default: the only one in the site config)")
 
-	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand())
+	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand(), a.installCommand())
 	return root
 }
 

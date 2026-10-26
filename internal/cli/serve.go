@@ -53,42 +53,46 @@ func (a *App) serveCommand() *cobra.Command {
 			}
 			log := slog.New(h).With("network", n.Name)
 
-			files, err := tftpd.New(root, log)
-			if err != nil {
-				return err
-			}
-			web, err := httpd.New(root, log)
-			if err != nil {
-				return err
-			}
-			leases := dhcpd.New(dhcpd.Config{
-				Server: n.Server, Subnet: n.Subnet,
-				PoolFirst: n.PoolFirst, PoolLast: n.PoolLast, LeaseTime: leaseTime,
-			}, log)
-
 			// Runs until interrupted unless --timeout is given.
 			ctx, cancel := context.WithCancel(cmd.Context())
 			if cmd.Flags().Changed("timeout") {
 				ctx, cancel = a.context(cmd)
 			}
 			defer cancel()
-
-			socks, err := a.OpenNetwork(ctx, n)
-			if err != nil {
-				return err
-			}
-			log.Info("serving", "interface", n.Interface, "address", n.Server, "pool", n.Pool, "root", root)
-			g, ctx := errgroup.WithContext(ctx)
-			g.Go(func() error { return leases.Serve(ctx, socks.DHCP) })
-			g.Go(func() error { return files.Serve(ctx, socks.TFTP) })
-			g.Go(func() error { return web.Serve(ctx, socks.HTTP) })
-			err = g.Wait()
-			log.Info("stopped")
-			return err
+			return a.serve(ctx, n, root, log)
 		},
 	}
 	cmd.Flags().StringVar(&root, "root", "", "directory of boot files to serve over TFTP")
 	return cmd
+}
+
+// serve answers DHCPv4, TFTP and HTTP from root on network n until ctx is
+// done.
+func (a *App) serve(ctx context.Context, n config.Network, root string, log *slog.Logger) error {
+	files, err := tftpd.New(root, log)
+	if err != nil {
+		return err
+	}
+	web, err := httpd.New(root, log)
+	if err != nil {
+		return err
+	}
+	leases := dhcpd.New(dhcpd.Config{
+		Server: n.Server, Subnet: n.Subnet,
+		PoolFirst: n.PoolFirst, PoolLast: n.PoolLast, LeaseTime: leaseTime,
+	}, log)
+	socks, err := a.OpenNetwork(ctx, n)
+	if err != nil {
+		return err
+	}
+	log.Info("serving", "interface", n.Interface, "address", n.Server, "pool", n.Pool, "root", root)
+	g, ctx := errgroup.WithContext(ctx)
+	g.Go(func() error { return leases.Serve(ctx, socks.DHCP) })
+	g.Go(func() error { return files.Serve(ctx, socks.TFTP) })
+	g.Go(func() error { return web.Serve(ctx, socks.HTTP) })
+	err = g.Wait()
+	log.Info("stopped")
+	return err
 }
 
 // Sockets are serve's listening sockets.

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/middelkoopt/stage0/internal/config"
@@ -19,13 +20,29 @@ import (
 type fakeSwitch struct {
 	st     netswitch.Status
 	err    error
+	mu     sync.Mutex
 	writes []string
+}
+
+// ons counts the PoE-on writes so far.
+func (f *fakeSwitch) ons() int {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	n := 0
+	for _, w := range f.writes {
+		if strings.HasSuffix(w, " true") {
+			n++
+		}
+	}
+	return n
 }
 
 func (f *fakeSwitch) Status(context.Context) (netswitch.Status, error) { return f.st, f.err }
 
 func (f *fakeSwitch) SetPoE(_ context.Context, port int, on bool) (netswitch.Change, error) {
+	f.mu.Lock()
 	f.writes = append(f.writes, fmt.Sprintf("poe %d %v", port, on))
+	f.mu.Unlock()
 	want, err := f.st.PlanPoE(port, on)
 	before, _ := f.st.PortID(port)
 	return netswitch.Change{Before: before, After: want}, err
@@ -61,10 +78,10 @@ const testSite = `
 switches:
   - {name: lab, address: switch.example}
 nodes:
-  - {name: k53, console: {device: /dev/serial/by-id/probe}}
+  - {name: k53, console: {device: /dev/serial/by-id/probe}, disk: mmcblk0}
   - {name: k41}
 networks:
-  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199}
+  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199, vlan: pinet}
 `
 
 // run executes the CLI against testSite, with the switch served by sw.

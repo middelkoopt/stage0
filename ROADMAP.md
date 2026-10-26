@@ -17,12 +17,12 @@ so different stage-1 provisioners can be CI-tested on real and virtual hardware.
 
 | Step | Does | State (Pi 5) |
 | --- | --- | --- |
-| 0.0 | Load site config; fetch pinned artifacts; power off the target, move its port to the provisioning VLAN; start services; log the console | Parts built, run by hand |
+| 0.0 | Load site config; fetch pinned artifacts; power off the target, move its port to the provisioning VLAN; start services; log the console | Built (`stage0 install`), except moving the port: it checks the port is on the VLAN |
 | 0.1 | Target netboots (TFTP or HTTP) | Built (IPv4 TFTP) |
-| 0.2 | The agent identifies the node and gets its plan | Reports the node; plan is a hand-written `cmdline.txt` |
+| 0.2 | The agent identifies the node and gets its plan | Built: the plan is the node's `cmdline.txt`, written by `install` |
 | 0.3 | Write the image to disk, then the first-boot files | Built |
-| 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" | Boots to a login prompt; nothing set yet |
-| 0.5 | Mark the node installed (stop answering it), move its port to the cluster VLAN, stop | By hand |
+| 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" | Boots; `install` waits for the login prompt; nothing set yet |
+| 0.5 | Mark the node installed (stop answering it), move its port to the cluster VLAN, stop | Stops answering (one node per run); no VLAN move |
 
 Boot order stays **network first**: no answer means the node falls through to
 disk, which is safe for Pis and in general. Stage0 must therefore stop
@@ -31,15 +31,7 @@ reboot.
 
 ## Next
 
-1. **`stage0 install <node>`**: stages 0.0-0.5 as one command. A per-node
-   boot root (`cmdline.txt` with the node's plan), `serve` running for the
-   duration, power on, wait for `STAGE0-INSTALLED`, stop answering that MAC,
-   power-cycle, wait for the installed OS; `--json` throughout.
-2. **One config file per image**: URL, checksum, target disk default, the
-   Pi boot files to serve, the `cmdline.txt` the installed system needs
-   (Rocky Pi: `root=PARTUUID=…`, see [`docs/images.md`](docs/images.md)),
-   and the image's partitions.
-3. **First-boot settings (stage 0.4)**, in order of preference:
+1. **First-boot settings (stage 0.4)**, in order of preference:
    - kernel command line: `systemd.hostname=`, and the SSH key as a systemd
      credential (`ssh.authorized_keys.root`); no disk mounting. Untested on
      Rocky (needs its `provision.conf` tmpfiles rule).
@@ -50,9 +42,15 @@ reboot.
      (`ds=nocloud;s=http://…/`), for images that have cloud-init (Rocky Pi
      does not).
    - Grow the root filesystem (Rocky ships `rootfs-expand` and `growpart`).
-4. **Node reports "up"**: a signal stage0 can wait for other than the
+2. **Node reports "up"**: a signal stage0 can wait for other than the
    console's login prompt (e.g. an HTTP call from first boot, or SSH
    answering).
+3. **Moving ports:** `install` moves the node's port to the network's VLAN
+   before it starts and to the cluster VLAN after (stage 0.0, 0.5), once
+   the network config names both.
+4. **More images:** a second config file (a Pi 4 / Pi 400 run of the same
+   Rocky image; Raspberry Pi OS or Ubuntu for Pi, which use MBR and
+   cloud-init).
 
 ## Install routes
 
@@ -69,8 +67,10 @@ to the agent:
 
 Later, for UEFI and QEMU machines: a stock installer ISO with an answer file
 (kickstart, preseed, autoinstall). Distro installers don't netboot a Pi 5.
-The earlier plan (the target's own kernel and tools running from a
-chroot, or a container built here) is dropped.
+Later, if custom partitioning or non-raw images are needed: the agent
+builds a root filesystem in RAM (from a container built here, or the
+image's partitions mounted) and runs the target's own tools from a chroot
+to partition, format, copy and install the bootloader (LL1).
 
 ## Components (one static Go binary)
 
@@ -99,9 +99,16 @@ HTTP), the agent, initramfs and seed builders (see
 - **Test bed (GG3, decided):** QEMU VMs (x86_64 q35 + OVMF, aarch64 virt +
   AAVMF) on a virtual Ethernet switch built into stage0, which QEMU joins
   with `-netdev stream` over a Unix socket. stage0 is a port on that switch
-  through either a user-owned tap device (one-time root setup; `serve` runs
-  unchanged) or gVisor's netstack (no root). A virtual BMC in front of QEMU
-  tests the IPMI client and SOL without hardware.
+  through a user-owned tap device (default: one-time root setup, `serve`
+  runs unchanged) or gVisor's netstack (no root); both are built (JJ1).
+  Then: the switch attaches a real interface (e.g. eth0.3) as a port with a
+  packet socket (`CAP_NET_RAW`), so VMs and Pis share a network without a
+  host bridge. Frames it sends out don't reach the host's own stack, so in
+  that mode stage0 serves through its netstack port with its own address,
+  and refuses to run beside a `serve` on the same interface. The host itself
+  can't hold a conversation with VMs in that mode (replies go to the wire);
+  add a tap port if that's wanted. A virtual BMC in front of QEMU tests the IPMI client and SOL
+  without hardware.
 
 ## Milestones (order tentative)
 

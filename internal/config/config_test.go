@@ -213,3 +213,29 @@ func TestLoadSiteNetworkErrors(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadSiteInstallFields(t *testing.T) {
+	p := write(t, "site.yaml", `
+nodes:
+  - {name: k52, disk: mmcblk0}
+networks:
+  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199, vlan: pinet}
+`, 0o644)
+	s, err := LoadSite(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.Node("k52"); n.Disk != "mmcblk0" {
+		t.Errorf("disk = %q", n.Disk)
+	}
+	if n, _ := s.Network("pinet"); n.VLAN != "pinet" {
+		t.Errorf("vlan = %q", n.VLAN)
+	}
+	for name, body := range map[string]string{
+		"bad disk": "nodes:\n  - {name: k52, disk: /dev/mmcblk0}\n",
+	} {
+		if _, err := LoadSite(write(t, "site.yaml", body, 0o644)); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}

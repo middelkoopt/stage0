@@ -11,6 +11,7 @@ import (
 	"io/fs"
 	"net/netip"
 	"os"
+	"regexp"
 	"slices"
 	"strings"
 
@@ -41,6 +42,7 @@ type Switch struct {
 type Node struct {
 	Name    string   `yaml:"name"`
 	Console *Console `yaml:"console,omitempty"`
+	Disk    string   `yaml:"disk,omitempty"` // install target under /dev, e.g. mmcblk0
 }
 
 // Console is a node's local serial console.
@@ -53,15 +55,18 @@ type Console struct {
 // host's interface already carries Address; stage0 doesn't configure it.
 type Network struct {
 	Name      string `yaml:"name"`
-	Interface string `yaml:"interface"` // e.g. eth0.3
-	Address   string `yaml:"address"`   // stage0's IPv4 address with prefix, e.g. 10.0.3.1/24
-	Pool      string `yaml:"pool"`      // addresses to lease: first-last
+	Interface string `yaml:"interface"`      // e.g. eth0.3
+	Address   string `yaml:"address"`        // stage0's IPv4 address with prefix, e.g. 10.0.3.1/24
+	Pool      string `yaml:"pool"`           // addresses to lease: first-last
+	VLAN      string `yaml:"vlan,omitempty"` // the switch VLAN (name or ID) nodes must be on to install
 
 	// Parsed from the fields above.
 	Server              netip.Addr   `yaml:"-"`
 	Subnet              netip.Prefix `yaml:"-"`
 	PoolFirst, PoolLast netip.Addr   `yaml:"-"`
 }
+
+var diskName = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
 
 // Drivers are the switch drivers stage0 knows.
 var Drivers = []string{"gs316ep"}
@@ -109,6 +114,9 @@ func (s *Site) normalize() error {
 			return fmt.Errorf("node %q: defined twice", n.Name)
 		}
 		seen[n.Name] = true
+		if n.Disk != "" && !diskName.MatchString(n.Disk) {
+			return fmt.Errorf("node %q: disk %q is not a name under /dev like mmcblk0", n.Name, n.Disk)
+		}
 		if c := n.Console; c != nil {
 			switch {
 			case c.Device == "":

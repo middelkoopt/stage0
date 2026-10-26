@@ -30,7 +30,7 @@ func (a *App) buildCommand() *cobra.Command {
 				return errors.New("--out is required")
 			}
 			if agentPath == "" {
-				exe, err := os.Executable()
+				exe, err := a.Executable()
 				if err != nil {
 					return err
 				}

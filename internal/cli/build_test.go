@@ -63,7 +63,8 @@ func TestBuildInitrd(t *testing.T) {
 func TestBuildInitrdRefusesDynamic(t *testing.T) {
 	dir := t.TempDir()
 	out := filepath.Join(dir, "initramfs8")
-	app := &App{CheckStatic: func(string) error { return errors.New("x is dynamically linked") }}
+	app := &App{CheckStatic: func(string) error { return errors.New("x is dynamically linked") },
+		Executable: func() (string, error) { return "/x", nil }}
 	if _, err := runApp(t, app, "build", "initrd", "--out", out); err == nil || !strings.Contains(err.Error(), "dynamically") {
 		t.Errorf("err = %v", err)
 	}
