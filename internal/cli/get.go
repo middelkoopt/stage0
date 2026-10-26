@@ -17,14 +17,11 @@ func (a *App) getCommand() *cobra.Command {
 		Use:   "get",
 		Short: "Show the current state of something",
 	}
-	var switchName string
-	get.PersistentFlags().StringVar(&switchName, "switch", "", "switch to read (default: the only one in the site config)")
-
 	status := func(cmd *cobra.Command) (netswitch.Status, error) {
 		if err := a.checkOutput(); err != nil {
 			return netswitch.Status{}, err
 		}
-		r, err := a.switchReader(switchName)
+		r, err := a.openSite()
 		if err != nil {
 			return netswitch.Status{}, err
 		}

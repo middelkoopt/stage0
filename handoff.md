@@ -4,10 +4,10 @@ Stage0 installs a head node from this repo alone. Read
 for code and [`docs/netboot.md`](docs/netboot.md) for Pi work.
 
 ## Status (2026-10-25)
-First slice built, tested and committed: Go module, CLI (`stage0 get
-ports|vlans`, `-o json`), `site.yaml` + `.secrets`, read-only GS316EP driver;
-works against the lab switch. First image is Rocky 10 (checked: no UEFI shim;
-its stock initramfs has no networking).
+Second slice committed and verified live: `stage0 power`, `stage0 set port`,
+`stage0 console`, `site.yaml` nodes with consoles (k52 on the Debug Probe,
+k400 on the CP2102). Switch quirks are in
+[`docs/development.md`](docs/development.md#gs316ep-notes).
 
 ## Open decisions
 - **K2/K3** How the install reaches the disk. Exploring first: **agent +
@@ -20,15 +20,11 @@ its stock initramfs has no networking).
   and whether the Rocky Pi kernel has SD/NVMe drivers built in or needs
   modules from the image. Fallback: (a) small initramfs that fetches the
   image over the network.
-- **V1** Verbs for the next slice — recommend `stage0 power on|off|cycle
-  <node>`, `stage0 set port <node> --pvid pinet --tagged piwulf,coffee`,
-  `stage0 console <node>` (`<node>` = switch port label); sets the command
-  shape later slices build on.
-- **I2** Which node each serial adapter is wired to (Debug Probe
-  `/dev/ttyACM0`, CP2102 `/dev/ttyUSB0`).
 
 ## Next session
-1. Next slice: PoE power on/off/cycle and VLAN moves (write side of the
-   switch driver, against captured POST fixtures), serial console capture.
-2. Then DHCPv4 + TFTP on `pinet` (VLAN 3) with transfer logging, and the
-   agent + payload experiment on k53 (switch port 2).
+1. DHCPv4 + TFTP on `pinet` (VLAN 3) with transfer logging, and the agent +
+   payload experiment on **k52** (Pi 5, port 1, console on the Debug Probe;
+   free to wipe). k52 now netboots warewulf's image from k53 on `piwulf` and
+   hangs at `ignition-fetch` (so does k400); moving its port to `pinet` takes
+   it off warewulf. k53 is the working warewulf head: use it from the inside,
+   don't power it.

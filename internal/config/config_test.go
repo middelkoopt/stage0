@@ -116,3 +116,49 @@ func TestSecretErrorsDoNotLeakValues(t *testing.T) {
 		t.Errorf("error leaks the secret: %v", err)
 	}
 }
+
+func TestLoadSiteNodes(t *testing.T) {
+	p := write(t, "site.yaml", `
+nodes:
+  - name: k53
+    console:
+      device: /dev/serial/by-id/usb-probe
+  - name: k52
+    console: {device: /dev/ttyUSB0, baud: 9600}
+  - name: k41
+`, 0o644)
+	s, err := LoadSite(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.Node("k53")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.Console == nil || n.Console.Device != "/dev/serial/by-id/usb-probe" || n.Console.Baud != 115200 {
+		t.Errorf("k53 = %+v (baud should default to 115200)", n.Console)
+	}
+	if n, _ := s.Node("k52"); n.Console.Baud != 9600 {
+		t.Errorf("k52 baud = %d", n.Console.Baud)
+	}
+	if n, _ := s.Node("k41"); n.Console != nil {
+		t.Errorf("k41 has no console, got %+v", n.Console)
+	}
+	if _, err := s.Node("k99"); err == nil {
+		t.Error("unknown node: want error")
+	}
+}
+
+func TestLoadSiteNodeErrors(t *testing.T) {
+	tests := map[string]string{
+		"no name":           "nodes:\n  - console: {device: /dev/x}\n",
+		"duplicate":         "nodes:\n  - name: a\n  - name: a\n",
+		"console no device": "nodes:\n  - name: a\n    console: {baud: 9600}\n",
+		"negative baud":     "nodes:\n  - name: a\n    console: {device: /dev/x, baud: -1}\n",
+	}
+	for name, body := range tests {
+		if _, err := LoadSite(write(t, "site.yaml", body, 0o644)); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}

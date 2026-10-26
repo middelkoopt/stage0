@@ -13,24 +13,28 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/middelkoopt/stage0/internal/config"
+	"github.com/middelkoopt/stage0/internal/console"
 	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/netswitch/gs316ep"
 )
 
 // App holds what commands need from the outside world, so tests can replace it.
 type App struct {
-	Stdout     io.Writer
-	OpenSwitch func(config.Switch, config.SwitchSecret) (netswitch.Reader, error)
+	Stdout      io.Writer
+	OpenSwitch  func(config.Switch, config.SwitchSecret) (netswitch.Controller, error)
+	OpenConsole func(device string, baud int) (io.ReadCloser, error)
 
 	sitePath    string
 	secretsPath string
 	output      string
 	timeout     time.Duration
+	switchName  string
+	dryRun      bool
 }
 
 // New returns the stage0 root command wired to the real world.
 func New() *cobra.Command {
-	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch}).Command()
+	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open}).Command()
 }
 
 // Command builds the command tree.
@@ -46,8 +50,9 @@ func (a *App) Command() *cobra.Command {
 	f.StringVar(&a.secretsPath, "secrets", config.DefaultSecretsPath, "credentials file (mode 600, git-ignored)")
 	f.StringVarP(&a.output, "output", "o", "text", "output format: text or json")
 	f.DurationVar(&a.timeout, "timeout", 30*time.Second, "time limit for the whole command")
+	f.StringVar(&a.switchName, "switch", "", "switch to use (default: the only one in the site config)")
 
-	root.AddCommand(a.getCommand())
+	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand())
 	return root
 }
 
@@ -65,13 +70,13 @@ func (a *App) checkOutput() error {
 	return fmt.Errorf("unknown output format %q (want text or json)", a.output)
 }
 
-// switchReader loads the site and secrets and opens the named switch.
-func (a *App) switchReader(name string) (netswitch.Reader, error) {
+// openSite loads the site and secrets and opens the switch named by --switch.
+func (a *App) openSite() (netswitch.Controller, error) {
 	site, err := config.LoadSite(a.sitePath)
 	if err != nil {
 		return nil, err
 	}
-	sw, err := site.Switch(name)
+	sw, err := site.Switch(a.switchName)
 	if err != nil {
 		return nil, err
 	}
@@ -83,7 +88,7 @@ func (a *App) switchReader(name string) (netswitch.Reader, error) {
 }
 
 // openSwitch is the real driver lookup.
-func openSwitch(sw config.Switch, sec config.SwitchSecret) (netswitch.Reader, error) {
+func openSwitch(sw config.Switch, sec config.SwitchSecret) (netswitch.Controller, error) {
 	switch sw.Driver {
 	case "gs316ep":
 		c, err := gs316ep.New(sw.Address, gs316ep.Credentials{Password: sec.Password, LoginHash: sec.LoginHash}, nil)

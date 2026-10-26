@@ -3,3 +3,13 @@
 switches:
   - name: switch
     address: switch.coffee.lan
+
+# Nodes are named by their switch port label. Consoles use /dev/serial/by-id
+# paths, which stay put across reboots and replugging.
+nodes:
+  - name: k52
+    console:
+      device: /dev/serial/by-id/usb-Raspberry_Pi_Debug_Probe__CMSIS-DAP__E661640843924C33-if01
+  - name: k400
+    console:
+      device: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0

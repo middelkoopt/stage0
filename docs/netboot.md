@@ -47,6 +47,11 @@ Source unless noted: Raspberry Pi documentation
   size had to be capped at 1428 for Pi over IPv6; Pi 5 needed
   `TFTP_FILE_TIMEOUT=60000`; Pi 5 IPv6 netboot failed without manual
   neighbor-table entries on the server.
+- **Seen on k52** (Pi 5, bootloader 2025-12-08, IPv4 from warewulf's TFTP,
+  2026-10-25 serial log): it asks for `<serial>/config.txt` first and falls
+  back to `config.txt` at the root; later files follow paths set in
+  `config.txt`. A 49 MB `initramfs8` came over TFTP in about 15 s. The log
+  line reads `Boot mode: NETWORK (02) order f41`.
 
 ## IPv6 boot information
 

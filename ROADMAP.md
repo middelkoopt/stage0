@@ -48,10 +48,11 @@ file set on Pi (a Pi cannot boot a UKI).
   a fixed boot server).
 - **Boot services:** dynamic TFTP (Pi first), HTTP (UEFI HTTP boot, ISO and
   image downloads, node API), read-only OCI registry cache pinned by digest.
-- **Control:** power (QEMU QMP, IPMI, PoE), console (QEMU serial, IPMI SOL,
-  local serial; always logged), switch port/VLAN (GS316EP rewrite of
-  `../lab/setup/switch.py`). Every action is a CLI subcommand with `--json`,
-  timeouts and `--dry-run`, so a person or an agent can drive the same steps.
+- **Control:** power (QEMU QMP, IPMI), console (QEMU serial, IPMI SOL;
+  always logged), and console input for people. PoE power, switch VLANs and
+  local serial capture are built (see
+  [`docs/development.md`](docs/development.md)); new control follows the same
+  CLI pattern.
 - **Test bed:** QEMU (x86_64 q35 + OVMF, aarch64 virt + AAVMF) on a socket
   network, with a virtual BMC in front of QEMU so the IPMI client and SOL are
   tested without hardware.
@@ -85,8 +86,8 @@ machines; distro installers do not netboot a Pi 5.
 
 ## Milestones (order tentative)
 
-1. **Pi 5 over IPv4 TFTP:** switch driver (port, PoE), serial console, dynamic
-   TFTP, both install routes; a Pi 5 head node up with SSH.
+1. **Pi 5 over IPv4 TFTP:** dynamic TFTP, both install routes; a Pi 5 head
+   node up with SSH.
 2. Pi 5 over IPv6.
 3. Network modes beyond *own*: none, boot-only, proxy.
 4. UEFI and QEMU (x86_64, aarch64): HTTP boot, QEMU power and console, IPMI

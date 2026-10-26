@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"os"
 	"path/filepath"
 	"strings"
@@ -14,12 +15,34 @@ import (
 	"github.com/middelkoopt/stage0/internal/netswitch"
 )
 
-type fakeReader struct {
-	st  netswitch.Status
-	err error
+// fakeSwitch serves a fixed status and records writes instead of making them.
+type fakeSwitch struct {
+	st     netswitch.Status
+	err    error
+	writes []string
 }
 
-func (f fakeReader) Status(context.Context) (netswitch.Status, error) { return f.st, f.err }
+func (f *fakeSwitch) Status(context.Context) (netswitch.Status, error) { return f.st, f.err }
+
+func (f *fakeSwitch) SetPoE(_ context.Context, port int, on bool) (netswitch.Change, error) {
+	f.writes = append(f.writes, fmt.Sprintf("poe %d %v", port, on))
+	want, err := f.st.PlanPoE(port, on)
+	before, _ := f.st.PortID(port)
+	return netswitch.Change{Before: before, After: want}, err
+}
+
+func (f *fakeSwitch) CyclePoE(_ context.Context, port int) (netswitch.Change, error) {
+	f.writes = append(f.writes, fmt.Sprintf("cycle %d", port))
+	p, _ := f.st.PortID(port)
+	return netswitch.Change{Before: p, After: p}, nil
+}
+
+func (f *fakeSwitch) SetVLANs(_ context.Context, port, pvid int, tagged []int) (netswitch.Change, error) {
+	f.writes = append(f.writes, fmt.Sprintf("vlans %d %d %v", port, pvid, tagged))
+	want, err := f.st.PlanVLANs(port, pvid, tagged)
+	before, _ := f.st.PortID(port)
+	return netswitch.Change{Before: before, After: want}, err
+}
 
 func testStatus() netswitch.Status {
 	on, off := true, false
@@ -33,24 +56,38 @@ func testStatus() netswitch.Status {
 	}
 }
 
-// run executes the CLI with a site file naming one switch and a fake reader.
-func run(t *testing.T, reader netswitch.Reader, args ...string) (string, error) {
+// testSite names one switch and two nodes, one with a console.
+const testSite = `
+switches:
+  - {name: lab, address: switch.example}
+nodes:
+  - {name: k53, console: {device: /dev/serial/by-id/probe}}
+  - {name: k41}
+`
+
+// run executes the CLI against testSite, with the switch served by sw.
+func run(t *testing.T, sw netswitch.Controller, args ...string) (string, error) {
+	t.Helper()
+	return runApp(t, &App{
+		OpenSwitch: func(c config.Switch, _ config.SwitchSecret) (netswitch.Controller, error) {
+			if c.Name != "lab" {
+				t.Errorf("opened switch %q", c.Name)
+			}
+			return sw, nil
+		},
+	}, args...)
+}
+
+// runApp executes the CLI against testSite with app's hooks.
+func runApp(t *testing.T, app *App, args ...string) (string, error) {
 	t.Helper()
 	dir := t.TempDir()
 	site := filepath.Join(dir, "site.yaml")
-	if err := os.WriteFile(site, []byte("switches:\n  - {name: lab, address: switch.example}\n"), 0o644); err != nil {
+	if err := os.WriteFile(site, []byte(testSite), 0o644); err != nil {
 		t.Fatal(err)
 	}
 	var out bytes.Buffer
-	app := &App{
-		Stdout: &out,
-		OpenSwitch: func(sw config.Switch, _ config.SwitchSecret) (netswitch.Reader, error) {
-			if sw.Name != "lab" {
-				t.Errorf("opened switch %q", sw.Name)
-			}
-			return reader, nil
-		},
-	}
+	app.Stdout = &out
 	cmd := app.Command()
 	cmd.SetArgs(append([]string{"--site", site, "--secrets", filepath.Join(dir, ".secrets")}, args...))
 	cmd.SetOut(&out)
@@ -60,7 +97,7 @@ func run(t *testing.T, reader netswitch.Reader, args ...string) (string, error) 
 }
 
 func TestGetPortsText(t *testing.T) {
-	out, err := run(t, fakeReader{st: testStatus()}, "get", "ports")
+	out, err := run(t, &fakeSwitch{st: testStatus()}, "get", "ports")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -82,7 +119,7 @@ func TestGetPortsText(t *testing.T) {
 }
 
 func TestGetPortsJSON(t *testing.T) {
-	out, err := run(t, fakeReader{st: testStatus()}, "get", "ports", "-o", "json")
+	out, err := run(t, &fakeSwitch{st: testStatus()}, "get", "ports", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -96,7 +133,7 @@ func TestGetPortsJSON(t *testing.T) {
 }
 
 func TestGetVLANs(t *testing.T) {
-	out, err := run(t, fakeReader{st: testStatus()}, "get", "vlans")
+	out, err := run(t, &fakeSwitch{st: testStatus()}, "get", "vlans")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -106,14 +143,14 @@ func TestGetVLANs(t *testing.T) {
 }
 
 func TestGetPortsSwitchError(t *testing.T) {
-	_, err := run(t, fakeReader{err: errors.New("boom")}, "get", "ports")
+	_, err := run(t, &fakeSwitch{err: errors.New("boom")}, "get", "ports")
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Errorf("err = %v", err)
 	}
 }
 
 func TestUnknownOutputFormat(t *testing.T) {
-	if _, err := run(t, fakeReader{st: testStatus()}, "get", "ports", "-o", "xml"); err == nil {
+	if _, err := run(t, &fakeSwitch{st: testStatus()}, "get", "ports", "-o", "xml"); err == nil {
 		t.Error("want error for -o xml")
 	}
 }

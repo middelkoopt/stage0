@@ -24,6 +24,7 @@ const (
 // Site is site.yaml.
 type Site struct {
 	Switches []Switch `yaml:"switches"`
+	Nodes    []Node   `yaml:"nodes"`
 }
 
 // Switch is a managed switch.
@@ -31,6 +32,18 @@ type Switch struct {
 	Name    string `yaml:"name"`             // key into .secrets
 	Driver  string `yaml:"driver,omitempty"` // default "gs316ep"
 	Address string `yaml:"address"`          // host name or URL
+}
+
+// Node is a machine stage0 manages. Its name is its switch port's label.
+type Node struct {
+	Name    string   `yaml:"name"`
+	Console *Console `yaml:"console,omitempty"`
+}
+
+// Console is a node's local serial console.
+type Console struct {
+	Device string `yaml:"device"`         // prefer the stable /dev/serial/by-id/... name
+	Baud   int    `yaml:"baud,omitempty"` // default 115200
 }
 
 // Drivers are the switch drivers stage0 knows.
@@ -68,7 +81,39 @@ func (s *Site) normalize() error {
 			return fmt.Errorf("switch %q: unknown driver %q (known: %v)", sw.Name, sw.Driver, Drivers)
 		}
 	}
+
+	seen = map[string]bool{}
+	for i := range s.Nodes {
+		n := &s.Nodes[i]
+		switch {
+		case n.Name == "":
+			return fmt.Errorf("node %d: no name", i+1)
+		case seen[n.Name]:
+			return fmt.Errorf("node %q: defined twice", n.Name)
+		}
+		seen[n.Name] = true
+		if c := n.Console; c != nil {
+			switch {
+			case c.Device == "":
+				return fmt.Errorf("node %q: console has no device", n.Name)
+			case c.Baud < 0:
+				return fmt.Errorf("node %q: console baud %d", n.Name, c.Baud)
+			case c.Baud == 0:
+				c.Baud = 115200
+			}
+		}
+	}
 	return nil
+}
+
+// Node returns the named node.
+func (s *Site) Node(name string) (Node, error) {
+	for _, n := range s.Nodes {
+		if n.Name == name {
+			return n, nil
+		}
+	}
+	return Node{}, fmt.Errorf("no node %q in site config", name)
 }
 
 // Switch returns the named switch, or the only one when name is empty.

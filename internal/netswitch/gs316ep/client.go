@@ -35,7 +35,7 @@ type Client struct {
 	http *http.Client
 }
 
-var _ netswitch.Reader = (*Client)(nil)
+var _ netswitch.Controller = (*Client)(nil)
 
 // New returns a client for the switch at base, a URL or a bare host name.
 // A nil httpClient means http.DefaultClient.
@@ -68,17 +68,25 @@ func (c *Client) Status(ctx context.Context) (st netswitch.Status, err error) {
 		}
 	}()
 
+	st, _, err = s.status(ctx)
+	return st, err
+}
+
+// status reads and parses the three status pages, and returns the pages too
+// for callers that need more from them.
+func (s *session) status(ctx context.Context) (netswitch.Status, map[string][]byte, error) {
 	pages := make(map[string][]byte)
 	for _, name := range []string{"dashboard", "poePortConf", "vlan"} {
+		var err error
 		if pages[name], err = s.page(ctx, name); err != nil {
-			return st, err
+			return netswitch.Status{}, nil, err
 		}
 	}
-	st, err = parseStatus(pages["dashboard"], pages["poePortConf"], pages["vlan"])
+	st, err := parseStatus(pages["dashboard"], pages["poePortConf"], pages["vlan"])
 	if err != nil {
-		return st, fmt.Errorf("gs316ep: %w", err)
+		return netswitch.Status{}, nil, fmt.Errorf("gs316ep: %w", err)
 	}
-	return st, nil
+	return st, pages, nil
 }
 
 // session is one logged-in session.
@@ -88,7 +96,7 @@ type session struct {
 }
 
 func (c *Client) login(ctx context.Context) (*session, error) {
-	page, err := c.do(ctx, http.MethodGet, "/", nil)
+	page, err := c.do(ctx, http.MethodGet, "/", "")
 	if err != nil {
 		return nil, err
 	}
@@ -106,7 +114,7 @@ func (c *Client) login(ctx context.Context) (*session, error) {
 		hash = loginHash(c.cred.Password, nonce)
 	}
 
-	page, err = c.do(ctx, http.MethodPost, "/redirect.html", url.Values{"LoginPassword": {hash}})
+	page, err = c.do(ctx, http.MethodPost, "/redirect.html", url.Values{"LoginPassword": {hash}}.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -123,7 +131,7 @@ func (c *Client) login(ctx context.Context) (*session, error) {
 }
 
 func (s *session) page(ctx context.Context, name string) ([]byte, error) {
-	page, err := s.c.do(ctx, http.MethodGet, "/iss/specific/"+name+".html", url.Values{"Gambit": {s.gambit}})
+	page, err := s.c.do(ctx, http.MethodGet, "/iss/specific/"+name+".html", url.Values{"Gambit": {s.gambit}}.Encode())
 	if err != nil {
 		return nil, err
 	}
@@ -133,19 +141,34 @@ func (s *session) page(ctx context.Context, name string) ([]byte, error) {
 	return page, nil
 }
 
+// post sends a change to one of the pages, with the session token last as
+// switch.py sends it. The reply carries nothing the driver relies on; callers
+// check the result by reading the switch back.
+func (s *session) post(ctx context.Context, name string, f form) error {
+	body := append(f[:len(f):len(f)], field{"Gambit", s.gambit})
+	page, err := s.c.do(ctx, http.MethodPost, "/iss/specific/"+name+".html", body.encode())
+	if err != nil {
+		return err
+	}
+	if isLoginPage(page) {
+		return fmt.Errorf("gs316ep: session ended while writing to the %s page", name)
+	}
+	return nil
+}
+
 func (s *session) logout(ctx context.Context) error {
-	_, err := s.c.do(ctx, http.MethodGet, "/iss/specific/logout.html", url.Values{"Gambit": {s.gambit}})
+	_, err := s.c.do(ctx, http.MethodGet, "/iss/specific/logout.html", url.Values{"Gambit": {s.gambit}}.Encode())
 	return err
 }
 
-// do sends a request; for GET, form becomes the query string.
-func (c *Client) do(ctx context.Context, method, path string, form url.Values) ([]byte, error) {
+// do sends a request with an encoded form; for GET, it is the query string.
+func (c *Client) do(ctx context.Context, method, path, form string) ([]byte, error) {
 	u := c.base.JoinPath(path)
 	var body io.Reader
 	if method == http.MethodGet {
-		u.RawQuery = form.Encode()
+		u.RawQuery = form
 	} else {
-		body = strings.NewReader(form.Encode())
+		body = strings.NewReader(form)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, u.String(), body)
 	if err != nil {

@@ -191,3 +191,74 @@ func parseVLANList(s string) (pvid int, tagged []int, err error) {
 	slices.Sort(tagged)
 	return pvid, tagged, nil
 }
+
+// parseMembers reads each VLAN's membership mask from the VLAN page: one digit
+// per port, port 1 first; 1 = tagged, 2 = untagged, 3 = not a member. This is
+// the switch's own record, and the format it accepts back.
+func parseMembers(page []byte, nports int) (map[int]string, error) {
+	elems, err := scan(page)
+	if err != nil {
+		return nil, err
+	}
+	members := make(map[int]string)
+	vlan := 0
+	for _, e := range elems {
+		if _, ok := e.attr("list-vid"); ok {
+			if vlan, err = strconv.Atoi(e.text); err != nil {
+				return nil, fmt.Errorf("VLAN id %q: %w", e.text, err)
+			}
+			continue
+		}
+		if _, ok := e.attr("list-vhidmem"); !ok {
+			continue
+		}
+		mask, _ := e.attr("value")
+		if vlan == 0 {
+			return nil, fmt.Errorf("membership %q before any VLAN id", mask)
+		}
+		if len(mask) != nports || strings.Trim(mask, "123") != "" {
+			return nil, fmt.Errorf("VLAN %d: membership %q is not %d digits of 1-3", vlan, mask, nports)
+		}
+		members[vlan] = mask
+		vlan = 0
+	}
+	if len(members) == 0 {
+		return nil, fmt.Errorf("no VLAN membership found")
+	}
+	return members, nil
+}
+
+// parsePoELimits reads each PoE port's power limit, in the tenths of a watt
+// the switch accepts back ("30.0" W -> "300").
+func parsePoELimits(page []byte) (map[int]string, error) {
+	elems, err := scan(page)
+	if err != nil {
+		return nil, err
+	}
+	limits := make(map[int]string)
+	port := 0
+	for _, e := range elems {
+		switch {
+		case e.hasClass("port-number"):
+			f := strings.Fields(e.text)
+			if len(f) == 0 {
+				return nil, fmt.Errorf("empty port number")
+			}
+			if port, err = strconv.Atoi(f[0]); err != nil {
+				return nil, fmt.Errorf("port number %q", e.text)
+			}
+		case port != 0 && e.hasClass("Power-Limit-text"):
+			w, tenth, ok := strings.Cut(e.text, ".")
+			n, err := strconv.Atoi(w + tenth)
+			if !ok || len(tenth) != 1 || err != nil || n < 0 {
+				return nil, fmt.Errorf("port %d: power limit %q", port, e.text)
+			}
+			limits[port] = strconv.Itoa(n)
+			port = 0
+		}
+	}
+	if len(limits) == 0 {
+		return nil, fmt.Errorf("no PoE power limits found")
+	}
+	return limits, nil
+}
