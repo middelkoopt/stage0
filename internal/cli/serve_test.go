@@ -112,9 +112,6 @@ func TestServeErrors(t *testing.T) {
 			return Sockets{}, nil
 		}}
 	}
-	if _, err := runApp(t, app(), "serve", "pinet"); err == nil || !strings.Contains(err.Error(), "--root") {
-		t.Errorf("no --root: err = %v", err)
-	}
 	if _, err := runApp(t, app(), "serve", "nope", "--root", t.TempDir()); err == nil || !strings.Contains(err.Error(), "nope") {
 		t.Errorf("unknown network: err = %v", err)
 	}

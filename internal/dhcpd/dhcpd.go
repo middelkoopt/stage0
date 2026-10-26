@@ -26,6 +26,12 @@ type Config struct {
 	Subnet              netip.Prefix // the network
 	PoolFirst, PoolLast netip.Addr   // addresses to lease
 	LeaseTime           time.Duration
+
+	// Installed nodes (MAC -> address) boot from their disks: their PXE
+	// requests get no answer, their systems' plain requests get their
+	// address for InstalledLeaseTime (default LeaseTime).
+	Installed          map[string]netip.Addr
+	InstalledLeaseTime time.Duration
 }
 
 // piBoot is option 43 for a Raspberry Pi: PXE discovery control 3, menu
@@ -46,17 +52,60 @@ type Server struct {
 	// client has no address yet. Tests point it at a loopback socket.
 	replyTo func(from net.Addr) net.Addr
 
-	mu     sync.Mutex
-	leases map[string]netip.Addr // MAC -> address
+	mu        sync.Mutex
+	leases    map[string]netip.Addr // MAC -> address
+	installed map[string]bool
+	acked     map[string]netip.Addr // MAC -> address last acknowledged
 }
 
 // New returns a server for cfg that logs to log.
 func New(cfg Config, log *slog.Logger) *Server {
-	return &Server{
-		cfg: cfg, log: log,
-		replyTo: func(net.Addr) net.Addr { return &net.UDPAddr{IP: net.IPv4bcast, Port: dhcpv4.ClientPort} },
-		leases:  map[string]netip.Addr{},
+	if cfg.InstalledLeaseTime == 0 {
+		cfg.InstalledLeaseTime = cfg.LeaseTime
 	}
+	s := &Server{
+		cfg: cfg, log: log,
+		replyTo:   func(net.Addr) net.Addr { return &net.UDPAddr{IP: net.IPv4bcast, Port: dhcpv4.ClientPort} },
+		leases:    map[string]netip.Addr{},
+		installed: map[string]bool{},
+		acked:     map[string]netip.Addr{},
+	}
+	for mac, ip := range cfg.Installed {
+		s.leases[mac], s.installed[mac] = ip, true
+	}
+	return s
+}
+
+// Install marks the node with mac installed (see Config.Installed) and
+// returns its address; false if it has no lease.
+func (s *Server) Install(mac net.HardwareAddr) (netip.Addr, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ip, ok := s.leases[mac.String()]
+	if ok {
+		s.installed[mac.String()] = true
+		delete(s.acked, mac.String()) // Acked now reports the installed system
+	}
+	return ip, ok
+}
+
+// InstalledNodes returns the installed nodes' MACs.
+func (s *Server) InstalledNodes() []string {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var out []string
+	for mac := range s.installed {
+		out = append(out, mac)
+	}
+	return out
+}
+
+// Acked returns the address last acknowledged to mac.
+func (s *Server) Acked(mac net.HardwareAddr) (netip.Addr, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	ip, ok := s.acked[mac.String()]
+	return ip, ok
 }
 
 // Listen opens the DHCP server port pinned to one interface, so stage0 hears
@@ -117,6 +166,13 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 	mac := req.ClientHWAddr.String()
 	log := s.log.With("mac", mac, "class", req.ClassIdentifier())
 	pxe := strings.HasPrefix(req.ClassIdentifier(), "PXEClient")
+	s.mu.Lock()
+	installed := s.installed[mac]
+	s.mu.Unlock()
+	if pxe && installed {
+		log.Debug("dhcp: ignored, installed node (it boots from its disk)", "type", req.MessageType())
+		return nil
+	}
 	if !pxe {
 		s.mu.Lock()
 		_, booted := s.leases[mac]
@@ -153,7 +209,10 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 			log.Info("dhcp: nak", "requested", want, "leased", ip)
 			return s.reply(req, dhcpv4.MessageTypeNak, netip.Addr{}, pxe)
 		}
-		log.Info("dhcp: ack", "ip", ip)
+		log.Info("dhcp: ack", "ip", ip, "installed", installed)
+		s.mu.Lock()
+		s.acked[mac] = ip
+		s.mu.Unlock()
 		return s.reply(req, dhcpv4.MessageTypeAck, ip, pxe)
 	}
 	log.Debug("dhcp: ignored", "type", req.MessageType())
@@ -180,6 +239,15 @@ func (s *Server) lease(mac string) (netip.Addr, bool) {
 	return netip.Addr{}, false
 }
 
+func (s *Server) leaseTime(mac string) time.Duration {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	if s.installed[mac] {
+		return s.cfg.InstalledLeaseTime
+	}
+	return s.cfg.LeaseTime
+}
+
 // reply builds an answer; pxe adds the boot options a PXE client needs.
 func (s *Server) reply(req *dhcpv4.DHCPv4, typ dhcpv4.MessageType, ip netip.Addr, pxe bool) *dhcpv4.DHCPv4 {
 	server := net.IP(s.cfg.Server.AsSlice())
@@ -192,7 +260,7 @@ func (s *Server) reply(req *dhcpv4.DHCPv4, typ dhcpv4.MessageType, ip netip.Addr
 		mods = append(mods,
 			dhcpv4.WithYourIP(net.IP(ip.AsSlice())),
 			dhcpv4.WithNetmask(net.CIDRMask(s.cfg.Subnet.Bits(), 32)),
-			dhcpv4.WithLeaseTime(uint32(s.cfg.LeaseTime/time.Second)),
+			dhcpv4.WithLeaseTime(uint32(s.leaseTime(req.ClientHWAddr.String())/time.Second)),
 		)
 	}
 	if typ != dhcpv4.MessageTypeNak && pxe {

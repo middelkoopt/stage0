@@ -21,7 +21,7 @@ so different stage-1 provisioners can be CI-tested on real and virtual hardware.
 | 0.1 | Target netboots (TFTP or HTTP) | Built (IPv4 TFTP) |
 | 0.2 | The agent identifies the node and gets its plan | Built: the plan is the node's `cmdline.txt`, written by `install` |
 | 0.3 | Write the image to disk, then the first-boot files | Built |
-| 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" | Hostname and root's SSH key set (kernel command line); reached by its IPv6 link-local address, which `install` and `get address` print; no IPv4; root filesystem not grown; "up" is the console's login prompt |
+| 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" | Hostname and root's SSH key set (kernel command line); IPv4 lease from stage0 and IPv6 link-local, both printed; root filesystem not grown; "up" is the console's login prompt |
 | 0.5 | Mark the node installed (stop answering it), move its port to the cluster VLAN, stop | Stops answering (one node per run); no VLAN move |
 
 Boot order stays **network first**: no answer means the node falls through to
@@ -33,13 +33,10 @@ reboot.
 
 1. **First-boot settings (stage 0.4), the rest:** hostname and root's SSH
    key are built (systemd settings on the kernel command line; see
-   [`docs/install.md`](docs/install.md#first-boot-settings)). The installed
-   node is reached by its IPv6 link-local address. Deferred:
-   - **IPv4 for installed nodes (OO1):** stage0 keeps answering an
-     installed node's plain DHCP (NetworkManager's default connection asks
-     on every boot) without boot options, ignoring its PXE requests, so it
-     still boots from disk. Needs stage0 running and a record of installed
-     nodes (the start of install-once state).
+   [`docs/install.md`](docs/install.md#first-boot-settings)). Installed
+   nodes keep their IPv4 lease from stage0 (OO1, built) and are found by
+   IPv6 link-local. Next: router advertisements, for a stable IPv6
+   address beyond link-local. Deferred:
    - **Growing the root filesystem (OO2):** left to stage 1 for now ("close
      to stock"); Rocky ships `rootfs-expand` and `growpart`.
    - **The seed's `root/` directory (GG2, decided):** for what the command
@@ -118,8 +115,7 @@ HTTP), the agent, initramfs and seed builders (see
 ## Milestones (order tentative)
 
 1. **Pi 5 head node over IPv4:** `stage0 install k52` installs Rocky 10.2
-   and leaves it reachable over SSH with its hostname and key. Done except
-   an IPv4 address: reachable today over IPv6 link-local.
+   and leaves it reachable over SSH with its hostname and key. Done.
 2. QEMU test bed on the virtual switch; the same install for an aarch64 VM.
 3. Pi 5 over IPv6.
 4. Network modes beyond *own*: none, boot-only, proxy.

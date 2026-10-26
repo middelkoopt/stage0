@@ -6,12 +6,11 @@ for code.
 
 ## Status (2026-10-26)
 **`./stage0 install k52 --image rocky-10.2-rpi` installs Rocky 10.2 on k52
-(Pi 5) in 4 minutes, leaves it reachable as root with the site's key and
-hostname `k52`, and prints its IPv6 link-local address with an `ssh`
-command** (`stage0 get address k52` repeats the lookup; see
-[`docs/install.md`](docs/install.md#reaching-the-installed-node)). Lab key:
-`~/.cache/stage0/ssh/id_ed25519`. k52 is on. The address work is
-uncommitted.
+(Pi 5) in 4 minutes and leaves it reachable as `ssh root@10.0.3.100`**
+(site keys, hostname `k52`; IPv6 link-local too): stage0 keeps the node's
+lease for its installed system, so NetworkManager's connection stays up
+([`docs/install.md`](docs/install.md#reaching-the-installed-node)). The
+lease lasts 24 h; `stage0 serve pinet` renews it. Uncommitted.
 
 ## Open decisions
 (none)

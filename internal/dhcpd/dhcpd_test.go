@@ -218,3 +218,56 @@ func TestAnswersBootedNodesKernel(t *testing.T) {
 		t.Errorf("answered a machine that never PXE-booted: %v", r.Summary())
 	}
 }
+
+func TestInstalledNodes(t *testing.T) {
+	s := New(Config{
+		Server: netip.MustParseAddr("10.0.3.1"), Subnet: netip.MustParsePrefix("10.0.3.0/24"),
+		PoolFirst: netip.MustParseAddr("10.0.3.100"), PoolLast: netip.MustParseAddr("10.0.3.199"),
+		LeaseTime: time.Hour, InstalledLeaseTime: 24 * time.Hour,
+		Installed: map[string]netip.Addr{"e4:5f:01:1d:17:a2": netip.MustParseAddr("10.0.3.100")},
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+
+	// An installed node's PXE request gets no answer, so it boots from disk.
+	if r := s.Reply(discover(t, "e4:5f:01:1d:17:a2", piClass)); r != nil {
+		t.Errorf("answered an installed node's PXE request: %v", r.Summary())
+	}
+	// Its system's plain request gets its address, without boot options.
+	r := s.Reply(discover(t, "e4:5f:01:1d:17:a2", ""))
+	if r == nil || r.YourIPAddr.String() != "10.0.3.100" || r.IPAddressLeaseTime(0) != 24*time.Hour ||
+		r.GetOneOption(dhcpv4.OptionVendorSpecificInformation) != nil {
+		t.Fatalf("installed node's request: %v", r)
+	}
+	// Its address is not handed to anyone else.
+	if r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", piClass)); r == nil || r.YourIPAddr.String() != "10.0.3.101" {
+		t.Errorf("new node got %v, want 10.0.3.101", r)
+	}
+
+	// Marking a node installed while serving: from then on, PXE is ignored,
+	// and Acked forgets acknowledgements from before (the agent's).
+	agentReq, _ := dhcpv4.New(dhcpv4.WithHwAddr(mac("d8:3a:dd:c5:c1:f3")),
+		dhcpv4.WithMessageType(dhcpv4.MessageTypeRequest),
+		dhcpv4.WithOption(dhcpv4.OptClassIdentifier(piClass)),
+		dhcpv4.WithOption(dhcpv4.OptRequestedIPAddress(net.ParseIP("10.0.3.101"))))
+	s.Reply(agentReq)
+	if ip, ok := s.Install(mac("d8:3a:dd:c5:c1:f3")); !ok || ip.String() != "10.0.3.101" {
+		t.Errorf("Install = %v, %v", ip, ok)
+	}
+	if r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", piClass)); r != nil {
+		t.Errorf("answered PXE after Install: %v", r.Summary())
+	}
+	if _, ok := s.Install(mac("aa:bb:cc:dd:ee:ff")); ok {
+		t.Error("Install of a MAC without a lease succeeded")
+	}
+	if _, ok := s.Acked(mac("d8:3a:dd:c5:c1:f3")); ok {
+		t.Error("acked before any request")
+	}
+	req, _ := dhcpv4.New(dhcpv4.WithHwAddr(mac("d8:3a:dd:c5:c1:f3")),
+		dhcpv4.WithMessageType(dhcpv4.MessageTypeRequest),
+		dhcpv4.WithOption(dhcpv4.OptRequestedIPAddress(net.ParseIP("10.0.3.101"))))
+	if r := s.Reply(req); r == nil || r.MessageType() != dhcpv4.MessageTypeAck {
+		t.Fatalf("installed node's request: %v", r)
+	}
+	if ip, ok := s.Acked(mac("d8:3a:dd:c5:c1:f3")); !ok || ip.String() != "10.0.3.101" {
+		t.Errorf("Acked = %v, %v", ip, ok)
+	}
+}

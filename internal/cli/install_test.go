@@ -16,9 +16,11 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
+	"github.com/insomniacslk/dhcp/dhcpv4"
 	"github.com/ulikunitz/xz"
 
 	"github.com/middelkoopt/stage0/internal/config"
@@ -64,14 +66,21 @@ func testDiskImage(t *testing.T) ([]byte, string) {
 }
 
 // scripted is a serial port that prints its chunks, then stays quiet. A
-// chunk "<rebooted>" waits until the switch has powered the node on twice.
+// chunk "<rebooted>" waits until the switch has powered the node on twice;
+// "<dhcp-pxe>" and "<dhcp-plain>" make the node ask stage0's DHCP for an
+// address, as its bootloader and its installed system do.
 type scripted struct {
 	chunks []string
 	sw     *fakeSwitch
+	dhcp   func(pxe bool)
 }
 
 func (s *scripted) Read(p []byte) (int, error) {
 	if len(s.chunks) > 0 && s.chunks[0] == "<rebooted>" && s.sw.ons() >= 2 {
+		s.chunks = s.chunks[1:]
+	}
+	for len(s.chunks) > 0 && (s.chunks[0] == "<dhcp-pxe>" || s.chunks[0] == "<dhcp-plain>") {
+		s.dhcp(s.chunks[0] == "<dhcp-pxe>")
 		s.chunks = s.chunks[1:]
 	}
 	if len(s.chunks) == 0 || s.chunks[0] == "<rebooted>" {
@@ -110,11 +119,45 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 
 	sw := &fakeSwitch{st: testStatus()}
 	env := &installEnv{sw: sw, cache: filepath.Join(dir, "cache"), images: images, sum: sum}
+	var dhcpAddr net.Addr
+	var dhcpMu sync.Mutex
+	// ask sends a DHCP discover and request for 10.0.3.100 from k53's MAC.
+	ask := func(pxe bool) {
+		var to net.Addr
+		for deadline := time.Now().Add(5 * time.Second); to == nil && time.Now().Before(deadline); {
+			dhcpMu.Lock()
+			to = dhcpAddr // set once serve opens its sockets
+			dhcpMu.Unlock()
+			time.Sleep(10 * time.Millisecond)
+		}
+		c, err := net.ListenPacket("udp4", "127.0.0.1:0")
+		if err != nil {
+			t.Error(err)
+			return
+		}
+		defer c.Close()
+		hw, _ := net.ParseMAC("d8:3a:dd:c5:c1:f3")
+		var mods []dhcpv4.Modifier
+		if pxe {
+			mods = append(mods, dhcpv4.WithOption(dhcpv4.OptClassIdentifier("PXEClient:Arch:00000:UNDI:002001")))
+		}
+		d, _ := dhcpv4.NewDiscovery(hw, mods...)
+		c.WriteTo(d.ToBytes(), to)
+		r, _ := dhcpv4.New(append(mods, dhcpv4.WithHwAddr(hw), dhcpv4.WithMessageType(dhcpv4.MessageTypeRequest),
+			dhcpv4.WithOption(dhcpv4.OptRequestedIPAddress(net.ParseIP("10.0.3.100"))))...)
+		c.WriteTo(r.ToBytes(), to)
+		time.Sleep(50 * time.Millisecond) // let serve handle them
+	}
 	env.app = &App{
-		OpenSwitch:  func(config.Switch, config.SwitchSecret) (netswitch.Controller, error) { return sw, nil },
-		OpenConsole: func(string, int) (io.ReadWriteCloser, error) { return &scripted{chunks: console, sw: sw}, nil },
+		OpenSwitch: func(config.Switch, config.SwitchSecret) (netswitch.Controller, error) { return sw, nil },
+		OpenConsole: func(string, int) (io.ReadWriteCloser, error) {
+			return &scripted{chunks: console, sw: sw, dhcp: ask}, nil
+		},
 		OpenNetwork: func(context.Context, config.Network) (Sockets, error) {
 			d, _ := net.ListenPacket("udp4", "127.0.0.1:0")
+			dhcpMu.Lock()
+			dhcpAddr = d.LocalAddr()
+			dhcpMu.Unlock()
 			tf, _ := net.ListenPacket("udp4", "127.0.0.1:0")
 			h, _ := net.Listen("tcp4", "127.0.0.1:0")
 			return Sockets{DHCP: d, TFTP: tf, HTTP: h}, nil
@@ -141,12 +184,14 @@ func (e *installEnv) run(t *testing.T, args ...string) (string, error) {
 
 func TestInstall(t *testing.T) {
 	env := newInstallEnv(t, []string{
+		"<dhcp-pxe>",
 		"bootloader...\r\n",
 		`STAGE0-REPORT {"model":"Raspberry Pi 5","disks":[{"name":"mmcblk0","bytes":128000000000}],` +
 			`"interfaces":[{"name":"eth0","mac":"d8:3a:dd:c5:c1:f3","state":"up"}]}` + "\r\n",
 		"STAGE0-PROGRESS 256 MB written, 5 s\r\n",
 		`STAGE0-INSTALLED {"disk":"/dev/mmcblk0","bytes":3508535296,"seconds":104.9,"seeded":["cmdline.txt"]}` + "\r\n",
 		"<rebooted>",
+		"<dhcp-plain>",
 		"Rocky Linux 10.2\r\nlocalhost login: ",
 	})
 	out, err := env.run(t, "-o", "json")
@@ -159,12 +204,15 @@ func TestInstall(t *testing.T) {
 		Installed json.RawMessage `json:"installed"`
 		Ready     string          `json:"ready"`
 		Address   string          `json:"address"`
+		IPv4      string          `json:"ipv4"`
+		Network   string          `json:"network"`
 	}
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if res.Node != "k53" || res.Disk != "mmcblk0" || !strings.Contains(string(res.Installed), "3508535296") ||
-		res.Ready != "login: " || res.Address != "fe80::5662:976b:2c19:7e38%eth0.3" {
+		res.Ready != "login: " || res.Address != "fe80::5662:976b:2c19:7e38%eth0.3" ||
+		res.IPv4 != "10.0.3.100" || res.Network != "pinet" {
 		t.Errorf("result %+v", res)
 	}
 	if b, err := os.ReadFile(filepath.Join(env.state, "nodes", "k53.json")); err != nil || !strings.Contains(string(b), "d8:3a:dd:c5:c1:f3") {
@@ -261,5 +309,37 @@ func TestInstalledCmdlineTooLong(t *testing.T) {
 	ed := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKZy0O24eEGhCIjhD/f/ARp+HXk7mQqud0uC6cWuIiup stage0@pilab"
 	if _, err := installedCmdline("console=serial0,115200 root=PARTUUID=abc rootwait", "k52", []string{ed, ed, ed}); err != nil {
 		t.Errorf("three ed25519 keys: %v", err)
+	}
+}
+
+func TestServeAnswersInstalledNodes(t *testing.T) {
+	// serve without --root: DHCP only, for nodes in the install records.
+	state := t.TempDir()
+	os.MkdirAll(filepath.Join(state, "nodes"), 0o755)
+	os.WriteFile(filepath.Join(state, "nodes", "k53.json"),
+		[]byte(`{"node":"k53","network":"pinet","mac":"d8:3a:dd:c5:c1:f3","ipv4":"10.0.3.150"}`), 0o644)
+	d, _ := net.ListenPacket("udp4", "127.0.0.1:0")
+	tf, _ := net.ListenPacket("udp4", "127.0.0.1:0")
+	h, _ := net.Listen("tcp4", "127.0.0.1:0")
+	app := &App{OpenNetwork: func(context.Context, config.Network) (Sockets, error) {
+		return Sockets{DHCP: d, TFTP: tf, HTTP: h}, nil
+	}}
+	done := make(chan string)
+	go func() {
+		out, err := runApp(t, app, "--state", state, "serve", "pinet", "--timeout", "1s")
+		if err != nil {
+			t.Error(err)
+		}
+		done <- out
+	}()
+	time.Sleep(200 * time.Millisecond)
+	c, _ := net.ListenPacket("udp4", "127.0.0.1:0")
+	defer c.Close()
+	hw, _ := net.ParseMAC("d8:3a:dd:c5:c1:f3")
+	disc, _ := dhcpv4.NewDiscovery(hw)
+	c.WriteTo(disc.ToBytes(), d.LocalAddr())
+	out := <-done
+	if !strings.Contains(out, "dhcp: offer") || !strings.Contains(out, "ip=10.0.3.150") || !strings.Contains(out, "installed=1") {
+		t.Errorf("serve log:\n%s", out)
 	}
 }

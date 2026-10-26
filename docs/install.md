@@ -66,10 +66,13 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
    mounts partition 1 (FAT) and unpacks the seed (a cpio from
    `stage0 build seed`) over it, replacing files of the same name. Then it
    prints `STAGE0-INSTALLED {json}` and waits to be powered off.
-9. **First boot.** Stop serving (so the node isn't answered), power off and
-   on: the bootloader's network attempt gets no answer and it falls through
-   to the disk (about 45 s on k52), and the installed OS boots. `install`
-   waits for the image's `ready` pattern on the console.
+9. **First boot.** The node is marked installed: from now on stage0
+   ignores its PXE requests and answers its system's plain DHCP. Power off
+   and on: the bootloader's network attempt gets no answer and it falls
+   through to the disk (about 45 s on k52), the installed OS boots, and
+   NetworkManager's default connection gets the same address for 24 h.
+   `install` waits for the image's `ready` pattern on the console, then for
+   that lease.
 
 `install` follows the console throughout (`logs/<node>.log`; serve's log is
 `logs/<node>-serve.log`). On a `STAGE0-ERROR` line it powers the node off
@@ -93,26 +96,34 @@ command line, which bounds the number of keys.
 
 ## Reaching the installed node
 
-After the install nothing gives the node an IPv4 address on the
-provisioning network (deferred: OO1 in [`ROADMAP.md`](../ROADMAP.md#next));
-it is reached by its IPv6 link-local address. The address is a
-NetworkManager "stable privacy" one, new with every install, so stage0
-finds it on the wire: `install` prints it at the end, and
+`install` ends by printing the node's addresses:
 
 ```
-$ ./stage0 get address k52
-k52: fe80::85bf:1b4d:1ae2:1427%eth0.3
-  ssh root@fe80::85bf:1b4d:1ae2:1427%eth0.3
+k52: 10.0.3.100 (IPv4 from stage0: keep `stage0 serve pinet` running to keep it)
+  ssh root@10.0.3.100
+k52: fe80::a9e7:2c9a:8c3d:d7c9%eth0.3
+  ssh root@fe80::a9e7:2c9a:8c3d:d7c9%eth0.3
 ```
 
-looks it up any time (an echo to `ff02::1` on the network's interface, then
-the neighbour table, matched against the MACs the agent reported; no root
-needed). With the lab key, add `-i ~/.cache/stage0/ssh/id_ed25519` to the
-`ssh` command.
+- **IPv4:** the lease the node netbooted with, kept for its installed
+  system. Without an answer, NetworkManager's default connection fails
+  after about 45 s, takes the interface down (link-local address included)
+  and retries every 5 minutes, so an unanswered node is reachable only part
+  of the time. The lease lasts 24 h; `stage0 serve pinet` (no `--root`:
+  DHCP only) keeps answering installed nodes, from the install records,
+  with the same address.
+- **IPv6 link-local:** a NetworkManager "stable privacy" address, new with
+  every install, found on the wire; `./stage0 get address k52` repeats the
+  lookup (an echo to `ff02::1` on the network's interface, then the
+  neighbour table, matched against the MACs the agent reported, taking only
+  addresses that answer; no root needed).
 
-`install` keeps a record of each node it installs (the agent's report,
-the result) in `~/.local/state/stage0/nodes/<node>.json`
-(`$XDG_STATE_HOME`, or `--state`); `get address` needs it for the MAC.
+With the lab key, add `-i ~/.cache/stage0/ssh/id_ed25519` to `ssh`.
+
+`install` keeps a record of each node it installs (the agent's report, the
+MAC it netbooted on, its network and IPv4 address) in
+`~/.local/state/stage0/nodes/<node>.json` (`$XDG_STATE_HOME`, or
+`--state`); `get address` and `serve` read them.
 
 ## The agent's command line
 

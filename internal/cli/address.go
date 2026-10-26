@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"io/fs"
 	"net"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"time"
@@ -68,6 +69,43 @@ func (a *App) loadRecord(node string) (installResult, error) {
 		return r, err
 	}
 	return r, json.Unmarshal(b, &r)
+}
+
+// installedOn returns the nodes installed on network n, from the install
+// records (MAC -> address), leaving out the node named except.
+func (a *App) installedOn(n config.Network, except string) (map[string]netip.Addr, error) {
+	dir, err := a.stateDir()
+	if err != nil {
+		return nil, err
+	}
+	files, err := filepath.Glob(filepath.Join(dir, "nodes", "*.json"))
+	if err != nil {
+		return nil, err
+	}
+	out := map[string]netip.Addr{}
+	for _, f := range files {
+		var r installResult
+		b, err := os.ReadFile(f)
+		if err != nil {
+			return nil, err
+		}
+		if err := json.Unmarshal(b, &r); err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		ip, err := netip.ParseAddr(r.IPv4)
+		if r.Node == except || r.Network != n.Name || r.MAC == "" || err != nil {
+			continue
+		}
+		if !n.Subnet.Contains(ip) {
+			return nil, fmt.Errorf("%s: %s is not on network %s (%s)", f, ip, n.Name, n.Subnet)
+		}
+		hw, err := net.ParseMAC(r.MAC)
+		if err != nil {
+			return nil, fmt.Errorf("%s: %w", f, err)
+		}
+		out[hw.String()] = ip
+	}
+	return out, nil
 }
 
 // macs are the node's MAC addresses, from the agent's report.

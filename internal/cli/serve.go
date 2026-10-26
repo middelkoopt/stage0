@@ -2,7 +2,6 @@ package cli
 
 import (
 	"context"
-	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -28,16 +27,15 @@ func (a *App) serveCommand() *cobra.Command {
 		Short: "Answer DHCPv4, TFTP and HTTP for network-booting nodes on one network",
 		Long: "Serve DHCPv4 (PXE clients, then the same nodes' kernels) and read-only TFTP\n" +
 			"and HTTP (port 80) from --root on one network from site.yaml, until\n" +
-			"interrupted or --timeout if given. Everything stays on the network's\n" +
-			"interface, which must already carry the network's address. Each request is\n" +
-			"logged (JSON lines with -o json).",
+			"interrupted or --timeout if given. Nodes stage0 installed on the network\n" +
+			"(the install records) keep their address and boot from their disks; with no\n" +
+			"--root, only DHCP runs. Everything stays on the network's interface, which\n" +
+			"must already carry the network's address. Each request is logged (JSON\n" +
+			"lines with -o json).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.checkOutput(); err != nil {
 				return err
-			}
-			if root == "" {
-				return errors.New("--root is required: the directory of boot files to serve")
 			}
 			site, err := config.LoadSite(a.sitePath)
 			if err != nil {
@@ -59,37 +57,58 @@ func (a *App) serveCommand() *cobra.Command {
 				ctx, cancel = a.context(cmd)
 			}
 			defer cancel()
-			return a.serve(ctx, n, root, log)
+			installed, err := a.installedOn(n, "")
+			if err != nil {
+				return err
+			}
+			return a.serve(ctx, n, root, a.newLeases(n, installed, log), log)
 		},
 	}
-	cmd.Flags().StringVar(&root, "root", "", "directory of boot files to serve over TFTP")
+	cmd.Flags().StringVar(&root, "root", "", "directory of boot files to serve over TFTP and HTTP (none: DHCP only)")
 	return cmd
 }
 
-// serve answers DHCPv4, TFTP and HTTP from root on network n until ctx is
-// done.
-func (a *App) serve(ctx context.Context, n config.Network, root string, log *slog.Logger) error {
-	files, err := tftpd.New(root, log)
-	if err != nil {
-		return err
-	}
-	web, err := httpd.New(root, log)
-	if err != nil {
-		return err
-	}
-	leases := dhcpd.New(dhcpd.Config{
+// installedLeaseTime is installed nodes' lease, long so they keep their
+// address through a stage0 restart.
+const installedLeaseTime = 24 * time.Hour
+
+func (a *App) newLeases(n config.Network, installed map[string]netip.Addr, log *slog.Logger) *dhcpd.Server {
+	return dhcpd.New(dhcpd.Config{
 		Server: n.Server, Subnet: n.Subnet,
 		PoolFirst: n.PoolFirst, PoolLast: n.PoolLast, LeaseTime: leaseTime,
+		Installed: installed, InstalledLeaseTime: installedLeaseTime,
 	}, log)
+}
+
+// serve answers DHCPv4 with leases, and TFTP and HTTP from root (if
+// any), on network n until ctx is done.
+func (a *App) serve(ctx context.Context, n config.Network, root string, leases *dhcpd.Server, log *slog.Logger) error {
+	var files *tftpd.Server
+	var web *httpd.Server
+	if root != "" {
+		var err error
+		if files, err = tftpd.New(root, log); err != nil {
+			return err
+		}
+		if web, err = httpd.New(root, log); err != nil {
+			return err
+		}
+	}
 	socks, err := a.OpenNetwork(ctx, n)
 	if err != nil {
 		return err
 	}
-	log.Info("serving", "interface", n.Interface, "address", n.Server, "pool", n.Pool, "root", root)
+	log.Info("serving", "interface", n.Interface, "address", n.Server, "pool", n.Pool, "root", root,
+		"installed", len(leases.InstalledNodes()))
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return leases.Serve(ctx, socks.DHCP) })
-	g.Go(func() error { return files.Serve(ctx, socks.TFTP) })
-	g.Go(func() error { return web.Serve(ctx, socks.HTTP) })
+	if root != "" {
+		g.Go(func() error { return files.Serve(ctx, socks.TFTP) })
+		g.Go(func() error { return web.Serve(ctx, socks.HTTP) })
+	} else {
+		socks.TFTP.Close()
+		socks.HTTP.Close()
+	}
 	err = g.Wait()
 	log.Info("stopped")
 	return err

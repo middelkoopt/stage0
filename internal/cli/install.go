@@ -8,6 +8,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net"
 	"os"
 	"path/filepath"
 	"regexp"
@@ -20,6 +21,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/agent"
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/console"
+	"github.com/middelkoopt/stage0/internal/dhcpd"
 	"github.com/middelkoopt/stage0/internal/image"
 	"github.com/middelkoopt/stage0/internal/initrd"
 	"github.com/middelkoopt/stage0/internal/netswitch"
@@ -46,6 +48,9 @@ type installResult struct {
 	Ready     string          `json:"ready,omitempty"`
 	Seconds   float64         `json:"seconds"`
 	Address   string          `json:"address,omitempty"` // IPv6, found on the network after boot
+	Network   string          `json:"network"`
+	MAC       string          `json:"mac,omitempty"`  // the interface it netbooted on
+	IPv4      string          `json:"ipv4,omitempty"` // its lease from stage0 on Network
 	Log       string          `json:"log"`
 	ServeLog  string          `json:"serveLog"`
 }
@@ -189,7 +194,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	if err := os.MkdirAll("logs", 0o755); err != nil {
 		return err
 	}
-	res := installResult{Node: node.Name, Port: port.ID, Image: img.Name, Disk: disk,
+	res := installResult{Node: node.Name, Port: port.ID, Image: img.Name, Disk: disk, Network: n.Name,
 		Log: filepath.Join("logs", node.Name+".log"), ServeLog: filepath.Join("logs", node.Name+"-serve.log")}
 	consoleLog, err := os.OpenFile(res.Log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -214,12 +219,19 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	w := newWatcher(cctx, ready)
 	go console.Capture(cctx, portIO, io.MultiWriter(consoleLog, w), nil)
 
-	// Serve until the agent is done.
+	// Serve for the whole install: the agent, then the installed system's
+	// DHCP. Other installed nodes keep their addresses.
+	others, err := a.installedOn(n, node.Name)
+	if err != nil {
+		return err
+	}
+	slog := slog.New(slog.NewTextHandler(serveLog, nil)).With("network", n.Name)
+	leases := a.newLeases(n, others, slog)
 	sctx, stopServe := context.WithCancel(ctx)
 	serveDone := make(chan struct{})
 	var serveErr error
 	go func() {
-		serveErr = a.serve(sctx, n, run, slog.New(slog.NewTextHandler(serveLog, nil)).With("network", n.Name))
+		serveErr = a.serve(sctx, n, run, leases, slog)
 		close(serveDone)
 	}()
 	defer func() { stopServe(); <-serveDone }()
@@ -257,9 +269,16 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		}
 	}
 
-	// Stop answering it, so it boots from its disk.
-	stopServe()
-	<-serveDone
+	// From now on its PXE requests get no answer, so it boots from its
+	// disk; its installed system's DHCP gets the same address.
+	if macs, err := res.macs(); err == nil {
+		for _, m := range macs {
+			if ip, ok := leases.Install(m); ok {
+				res.MAC, res.IPv4 = m.String(), ip.String()
+				break
+			}
+		}
+	}
 	w.armReady()
 	if err := a.powerCycle(ctx, sw, port.ID); err != nil {
 		return err
@@ -279,6 +298,14 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}
 	res.Seconds = time.Since(start).Round(time.Second).Seconds()
 	say("%s: up (%q on the console) after %.0f s", node.Name, res.Ready, res.Seconds)
+	if res.MAC != "" {
+		hw, _ := net.ParseMAC(res.MAC)
+		if waitAcked(ctx, leases, hw, addressWait) {
+			say("%s: %s (IPv4 from stage0: keep `stage0 serve %s` running to keep it)\n  ssh root@%s", node.Name, res.IPv4, n.Name, res.IPv4)
+		} else {
+			say("%s: its system has not asked stage0 for its address %s yet", node.Name, res.IPv4)
+		}
+	}
 	if err := a.saveRecord(res); err != nil {
 		return err
 	}
@@ -294,6 +321,22 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		return a.writeJSON(res)
 	}
 	return nil
+}
+
+// waitAcked waits until leases has acknowledged mac's address.
+func waitAcked(ctx context.Context, leases *dhcpd.Server, mac net.HardwareAddr, limit time.Duration) bool {
+	ctx, cancel := context.WithTimeout(ctx, limit)
+	defer cancel()
+	for {
+		if _, ok := leases.Acked(mac); ok {
+			return true
+		}
+		select {
+		case <-ctx.Done():
+			return false
+		case <-time.After(100 * time.Millisecond):
+		}
+	}
 }
 
 // oneNetwork returns the named network, or the only one.
