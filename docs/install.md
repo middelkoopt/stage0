@@ -18,7 +18,9 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
 
 - **`images/<name>.yaml`:** the image's URL and SHA-256 (an xz raw disk
   image), the `cmdline.txt` the installed system needs, optionally
-  `config.txt` lines to ensure (`config:`), its boot partition (default 1)
+  `config.txt` lines to ensure (`config:`), files to add to the boot
+  partition (`bootFiles:`, e.g. Raspberry Pi OS's `ssh`), its boot
+  partition (default 1)
   and the console pattern that means it is up (default `login: `).
 - **`site.yaml`:** the node with a `disk` (optionally a serial `console`
   and a `hostname`, default its name), `sshKeys` (public keys for root on

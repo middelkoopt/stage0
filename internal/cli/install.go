@@ -471,6 +471,15 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 			return err
 		}
 	}
+	for name, body := range img.BootFiles {
+		p := filepath.Join(seed, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			return err
+		}
+	}
 	// cloud-init images (user-data on the boot partition) would otherwise
 	// set their own hostname at first boot.
 	if ud, err := os.ReadFile(filepath.Join(bootCache, "user-data")); err == nil {

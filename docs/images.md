@@ -94,3 +94,26 @@ SHA-256 in `CHECKSUM` there). Raw size 3,040,870,400 bytes.
   first boot. Left as shipped, cloud-init overrides stage0's
   `systemd.hostname=` with `almalinux.local`; stage0 seeds `user-data` with
   the node's hostname instead.
+
+## Raspberry Pi OS Lite (Debian 13 "trixie"), 2026-10-06
+
+`2026-10-06-raspios-trixie-arm64-lite.img.xz` from
+`https://downloads.raspberrypi.com/raspios_lite_arm64/images/` (550 MB;
+`.sha256` beside it).
+
+- **Layout:** MBR. Partition 1 (from 8 MiB, FAT, label `bootfs`) is the
+  boot partition; root on partition 2, PARTUUID `27b94958-02`.
+- **Boot files:** `kernel_2712.img` + `initramfs_2712` (Pi 5) and
+  `kernel8.img` + `initramfs8`; `config.txt` sets `auto_initramfs=1`;
+  `cmdline.txt` names the root by PARTUUID and asks for `resize`, which
+  grows the root filesystem at first boot.
+- **cloud-init NoCloud** from the boot partition (`user-data`,
+  `meta-data`, `network-config`); the shipped `user-data` is all comments
+  (no user, no hostname).
+- **SSH is off unless the boot partition has a file named `ssh`**; the
+  image config adds an empty one (`bootFiles`).
+- **Installs and boots on a Pi 5** (k52, 2026-10-26): written in 97 s, up
+  in 4 minutes with hostname `k52` (seeded `user-data`), root logging in
+  with the site's keys (the kernel-command-line credential), sshd
+  `OpenSSH_10.0p2 Debian-7+deb13u4`, root filesystem grown to the disk
+  (116.9 GB).

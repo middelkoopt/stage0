@@ -50,6 +50,11 @@ type Config struct {
 	// Config are config.txt lines (Pi firmware settings) to ensure, for the
 	// agent's boot and the installed system's (see EnsureConfig).
 	Config []string `yaml:"config,omitempty"`
+
+	// BootFiles are files (name relative to the boot partition, contents)
+	// the seed writes there, e.g. Raspberry Pi OS's empty "ssh" that turns
+	// its SSH server on.
+	BootFiles map[string]string `yaml:"bootFiles,omitempty"`
 }
 
 var (
@@ -86,14 +91,19 @@ func Load(dir, name string) (Config, error) {
 	switch {
 	case !strings.HasPrefix(c.URL, "https://") && !strings.HasPrefix(c.URL, "http://"):
 		return c, fmt.Errorf("%s: url %q is not http(s)", p, c.URL)
-	case !strings.HasSuffix(c.URL, ".raw.xz"):
-		return c, fmt.Errorf("%s: url %q: only xz-compressed raw disk images (.raw.xz) are supported", p, c.URL)
+	case !strings.HasSuffix(c.URL, ".xz"):
+		return c, fmt.Errorf("%s: url %q: only xz-compressed raw disk images (.raw.xz, .img.xz) are supported", p, c.URL)
 	case !hexSum.MatchString(c.SHA256):
 		return c, fmt.Errorf("%s: sha256 %q is not 64 hex digits", p, c.SHA256)
 	case c.Cmdline == "":
 		return c, fmt.Errorf("%s: no cmdline", p)
 	case c.BootPartition < 0:
 		return c, fmt.Errorf("%s: bootPartition %d", p, c.BootPartition)
+	}
+	for name := range c.BootFiles {
+		if !filepath.IsLocal(name) || strings.ContainsAny(name, "\\") {
+			return c, fmt.Errorf("%s: bootFiles: %q is not a path inside the boot partition", p, name)
+		}
 	}
 	for _, l := range c.Config {
 		if strings.ContainsAny(l, "\r\n") || strings.TrimSpace(l) == "" {

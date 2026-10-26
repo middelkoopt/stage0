@@ -81,13 +81,14 @@ ready: 'login: '
 func TestLoadErrors(t *testing.T) {
 	sum := strings.Repeat("ab", 32)
 	tests := map[string]string{
-		"no url":      "sha256: " + sum + "\ncmdline: x\n",
-		"no sha256":   "url: https://e.org/a.raw.xz\ncmdline: x\n",
-		"bad sha256":  "url: https://e.org/a.raw.xz\nsha256: xyz\ncmdline: x\n",
-		"not raw.xz":  "url: https://e.org/a.iso\nsha256: " + sum + "\ncmdline: x\n",
-		"no cmdline":  "url: https://e.org/a.raw.xz\nsha256: " + sum + "\n",
-		"bad ready":   "url: https://e.org/a.raw.xz\nsha256: " + sum + "\ncmdline: x\nready: '('\n",
-		"unknown key": "url: https://e.org/a.raw.xz\nsha256: " + sum + "\ncmdline: x\nfoo: 1\n",
+		"no url":       "sha256: " + sum + "\ncmdline: x\n",
+		"no sha256":    "url: https://e.org/a.raw.xz\ncmdline: x\n",
+		"bad sha256":   "url: https://e.org/a.raw.xz\nsha256: xyz\ncmdline: x\n",
+		"not xz":       "url: https://e.org/a.iso\nsha256: " + sum + "\ncmdline: x\n",
+		"bad bootFile": "url: https://e.org/a.raw.xz\nsha256: " + sum + "\ncmdline: x\nbootFiles: {../x: y}\n",
+		"no cmdline":   "url: https://e.org/a.raw.xz\nsha256: " + sum + "\n",
+		"bad ready":    "url: https://e.org/a.raw.xz\nsha256: " + sum + "\ncmdline: x\nready: '('\n",
+		"unknown key":  "url: https://e.org/a.raw.xz\nsha256: " + sum + "\ncmdline: x\nfoo: 1\n",
 	}
 	for name, body := range tests {
 		dir := t.TempDir()
@@ -199,5 +200,18 @@ func TestSetCloudInitHostname(t *testing.T) {
 	}
 	if got := string(SetCloudInitHostname([]byte("#cloud-config\nssh_pwauth: false"), "k400")); got != "#cloud-config\nssh_pwauth: false\nhostname: k400\n" {
 		t.Errorf("no hostname key: got %q", got)
+	}
+}
+
+func TestLoadBootFiles(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, "raspios", "url: https://e.org/2026-10-06-raspios-trixie-arm64-lite.img.xz\nsha256: "+
+		strings.Repeat("ab", 32)+"\ncmdline: x\nbootFiles:\n  ssh: \"\"\n")
+	c, err := Load(dir, "raspios")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if v, ok := c.BootFiles["ssh"]; !ok || v != "" || c.File() != "2026-10-06-raspios-trixie-arm64-lite.img.xz" {
+		t.Errorf("config %+v", c)
 	}
 }

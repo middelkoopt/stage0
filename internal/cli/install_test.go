@@ -118,7 +118,7 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 	images := filepath.Join(dir, "images")
 	os.Mkdir(images, 0o755)
 	os.WriteFile(filepath.Join(images, "test.yaml"), []byte("url: "+srv.URL+"/test.raw.xz\nsha256: "+sum+
-		"\ncmdline: console=serial0,115200 root=PARTUUID=abc rootwait\nconfig: [dtoverlay=disable-bt]\n"), 0o644)
+		"\ncmdline: console=serial0,115200 root=PARTUUID=abc rootwait\nconfig: [dtoverlay=disable-bt]\nbootFiles: {ssh: \"\"}\n"), 0o644)
 	agent := filepath.Join(dir, "stage0")
 	os.WriteFile(agent, []byte("AGENT"), 0o755)
 
@@ -277,6 +277,9 @@ func TestInstall(t *testing.T) {
 		}
 		b, _ := io.ReadAll(r)
 		seed[h.Name] = string(b)
+	}
+	if v, ok := seed["ssh"]; !ok || v != "" {
+		t.Errorf("seed lacks the empty ssh boot file: %v", seed)
 	}
 	if c := seed["config.txt"]; !strings.HasPrefix(c, "arm_64bit=1\n") || !strings.HasSuffix(c, "[all]\ndtoverlay=disable-bt\n") ||
 		strings.Contains(c, "stage0-initrd") {

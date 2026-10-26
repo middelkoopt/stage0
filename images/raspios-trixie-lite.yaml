@@ -1,0 +1,11 @@
+# Raspberry Pi OS Lite (Debian 13 "trixie"), arm64, 2026-10-06. MBR; its
+# boot partition carries cloud-init NoCloud files. Facts: docs/images.md.
+url: https://downloads.raspberrypi.com/raspios_lite_arm64/images/raspios_lite_arm64-2026-10-06/2026-10-06-raspios-trixie-arm64-lite.img.xz
+sha256: 483db18a48da399b5b7022ffae9a07bc6d99daab30e593aedac09b69ff422843
+
+# As shipped ("resize" grows the root filesystem at first boot).
+cmdline: console=serial0,115200 console=tty1 root=PARTUUID=27b94958-02 rootfstype=ext4 fsck.repair=yes rootwait resize
+
+# An empty "ssh" on the boot partition turns its SSH server on.
+bootFiles:
+  ssh: ""

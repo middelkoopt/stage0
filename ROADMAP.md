@@ -47,8 +47,9 @@ reboot.
 2. **Moving ports after the install** (stage 0.5): to a cluster VLAN, once
    decided what it is (the head needs stage0's network too). Moving to the
    provisioning VLAN before is built (`install --set-port`).
-3. **More images:** Raspberry Pi OS or Ubuntu for Pi (MBR, cloud-init).
-   Built: Rocky 10.2 (Pi 5; doesn't boot a Pi 4) and AlmaLinux 10.1 (Pi 4).
+3. **More images:** Ubuntu for Pi; Alma and Raspberry Pi OS on the other
+   board. Built: Rocky 10.2 (Pi 5; doesn't boot a Pi 4), AlmaLinux 10.1
+   (Pi 4), Raspberry Pi OS Lite trixie (Pi 5, MBR).
 4. **Router advertisements**, for a stable IPv6 address; needs
    `CAP_NET_RAW` for stage0 (a decision for the human).
 

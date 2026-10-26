@@ -5,12 +5,12 @@ for how an install works and [`docs/development.md`](docs/development.md)
 for code.
 
 ## Status (2026-10-26)
-**Two images, two boards:** `stage0 install k52 --image rocky-10.2-rpi`
-(Pi 5) and `stage0 install k400 --image alma-10.1-rpi` (Pi 400) both end
-with the node answering ping and SSH at its stage0 lease (`10.0.3.100`,
-`10.0.3.101`), site keys, its hostname. The Rocky image doesn't boot a
-Pi 400 (firmware can't read its boot partition; see
-[`docs/images.md`](docs/images.md)). Both nodes are on.
+**Three images install and come up with SSH:** Rocky 10.2 and Raspberry
+Pi OS Lite trixie on k52 (Pi 5), AlmaLinux 10.1 on k400 (Pi 400), each at
+its stage0 lease with the site's keys and its hostname; with or without a
+serial console. The Rocky image doesn't boot a Pi 400 (see
+[`docs/images.md`](docs/images.md)). k52 runs Raspberry Pi OS
+(`10.0.3.100`), k400 Alma (`10.0.3.101`); both on.
 
 ## Open decisions
 - **WW1** How stage0 gets `CAP_NET_RAW` for router advertisements: a
