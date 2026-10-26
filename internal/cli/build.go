@@ -71,7 +71,47 @@ func (a *App) buildCommand() *cobra.Command {
 	ird.Flags().StringVar(&out, "out", "", "file to write, e.g. ROOT/initramfs8")
 	ird.Flags().StringVar(&agentPath, "agent", "", "static stage0 binary to pack (default: this one)")
 	ird.Flags().StringVar(&payload, "payload", "", "file to pack as /payload")
-	cmd.AddCommand(ird)
+	cmd.AddCommand(ird, a.buildSeedCommand())
+	return cmd
+}
+
+func (a *App) buildSeedCommand() *cobra.Command {
+	var from, out string
+	cmd := &cobra.Command{
+		Use:   "seed --from DIR --out FILE",
+		Short: "Pack first-boot files for an installed image's boot partition",
+		Long: "Pack the files under --from (e.g. a cmdline.txt, cloud-init data) as a\n" +
+			"seed. Serve it and give the agent stage0.seed=<url>: after writing the image it\n" +
+			"unpacks the seed over the image's boot partition (its first, FAT, partition).",
+		Args: cobra.NoArgs,
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := a.checkOutput(); err != nil {
+				return err
+			}
+			if from == "" || out == "" {
+				return errors.New("--from and --out are required")
+			}
+			tmp, err := os.CreateTemp(filepath.Dir(out), ".seed-*")
+			if err != nil {
+				return err
+			}
+			defer os.Remove(tmp.Name())
+			n, err := initrd.BuildSeed(tmp, from)
+			if err = errors.Join(err, tmp.Close(), os.Chmod(tmp.Name(), 0o644)); err != nil {
+				return err
+			}
+			if err := os.Rename(tmp.Name(), out); err != nil {
+				return err
+			}
+			if a.output == "json" {
+				return a.writeJSON(map[string]any{"path": out, "files": n})
+			}
+			fmt.Fprintf(a.Stdout, "wrote %s: %d files\n", out, n)
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&from, "from", "", "directory of first-boot files")
+	cmd.Flags().StringVar(&out, "out", "", "file to write, e.g. ROOT/seed.cpio")
 	return cmd
 }
 

@@ -97,3 +97,41 @@ func TestCheckStatic(t *testing.T) {
 	}
 	t.Skip("no dynamic binary to check against")
 }
+
+func TestBuildSeed(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "cmdline.txt"), []byte("console=serial0,115200"), 0o644)
+	os.MkdirAll(filepath.Join(dir, "user"), 0o755)
+	os.WriteFile(filepath.Join(dir, "user", "user-data"), []byte("#cloud-config\n"), 0o644)
+	var buf bytes.Buffer
+	n, err := BuildSeed(&buf, dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n != 2 {
+		t.Errorf("%d files, want 2", n)
+	}
+	r := cpio.NewReader(&buf)
+	var names []string
+	for {
+		h, err := r.Next()
+		if err == io.EOF {
+			break
+		}
+		if err != nil {
+			t.Fatal(err)
+		}
+		names = append(names, h.Name)
+	}
+	if got := strings.Join(names, " "); got != "cmdline.txt user user/user-data" {
+		t.Errorf("entries %q", got)
+	}
+}
+
+func TestBuildSeedRefusesSymlinks(t *testing.T) {
+	dir := t.TempDir()
+	os.Symlink("/etc/passwd", filepath.Join(dir, "link"))
+	if _, err := BuildSeed(io.Discard, dir); err == nil {
+		t.Error("symlink accepted")
+	}
+}

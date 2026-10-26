@@ -14,6 +14,7 @@ import (
 
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/dhcpd"
+	"github.com/middelkoopt/stage0/internal/httpd"
 	"github.com/middelkoopt/stage0/internal/tftpd"
 )
 
@@ -24,11 +25,12 @@ func (a *App) serveCommand() *cobra.Command {
 	var root string
 	cmd := &cobra.Command{
 		Use:   "serve <network> --root DIR",
-		Short: "Answer DHCPv4 and TFTP for network-booting nodes on one network",
-		Long: "Serve DHCPv4 (PXE clients only, such as a Pi's bootloader) and read-only TFTP\n" +
-			"from --root on one network from site.yaml, until interrupted or --timeout if\n" +
-			"given. Everything stays on the network's interface, which must already carry\n" +
-			"the network's address. Each request is logged (JSON lines with -o json).",
+		Short: "Answer DHCPv4, TFTP and HTTP for network-booting nodes on one network",
+		Long: "Serve DHCPv4 (PXE clients, then the same nodes' kernels) and read-only TFTP\n" +
+			"and HTTP (port 80) from --root on one network from site.yaml, until\n" +
+			"interrupted or --timeout if given. Everything stays on the network's\n" +
+			"interface, which must already carry the network's address. Each request is\n" +
+			"logged (JSON lines with -o json).",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.checkOutput(); err != nil {
@@ -55,6 +57,10 @@ func (a *App) serveCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
+			web, err := httpd.New(root, log)
+			if err != nil {
+				return err
+			}
 			leases := dhcpd.New(dhcpd.Config{
 				Server: n.Server, Subnet: n.Subnet,
 				PoolFirst: n.PoolFirst, PoolLast: n.PoolLast, LeaseTime: leaseTime,
@@ -67,14 +73,15 @@ func (a *App) serveCommand() *cobra.Command {
 			}
 			defer cancel()
 
-			dconn, tconn, err := a.OpenNetwork(ctx, n)
+			socks, err := a.OpenNetwork(ctx, n)
 			if err != nil {
 				return err
 			}
 			log.Info("serving", "interface", n.Interface, "address", n.Server, "pool", n.Pool, "root", root)
 			g, ctx := errgroup.WithContext(ctx)
-			g.Go(func() error { return leases.Serve(ctx, dconn) })
-			g.Go(func() error { return files.Serve(ctx, tconn) })
+			g.Go(func() error { return leases.Serve(ctx, socks.DHCP) })
+			g.Go(func() error { return files.Serve(ctx, socks.TFTP) })
+			g.Go(func() error { return web.Serve(ctx, socks.HTTP) })
 			err = g.Wait()
 			log.Info("stopped")
 			return err
@@ -84,20 +91,33 @@ func (a *App) serveCommand() *cobra.Command {
 	return cmd
 }
 
-// openNetwork checks the network's interface and opens the DHCP and TFTP
-// sockets pinned to it.
-func openNetwork(ctx context.Context, n config.Network) (dhcp, tftp net.PacketConn, err error) {
+// Sockets are serve's listening sockets.
+type Sockets struct {
+	DHCP, TFTP net.PacketConn
+	HTTP       net.Listener
+}
+
+// openNetwork checks the network's interface and opens serve's sockets
+// pinned to it.
+func openNetwork(ctx context.Context, n config.Network) (Sockets, error) {
+	var s Sockets
 	if err := checkInterface(n.Interface, n.Server); err != nil {
-		return nil, nil, fmt.Errorf("network %q: %w", n.Name, err)
+		return s, fmt.Errorf("network %q: %w", n.Name, err)
 	}
-	if dhcp, err = dhcpd.Listen(ctx, n.Interface); err != nil {
-		return nil, nil, err
+	var err error
+	if s.DHCP, err = dhcpd.Listen(ctx, n.Interface); err != nil {
+		return s, err
 	}
-	if tftp, err = tftpd.Listen(ctx, n.Interface, n.Server); err != nil {
-		dhcp.Close()
-		return nil, nil, err
+	if s.TFTP, err = tftpd.Listen(ctx, n.Interface, n.Server); err != nil {
+		s.DHCP.Close()
+		return s, err
 	}
-	return dhcp, tftp, nil
+	if s.HTTP, err = httpd.Listen(ctx, n.Interface, n.Server); err != nil {
+		s.DHCP.Close()
+		s.TFTP.Close()
+		return s, err
+	}
+	return s, nil
 }
 
 // checkInterface makes sure ifname is up and is the only interface carrying

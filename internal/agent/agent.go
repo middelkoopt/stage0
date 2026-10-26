@@ -29,14 +29,16 @@ const PayloadPath = "payload"
 
 // Report is what the node has.
 type Report struct {
-	Model      string      `json:"model"`
-	Serial     string      `json:"serial"`
-	Kernel     string      `json:"kernel"`
-	Cmdline    string      `json:"cmdline"`
-	MemTotalMB int         `json:"memTotalMB"`
-	Disks      []Disk      `json:"disks"`
-	Interfaces []Interface `json:"interfaces"`
-	Payload    *Payload    `json:"payload,omitempty"`
+	Model      string `json:"model"`
+	Serial     string `json:"serial"`
+	Kernel     string `json:"kernel"`
+	Cmdline    string `json:"cmdline"`
+	MemTotalMB int    `json:"memTotalMB"`
+	// Filesystems are the disk filesystems the kernel can mount.
+	Filesystems []string    `json:"filesystems"`
+	Disks       []Disk      `json:"disks"`
+	Interfaces  []Interface `json:"interfaces"`
+	Payload     *Payload    `json:"payload,omitempty"`
 }
 
 // Disk is a whole block device.
@@ -98,11 +100,30 @@ func install(out io.Writer, cmdline string) {
 	case plan == nil:
 		return
 	}
+	if plan.URL != "" {
+		fmt.Fprintf(out, "stage0 agent: fetching %s\n", plan.URL)
+		if _, err := Fetch(plan.URL, "/"+PayloadPath, out); err != nil {
+			fmt.Fprintf(out, "STAGE0-ERROR install: %v\n", err)
+			return
+		}
+	}
 	fmt.Fprintf(out, "stage0 agent: installing the payload on /dev/%s\n", plan.Disk)
 	res, err := Install("/"+PayloadPath, "/dev/"+plan.Disk, plan.SHA256, out)
 	if err != nil {
 		fmt.Fprintf(out, "STAGE0-ERROR install: %v\n", err)
 		return
+	}
+	if plan.Seed != "" {
+		fmt.Fprintf(out, "stage0 agent: fetching first-boot files %s\n", plan.Seed)
+		const seed = "/seed.cpio"
+		if _, err := Fetch(plan.Seed, seed, out); err != nil {
+			fmt.Fprintf(out, "STAGE0-ERROR seed: %v\n", err)
+			return
+		}
+		if res.Seeded, err = seedDisk(plan.Disk, seed); err != nil {
+			fmt.Fprintf(out, "STAGE0-ERROR seed: %v\n", err)
+			return
+		}
 	}
 	b, _ := json.Marshal(res)
 	fmt.Fprintf(out, "%s%s\n", InstalledPrefix, b)
@@ -146,6 +167,12 @@ func Gather(root string) (Report, error) {
 		if f := strings.Fields(line); len(f) >= 2 && f[0] == "MemTotal:" {
 			kb, _ := strconv.Atoi(f[1])
 			r.MemTotalMB = kb / 1024
+		}
+	}
+
+	for line := range strings.Lines(read("proc/filesystems")) {
+		if f := strings.Fields(line); len(f) == 1 {
+			r.Filesystems = append(r.Filesystems, f[0])
 		}
 	}
 

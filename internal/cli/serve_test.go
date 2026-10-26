@@ -3,7 +3,9 @@ package cli
 import (
 	"bytes"
 	"context"
+	"io"
 	"net"
+	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -31,13 +33,17 @@ func TestServe(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
+	hln, err := net.Listen("tcp4", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
 	opened := make(chan struct{})
-	app := &App{OpenNetwork: func(_ context.Context, n config.Network) (net.PacketConn, net.PacketConn, error) {
+	app := &App{OpenNetwork: func(_ context.Context, n config.Network) (Sockets, error) {
 		if n.Interface != "eth0.3" || n.Server != netip.MustParseAddr("10.0.3.1") {
 			t.Errorf("opened %+v", n)
 		}
 		close(opened)
-		return dconn, tconn, nil
+		return Sockets{DHCP: dconn, TFTP: tconn, HTTP: hln}, nil
 	}}
 
 	type result struct {
@@ -64,6 +70,15 @@ func TestServe(t *testing.T) {
 		t.Errorf("config.txt = %q, %v", got.String(), err)
 	}
 
+	resp, err := http.Get("http://" + hln.Addr().String() + "/config.txt")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := io.ReadAll(resp.Body); string(b) != "arm_64bit=1\n" {
+		t.Errorf("http config.txt = %q", b)
+	}
+	resp.Body.Close()
+
 	mac, _ := net.ParseMAC("d8:3a:dd:c5:c1:f3")
 	d, _ := dhcpv4.NewDiscovery(mac, dhcpv4.WithOption(dhcpv4.OptClassIdentifier("PXEClient:Arch:00000:UNDI:002001")))
 	cli, err := net.ListenPacket("udp4", "127.0.0.1:0")
@@ -80,7 +95,7 @@ func TestServe(t *testing.T) {
 		if r.err != nil {
 			t.Fatalf("serve: %v\n%s", r.err, r.out)
 		}
-		for _, want := range []string{"msg=serving", "tftp: sent", "file=/config.txt", "dhcp: offer", "ip=10.0.3.100", "msg=stopped"} {
+		for _, want := range []string{"msg=serving", "tftp: sent", "file=/config.txt", "dhcp: offer", "ip=10.0.3.100", "http: sent", "msg=stopped"} {
 			if !strings.Contains(r.out, want) {
 				t.Errorf("log lacks %q:\n%s", want, r.out)
 			}
@@ -92,9 +107,9 @@ func TestServe(t *testing.T) {
 
 func TestServeErrors(t *testing.T) {
 	app := func() *App {
-		return &App{OpenNetwork: func(context.Context, config.Network) (net.PacketConn, net.PacketConn, error) {
+		return &App{OpenNetwork: func(context.Context, config.Network) (Sockets, error) {
 			t.Error("opened the network")
-			return nil, nil, nil
+			return Sockets{}, nil
 		}}
 	}
 	if _, err := runApp(t, app(), "serve", "pinet"); err == nil || !strings.Contains(err.Error(), "--root") {

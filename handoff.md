@@ -3,32 +3,33 @@ Stage0 installs a head node from this repo alone. Read
 [`ROADMAP.md`](ROADMAP.md) first, then [`docs/development.md`](docs/development.md)
 for code and [`docs/netboot.md`](docs/netboot.md) for Pi work.
 
-## Status (2026-10-25)
-The stage0 agent boots on k52 from `stage0 serve`: `stage0 build initrd`
-packs the static stage0 binary as `/init`; on the node it prints
-`STAGE0-REPORT` (k52: Pi 5, 8 GB, 128 GB SD `mmcblk0`, no NVMe). A 106 MB
-initramfs crossed TFTP intact, so the ~92 MB ceiling doesn't apply here
-([`docs/netboot.md`](docs/netboot.md)). The disk write (`stage0.disk=` +
-`stage0.sha256=` on the command line, xz image as payload) is unit-tested;
-its first live run with the 1 GB Rocky 10.2 image is in progress.
+## Status (2026-10-26)
+**stage0 installed Rocky 10.2 on k52 (Pi 5) and it boots to a login
+prompt.** The agent netboots, gets an address by the kernel's `ip=dhcp`,
+fetches the 994 MB image from `serve`'s HTTP (8.5 s), checks its SHA-256,
+writes it to the SD card (105 s), and unpacks a seed `cmdline.txt` onto the
+boot partition. The shipped image doesn't boot a Pi 5 as is; see
+[`docs/images.md`](docs/images.md). k52 is on, at Rocky's login prompt
+(user `rocky`, password `rockylinux`, serial only so far). The steps are
+run by hand (see Next session 1).
 
 ## Open decisions
-- **K2/K3** How the install reaches the disk. Exploring first: **agent +
-  payload** — one large initramfs holding the stage0 agent (PID 1, pre-root)
-  and the compressed image, plus a small per-node cpio that the TFTP server
-  appends. The agent needs no network: mount, pick the disk, stream-decompress
-  the image to it (in Go), write the first-boot seed, reboot. Settled: 106 MB
-  crosses TFTP fine, and the Rocky Pi kernel has SD, NVMe and Ethernet
-  built in (the agent needs no modules). Open: whether the firmware loads a
-  ~1 GB initramfs (the full Rocky image), and the ~6 minutes TFTP takes for
-  it. Fallback: (a) small initramfs that fetches the image over the network.
+- **K2/K3** How the install reaches the disk. Built and working: a small
+  agent initramfs over TFTP, the image over HTTP. A 1 GB image inside the
+  initramfs fails: the bootloader gives each TFTP file a fixed time (60 s
+  here, ~180 MB at 3 MB/s); see [`docs/netboot.md`](docs/netboot.md).
+  Recommendation: keep the HTTP route and drop the payload-in-initramfs
+  route, unless a node can't do `ip=dhcp`. Needs the human's yes.
 
 ## Next session
-1. Finish the install on k52: check the write's console log, stop `serve`,
-   power-cycle, watch Rocky boot from the SD card; then first-boot settings
-   (cloud-init seed or files) so it comes up with SSH.
-2. `stage0 console --send` to type into a node's console (log in, run a
-   command) without SSH.
+1. `stage0 install <node>`: one command for what was done by hand (stage
+   the boot root with a per-node cmdline.txt, serve, power the node, wait
+   for `STAGE0-INSTALLED`, stop answering it, power-cycle, wait for
+   `login:`), with the per-image settings (`docs/images.md`) in one config
+   file per image.
+2. First boot that's useful: SSH key and hostname via the seed (cloud-init
+   if the image has it), grow the root filesystem, and an address on
+   `piwulf` for the new head.
 3. Update the Pi EEPROM firmware on the free nodes (allowed); ideally a
    small netbooted updater.
 4. k53 is powered off (it may run DHCP on piwulf); it may be powered and

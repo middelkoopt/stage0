@@ -9,13 +9,26 @@ import (
 	"testing"
 )
 
+// port is a fake serial port: reads replay output, writes are recorded.
+type port struct {
+	io.Reader
+	typed strings.Builder
+}
+
+func (p *port) Write(b []byte) (int, error) { return p.typed.Write(b) }
+func (p *port) Close() error                { return nil }
+
 // fakeConsole replays text as a node's serial output.
-func fakeConsole(t *testing.T, text string) func(string, int) (io.ReadCloser, error) {
-	return func(device string, baud int) (io.ReadCloser, error) {
+func fakeConsole(t *testing.T, text string) func(string, int) (io.ReadWriteCloser, error) {
+	return fakePort(t, &port{Reader: strings.NewReader(text)})
+}
+
+func fakePort(t *testing.T, p *port) func(string, int) (io.ReadWriteCloser, error) {
+	return func(device string, baud int) (io.ReadWriteCloser, error) {
 		if device != "/dev/serial/by-id/probe" || baud != 115200 {
 			t.Errorf("opened %s at %d", device, baud)
 		}
-		return io.NopCloser(strings.NewReader(text)), nil
+		return p, nil
 	}
 }
 
@@ -88,5 +101,29 @@ func TestConsoleBadPattern(t *testing.T) {
 	_, err := runApp(t, &App{OpenConsole: fakeConsole(t, "")}, "console", "k53", "--until", "(")
 	if err == nil {
 		t.Error("want an error for an invalid --until pattern")
+	}
+}
+
+func TestConsoleSend(t *testing.T) {
+	p := &port{Reader: strings.NewReader("\r\nk53 login: ")}
+	log := filepath.Join(t.TempDir(), "k53.log")
+	_, err := runApp(t, &App{OpenConsole: fakePort(t, p)},
+		"console", "k53", "--send", `\r`, "--until", `login: `, "--log", log)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.typed.String() != "\r" {
+		t.Errorf("typed %q, want a carriage return", p.typed.String())
+	}
+	b, _ := os.ReadFile(log)
+	if !strings.Contains(string(b), `=== stage0 console k53 sent "\r"`) {
+		t.Errorf("log does not record what was sent:\n%s", b)
+	}
+}
+
+func TestConsoleSendBadEscape(t *testing.T) {
+	_, err := runApp(t, &App{OpenConsole: fakeConsole(t, "")}, "console", "k53", "--send", `\q`)
+	if err == nil || !strings.Contains(err.Error(), "--send") {
+		t.Errorf("err = %v", err)
 	}
 }

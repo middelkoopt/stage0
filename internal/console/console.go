@@ -21,7 +21,7 @@ const tail = 64 << 10
 const readTimeout = 200 * time.Millisecond
 
 // Open opens a serial console at baud, 8N1, with the read timeout Capture expects.
-func Open(device string, baud int) (io.ReadCloser, error) {
+func Open(device string, baud int) (io.ReadWriteCloser, error) {
 	p, err := serial.Open(device, &serial.Mode{BaudRate: baud})
 	if err != nil {
 		return nil, fmt.Errorf("console %s: %w", device, err)

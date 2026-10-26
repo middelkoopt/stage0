@@ -71,3 +71,27 @@ func TestBuildInitrdRefusesDynamic(t *testing.T) {
 		t.Error("wrote an initramfs anyway")
 	}
 }
+
+func TestBuildSeed(t *testing.T) {
+	dir := t.TempDir()
+	from := filepath.Join(dir, "seed")
+	os.MkdirAll(from, 0o755)
+	os.WriteFile(filepath.Join(from, "cmdline.txt"), []byte("console=serial0,115200"), 0o644)
+	out := filepath.Join(dir, "seed.cpio")
+	got, err := runApp(t, &App{}, "build", "seed", "--from", from, "--out", out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.Contains(got, "1 files") {
+		t.Errorf("output %q", got)
+	}
+	f, err := os.Open(out)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer f.Close()
+	h, err := cpio.NewReader(f).Next()
+	if err != nil || h.Name != "cmdline.txt" {
+		t.Errorf("first entry %+v, %v", h, err)
+	}
+}

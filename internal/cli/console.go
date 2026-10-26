@@ -7,6 +7,8 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -16,17 +18,23 @@ import (
 )
 
 func (a *App) consoleCommand() *cobra.Command {
-	var until, logPath string
+	var until, logPath, send string
 	cmd := &cobra.Command{
 		Use:   "console <node>",
 		Short: "Show a node's serial console, logging everything it prints",
 		Long: "Show a node's serial console (its device is in site.yaml) and append it to\n" +
 			"logs/<node>.log. Runs until interrupted, until --timeout if given, or until\n" +
-			"the output matches --until. With -o json, prints only a summary at the end.",
+			"the output matches --until. With -o json, prints only a summary at the end.\n" +
+			"--send types text first (Go escapes: \\r for Enter, \\x03 for Ctrl-C), e.g.\n" +
+			"  stage0 console k52 --send 'root\\r' --until 'Password:'",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.checkOutput(); err != nil {
 				return err
+			}
+			text, err := strconv.Unquote(`"` + strings.ReplaceAll(send, `"`, `\"`) + `"`)
+			if err != nil {
+				return fmt.Errorf("--send %q: not valid escapes (use \\r, \\n, \\x03): %w", send, err)
 			}
 			var pattern *regexp.Regexp
 			if until != "" {
@@ -65,6 +73,12 @@ func (a *App) consoleCommand() *cobra.Command {
 			}
 			defer port.Close()
 			fmt.Fprintf(log, "\n=== stage0 console %s %s %s ===\n", node.Name, node.Console.Device, time.Now().Format(time.RFC3339))
+			if text != "" {
+				fmt.Fprintf(log, "=== stage0 console %s sent %q ===\n", node.Name, text)
+				if _, err := io.WriteString(port, text); err != nil {
+					return fmt.Errorf("console %s: sending: %w", node.Name, err)
+				}
+			}
 
 			// The console runs as long as it takes unless --timeout is given.
 			ctx, cancel := cmd.Context(), context.CancelFunc(func() {})
@@ -91,5 +105,6 @@ func (a *App) consoleCommand() *cobra.Command {
 	}
 	cmd.Flags().StringVar(&until, "until", "", "stop when the output matches this regular expression")
 	cmd.Flags().StringVar(&logPath, "log", "", "log file (default logs/<node>.log)")
+	cmd.Flags().StringVar(&send, "send", "", `text to type first, with Go escapes (\r is Enter)`)
 	return cmd
 }

@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"regexp"
 	"strings"
@@ -22,6 +23,8 @@ const InstalledPrefix = "STAGE0-INSTALLED "
 type Plan struct {
 	Disk   string // name under /dev, e.g. mmcblk0
 	SHA256 string // of the payload, an xz-compressed raw disk image
+	URL    string // where to fetch the payload; empty: it is in the initramfs
+	Seed   string // where to fetch first-boot files for the boot partition; optional
 }
 
 var (
@@ -40,6 +43,12 @@ func ParsePlan(cmdline string) (*Plan, error) {
 		if v, ok := strings.CutPrefix(f, "stage0.sha256="); ok {
 			p.SHA256 = v
 		}
+		if v, ok := strings.CutPrefix(f, "stage0.url="); ok {
+			p.URL = v
+		}
+		if v, ok := strings.CutPrefix(f, "stage0.seed="); ok {
+			p.Seed = v
+		}
 	}
 	switch {
 	case p.Disk == "" && p.SHA256 == "":
@@ -52,17 +61,52 @@ func ParsePlan(cmdline string) (*Plan, error) {
 		return nil, fmt.Errorf("stage0.disk=%q is not a disk name like mmcblk0", p.Disk)
 	case !hexSum.MatchString(p.SHA256):
 		return nil, fmt.Errorf("stage0.sha256=%q is not 64 hex digits", p.SHA256)
+	case p.URL != "" && !strings.HasPrefix(p.URL, "http://"):
+		return nil, fmt.Errorf("stage0.url=%q: only http:// is supported", p.URL)
+	case p.Seed != "" && !strings.HasPrefix(p.Seed, "http://"):
+		return nil, fmt.Errorf("stage0.seed=%q: only http:// is supported", p.Seed)
 	}
 	return &p, nil
 }
 
+// Fetch downloads url to path (in the initramfs, so in RAM), printing
+// progress. The checksum is checked later, by Install.
+func Fetch(url, path string, progress io.Writer) (int64, error) {
+	resp, err := http.Get(url)
+	if err != nil {
+		return 0, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return 0, fmt.Errorf("fetch %s: %s", url, resp.Status)
+	}
+	f, err := os.Create(path)
+	if err != nil {
+		return 0, err
+	}
+	start := time.Now()
+	w := &progressWriter{w: f, limit: 1 << 62, out: progress, every: 256 << 20, start: start, verb: "fetched"}
+	n, err := io.Copy(w, resp.Body)
+	if cerr := f.Close(); err == nil {
+		err = cerr
+	}
+	if err != nil {
+		return n, fmt.Errorf("fetch %s: %w", url, err)
+	}
+	if d := time.Since(start).Seconds(); d > 0 {
+		fmt.Fprintf(progress, "stage0 agent: fetched %d MB in %.1f s (%.1f MB/s)\n", n>>20, d, float64(n)/d/1e6)
+	}
+	return n, nil
+}
+
 // Result is a finished install.
 type Result struct {
-	Disk     string  `json:"disk"`
-	Bytes    int64   `json:"bytes"`
-	Seconds  float64 `json:"seconds"`
-	MBps     float64 `json:"MBps"`
-	Checksum string  `json:"sha256"`
+	Disk     string   `json:"disk"`
+	Bytes    int64    `json:"bytes"`
+	Seconds  float64  `json:"seconds"`
+	MBps     float64  `json:"MBps"`
+	Checksum string   `json:"sha256"`
+	Seeded   []string `json:"seeded,omitempty"` // first-boot files written to the boot partition
 }
 
 // Install checks the payload against wantSHA, then decompresses it onto
@@ -107,7 +151,7 @@ func Install(payloadPath, device, wantSHA string, progress io.Writer) (Result, e
 	}
 
 	start := time.Now()
-	w := &progressWriter{w: dst, limit: size, out: progress, every: 256 << 20, start: start}
+	w := &progressWriter{w: dst, limit: size, out: progress, every: 256 << 20, start: start, verb: "written"}
 	n, err := io.Copy(w, img)
 	res.Bytes = n
 	if err == nil {
@@ -131,6 +175,7 @@ type progressWriter struct {
 	out   io.Writer
 	every int64
 	start time.Time
+	verb  string // "written", "fetched"
 	n     int64
 }
 
@@ -142,7 +187,7 @@ func (p *progressWriter) Write(b []byte) (int, error) {
 	before := p.n
 	p.n += int64(n)
 	if p.n/p.every != before/p.every {
-		fmt.Fprintf(p.out, "STAGE0-PROGRESS %d MB written, %.0f s\n", p.n>>20, time.Since(p.start).Seconds())
+		fmt.Fprintf(p.out, "STAGE0-PROGRESS %d MB %s, %.0f s\n", p.n>>20, p.verb, time.Since(p.start).Seconds())
 	}
 	return n, err
 }

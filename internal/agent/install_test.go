@@ -4,6 +4,9 @@ import (
 	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"strings"
@@ -25,6 +28,12 @@ func TestParsePlan(t *testing.T) {
 		{"stage0.sha256=" + sum, nil, "stage0.disk"},
 		{"stage0.disk=../sda stage0.sha256=" + sum, nil, "disk name"},
 		{"stage0.disk=mmcblk0 stage0.sha256=xyz", nil, "sha256"},
+		{"ip=dhcp stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.url=http://10.0.3.1/rocky.raw.xz",
+			&Plan{Disk: "mmcblk0", SHA256: sum, URL: "http://10.0.3.1/rocky.raw.xz"}, ""},
+		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.url=ftp://x/y", nil, "http://"},
+		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.seed=http://10.0.3.1/seed.cpio",
+			&Plan{Disk: "mmcblk0", SHA256: sum, Seed: "http://10.0.3.1/seed.cpio"}, ""},
+		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.seed=/seed.cpio", nil, "http://"},
 	}
 	for _, tt := range tests {
 		got, err := ParsePlan(tt.cmdline)
@@ -101,5 +110,27 @@ func TestInstallRefusesTooBigImage(t *testing.T) {
 	os.WriteFile(disk, make([]byte, 1<<20), 0o600)
 	if _, err := Install(payload, disk, sum, &bytes.Buffer{}); err == nil || !strings.Contains(err.Error(), "larger than") {
 		t.Errorf("err = %v, want image larger than disk", err)
+	}
+}
+
+func TestFetch(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/rocky.raw.xz" {
+			http.NotFound(w, r)
+			return
+		}
+		w.Write(bytes.Repeat([]byte("x"), 1000))
+	}))
+	defer srv.Close()
+	dst := filepath.Join(t.TempDir(), "payload")
+	n, err := Fetch(srv.URL+"/rocky.raw.xz", dst, io.Discard)
+	if err != nil || n != 1000 {
+		t.Fatalf("Fetch = %d, %v", n, err)
+	}
+	if b, _ := os.ReadFile(dst); len(b) != 1000 {
+		t.Errorf("payload has %d bytes", len(b))
+	}
+	if _, err := Fetch(srv.URL+"/missing", dst, io.Discard); err == nil || !strings.Contains(err.Error(), "404") {
+		t.Errorf("missing: err = %v", err)
 	}
 }

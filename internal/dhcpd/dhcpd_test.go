@@ -190,3 +190,31 @@ func TestServe(t *testing.T) {
 		t.Errorf("Serve after cancel: %v", err)
 	}
 }
+
+func TestAnswersBootedNodesKernel(t *testing.T) {
+	// The node's kernel (ip=dhcp) sends no vendor class. It is answered,
+	// with the same address, because its bootloader already got a lease.
+	s := testServer(t, "10.0.3.199")
+	if r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", "")); r != nil {
+		t.Fatalf("answered an unknown non-PXE client: %v", r.Summary())
+	}
+	s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", piClass))
+	r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", ""))
+	if r == nil || r.YourIPAddr.String() != "10.0.3.100" {
+		t.Fatalf("kernel of a booted node: got %v, want an offer of 10.0.3.100", r)
+	}
+	if r.GetOneOption(dhcpv4.OptionVendorSpecificInformation) != nil {
+		t.Error("PXE options sent to a non-PXE client")
+	}
+	req, _ := dhcpv4.New(dhcpv4.WithHwAddr(mac("d8:3a:dd:c5:c1:f3")),
+		dhcpv4.WithMessageType(dhcpv4.MessageTypeRequest),
+		dhcpv4.WithOption(dhcpv4.OptRequestedIPAddress(net.ParseIP("10.0.3.100"))),
+		dhcpv4.WithOption(dhcpv4.OptServerIdentifier(net.ParseIP("10.0.3.1"))))
+	if r := s.Reply(req); r == nil || r.MessageType() != dhcpv4.MessageTypeAck {
+		t.Errorf("kernel's request: got %v, want ACK", r)
+	}
+	// Another machine without a lease still gets nothing.
+	if r := s.Reply(discover(t, "e4:5f:01:1d:17:a2", "")); r != nil {
+		t.Errorf("answered a machine that never PXE-booted: %v", r.Summary())
+	}
+}

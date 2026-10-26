@@ -65,8 +65,13 @@ Source unless noted: Raspberry Pi documentation
   Every request asks `tsize 0 blksize 1468` (seen with tcpdump). A 106 MB
   initramfs (72,469 blocks, so the 16-bit block number wrapped) arrived
   intact in 34 s: the agent's SHA-256 of its 100 MB random payload matched.
-  The ceiling reported in `../lab` may have been another server or an older
-  bootloader; unverified.
+- **The limit is time, not size** (k52, 2026-10-25): with a 1 GB
+  initramfs the bootloader gave up after 60.0 s at 183 MB ("Read initramfs8
+  failed", then "initramfs disabled") and booted the kernel without it. So a
+  file must arrive within the bootloader's per-file TFTP timeout, at ~3
+  MB/s here: about 180 MB in 60 s. That `TFTP_FILE_TIMEOUT` (ms, in the
+  EEPROM; the lab set 60000 on Pi 5s) is the knob, and that the ~92 MB
+  ceiling in `../lab` is the same limit at 30 s, are inferences, unverified.
 
 ## IPv6 boot information
 

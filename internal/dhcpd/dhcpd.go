@@ -1,7 +1,8 @@
 // Package dhcpd answers DHCPv4 for nodes network-booting on one provisioning
-// network. It answers only PXE clients (a Raspberry Pi's bootloader is one),
-// so other machines that share the network are never given a lease. Leases
-// live in memory: a test bench restarts often and has few nodes.
+// network. It answers PXE clients (a Raspberry Pi's bootloader is one), and
+// afterwards the same machine's kernel or agent (ip=dhcp sends no vendor
+// class); a machine that never PXE-booted from it is never given a lease.
+// Leases live in memory: a test bench restarts often and has few nodes.
 package dhcpd
 
 import (
@@ -115,9 +116,15 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 	}
 	mac := req.ClientHWAddr.String()
 	log := s.log.With("mac", mac, "class", req.ClassIdentifier())
-	if !strings.HasPrefix(req.ClassIdentifier(), "PXEClient") {
-		log.Debug("dhcp: ignored, not a PXE client", "type", req.MessageType())
-		return nil
+	pxe := strings.HasPrefix(req.ClassIdentifier(), "PXEClient")
+	if !pxe {
+		s.mu.Lock()
+		_, booted := s.leases[mac]
+		s.mu.Unlock()
+		if !booted {
+			log.Debug("dhcp: ignored, not a PXE client and never booted here", "type", req.MessageType())
+			return nil
+		}
 	}
 
 	switch req.MessageType() {
@@ -128,7 +135,7 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 			return nil
 		}
 		log.Info("dhcp: offer", "ip", ip)
-		return s.reply(req, dhcpv4.MessageTypeOffer, ip)
+		return s.reply(req, dhcpv4.MessageTypeOffer, ip, pxe)
 
 	case dhcpv4.MessageTypeRequest:
 		if id := req.ServerIdentifier(); id != nil && !id.Equal(s.cfg.Server.AsSlice()) {
@@ -144,10 +151,10 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 		s.mu.Unlock()
 		if !ok || !want.Equal(ip.AsSlice()) {
 			log.Info("dhcp: nak", "requested", want, "leased", ip)
-			return s.reply(req, dhcpv4.MessageTypeNak, netip.Addr{})
+			return s.reply(req, dhcpv4.MessageTypeNak, netip.Addr{}, pxe)
 		}
 		log.Info("dhcp: ack", "ip", ip)
-		return s.reply(req, dhcpv4.MessageTypeAck, ip)
+		return s.reply(req, dhcpv4.MessageTypeAck, ip, pxe)
 	}
 	log.Debug("dhcp: ignored", "type", req.MessageType())
 	return nil
@@ -173,7 +180,8 @@ func (s *Server) lease(mac string) (netip.Addr, bool) {
 	return netip.Addr{}, false
 }
 
-func (s *Server) reply(req *dhcpv4.DHCPv4, typ dhcpv4.MessageType, ip netip.Addr) *dhcpv4.DHCPv4 {
+// reply builds an answer; pxe adds the boot options a PXE client needs.
+func (s *Server) reply(req *dhcpv4.DHCPv4, typ dhcpv4.MessageType, ip netip.Addr, pxe bool) *dhcpv4.DHCPv4 {
 	server := net.IP(s.cfg.Server.AsSlice())
 	mods := []dhcpv4.Modifier{
 		dhcpv4.WithMessageType(typ),
@@ -183,9 +191,13 @@ func (s *Server) reply(req *dhcpv4.DHCPv4, typ dhcpv4.MessageType, ip netip.Addr
 	if typ != dhcpv4.MessageTypeNak {
 		mods = append(mods,
 			dhcpv4.WithYourIP(net.IP(ip.AsSlice())),
-			dhcpv4.WithServerIP(server),
 			dhcpv4.WithNetmask(net.CIDRMask(s.cfg.Subnet.Bits(), 32)),
 			dhcpv4.WithLeaseTime(uint32(s.cfg.LeaseTime/time.Second)),
+		)
+	}
+	if typ != dhcpv4.MessageTypeNak && pxe {
+		mods = append(mods,
+			dhcpv4.WithServerIP(server),
 			dhcpv4.WithOption(dhcpv4.OptClassIdentifier("PXEClient")),
 			dhcpv4.WithOption(dhcpv4.OptTFTPServerName(s.cfg.Server.String())),
 			dhcpv4.WithGeneric(dhcpv4.OptionVendorSpecificInformation, piBoot),

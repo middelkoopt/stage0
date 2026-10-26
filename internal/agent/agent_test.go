@@ -17,6 +17,7 @@ func fakeRoot(t *testing.T) string {
 		"proc/sys/kernel/osrelease":                  "6.12.103-1.el10.altarch.aarch64+4k\n",
 		"proc/cmdline":                               "console=ttyAMA10,115200\n",
 		"proc/meminfo":                               "MemTotal:        8245824 kB\nMemFree:  100 kB\n",
+		"proc/filesystems":                           "nodev\tsysfs\nnodev\ttmpfs\n\text4\n\tvfat\n\txfs\n",
 		"sys/firmware/devicetree/base/model":         "Raspberry Pi 5 Model B Rev 1.0\x00",
 		"sys/firmware/devicetree/base/serial-number": "a8a3b55a563cea77\x00",
 		"sys/block/mmcblk0/size":                     "62333952\n",
@@ -51,11 +52,12 @@ func TestGather(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := Report{
-		Model:      "Raspberry Pi 5 Model B Rev 1.0",
-		Serial:     "a8a3b55a563cea77",
-		Kernel:     "6.12.103-1.el10.altarch.aarch64+4k",
-		Cmdline:    "console=ttyAMA10,115200",
-		MemTotalMB: 8052,
+		Model:       "Raspberry Pi 5 Model B Rev 1.0",
+		Serial:      "a8a3b55a563cea77",
+		Kernel:      "6.12.103-1.el10.altarch.aarch64+4k",
+		Cmdline:     "console=ttyAMA10,115200",
+		MemTotalMB:  8052,
+		Filesystems: []string{"ext4", "vfat", "xfs"},
 		Disks: []Disk{
 			{Name: "mmcblk0", Bytes: 62333952 * 512, Model: "SD64G"},
 			{Name: "nvme0n1", Bytes: 500118192 * 512, Model: "Samsung SSD 980 250GB"},

@@ -12,6 +12,7 @@ import (
 	"io"
 	"io/fs"
 	"os"
+	"path/filepath"
 
 	"github.com/middelkoopt/stage0/internal/agent"
 	"github.com/middelkoopt/stage0/internal/cpio"
@@ -102,4 +103,31 @@ func CheckStatic(path string) error {
 		}
 	}
 	return nil
+}
+
+// BuildSeed writes the files under dir as a seed: a plain (uncompressed)
+// cpio of directories and regular files, in sorted order, that the agent
+// unpacks over the installed image's boot partition. It returns the number
+// of files.
+func BuildSeed(w io.Writer, dir string) (int, error) {
+	a := cpio.NewWriter(w)
+	n := 0
+	err := fs.WalkDir(os.DirFS(dir), ".", func(name string, d fs.DirEntry, err error) error {
+		if err != nil || name == "." {
+			return err
+		}
+		switch {
+		case d.IsDir():
+			return a.Dir(name, 0o755)
+		case d.Type().IsRegular():
+			n++
+			_, err := addFile(a, name, 0o644, filepath.Join(dir, name))
+			return err
+		}
+		return fmt.Errorf("seed: %s: only files and directories are supported", name)
+	})
+	if err != nil {
+		return n, err
+	}
+	return n, a.Close()
 }

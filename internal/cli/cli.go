@@ -7,7 +7,6 @@ import (
 	"context"
 	"fmt"
 	"io"
-	"net"
 	"os"
 	"time"
 
@@ -24,8 +23,8 @@ import (
 type App struct {
 	Stdout      io.Writer
 	OpenSwitch  func(config.Switch, config.SwitchSecret) (netswitch.Controller, error)
-	OpenConsole func(device string, baud int) (io.ReadCloser, error)
-	OpenNetwork func(context.Context, config.Network) (dhcp, tftp net.PacketConn, err error)
+	OpenConsole func(device string, baud int) (io.ReadWriteCloser, error)
+	OpenNetwork func(context.Context, config.Network) (Sockets, error)
 	CheckStatic func(path string) error
 
 	sitePath    string
