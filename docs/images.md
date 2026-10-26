@@ -2,7 +2,7 @@
 
 Facts about the distro images stage0 installs, as seen installing them.
 
-> Last verified: 2026-10-25
+> Last verified: 2026-10-26
 
 ## Rocky Linux 10.2 SBC Raspberry Pi
 
@@ -28,13 +28,15 @@ in the `.CHECKSUM` file beside it). Raw size 3,508,535,296 bytes.
   rootwait` as the seed's `cmdline.txt` reaches "Welcome to Rocky Linux
   10.2" and `localhost login:` on the debug connector.
 - **First boot as shipped:** user `rocky`, password `rockylinux` (works on
-  the serial console); the root filesystem stays 2.3 GB (not grown to the
-  disk; `/usr/bin/rootfs-expand` is there to do it); the wired interface is
-  `end0` (NetworkManager 1.56) and asks for DHCP; no SSH key.
-- **No cloud-init** (`rpm -q cloud-init`: not installed), so first-boot
-  settings have to be files written into the root filesystem. `systemctl
-  is-enabled sshd` says enabled while `rpm -q openssh-server` says not
-  installed; unexplained.
+  the serial console); sshd is installed, enabled and listening on port 22
+  (no `/boot/ssh` switch needed; that is Raspberry Pi OS); the root
+  filesystem stays 2.3 GB (`/usr/bin/rootfs-expand` and `growpart` are
+  there); the wired interface is `end0` (NetworkManager 1.56), DHCP; systemd
+  257 with `systemd-ssh-generator`, `systemd-firstboot`, `systemd-repart`.
+- **No cloud-init:** no `/usr/bin/cloud-init`, no `/etc/cloud`.
+- **`rpm -q` is unreliable on this image:** `rpm -qa` skips 51 packages
+  ("Header V4 RSA/SHA256 Signature, key ID 6fedfc85: BAD"), so it reports
+  installed packages such as openssh-server as missing. Check files instead.
 - k53 runs this release from a boot partition without `kernel_2712.img`, so
   its firmware uses `kernel8.img` with `initramfs8`; that `initramfs8` is
   for 6.6.77 while its `kernel8.img` is 6.12.103 (inferred from the file

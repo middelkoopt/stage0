@@ -1,8 +1,8 @@
 # Stage0 Roadmap
 
-Planned, not built. Nothing here exists yet. As each part is built, its design
-moves to `docs/` and leaves this file. Platform facts behind these choices are
-in [`docs/netboot.md`](docs/netboot.md).
+Planned, not built. What is built is described in [`docs/`](docs/index.md)
+(the install as it works today: [`docs/install.md`](docs/install.md)); as
+each part below is built, its design moves there and leaves this file.
 
 ## Goal
 
@@ -15,19 +15,62 @@ so different stage-1 provisioners can be CI-tested on real and virtual hardware.
 
 ## Stages
 
-| Step | Does |
-| --- | --- |
-| 0.0 | Load site config; pull or build pinned artifacts; power off the target, move its switch port to the provisioning VLAN; start services; log the console |
-| 0.1 | Target netboots (TFTP or HTTP) |
-| 0.2 | Installer environment identifies the node and fetches its plan |
-| 0.3 | Install using the target OS's own tools (partition, format, bootloader) |
-| 0.4 | First boot from disk; cloud-init (or equivalent) sets identity, network, SSH keys; node reports "up" |
-| 0.5 | Mark the node installed (stop answering it), move its port to the cluster VLAN, stop |
+| Step | Does | State (Pi 5) |
+| --- | --- | --- |
+| 0.0 | Load site config; fetch pinned artifacts; power off the target, move its port to the provisioning VLAN; start services; log the console | Parts built, run by hand |
+| 0.1 | Target netboots (TFTP or HTTP) | Built (IPv4 TFTP) |
+| 0.2 | The agent identifies the node and gets its plan | Reports the node; plan is a hand-written `cmdline.txt` |
+| 0.3 | Write the image to disk, then the first-boot files | Built |
+| 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" | Boots to a login prompt; nothing set yet |
+| 0.5 | Mark the node installed (stop answering it), move its port to the cluster VLAN, stop | By hand |
 
 Boot order stays **network first**: no answer means the node falls through to
 disk, which is safe for Pis and in general. Stage0 must therefore stop
 answering a node once it is installed, or it would reinstall it on every
 reboot.
+
+## Next
+
+1. **`stage0 install <node>`**: stages 0.0-0.5 as one command. A per-node
+   boot root (`cmdline.txt` with the node's plan), `serve` running for the
+   duration, power on, wait for `STAGE0-INSTALLED`, stop answering that MAC,
+   power-cycle, wait for the installed OS; `--json` throughout.
+2. **One config file per image**: URL, checksum, target disk default, the
+   Pi boot files to serve, the `cmdline.txt` the installed system needs
+   (Rocky Pi: `root=PARTUUID=…`, see [`docs/images.md`](docs/images.md)),
+   and the image's partitions.
+3. **First-boot settings (stage 0.4)**, in order of preference:
+   - kernel command line: `systemd.hostname=`, and the SSH key as a systemd
+     credential (`ssh.authorized_keys.root`); no disk mounting. Untested on
+     Rocky (needs its `provision.conf` tmpfiles rule).
+   - seed with top-level `boot/` and `root/` directories, unpacked onto the
+     partitions the image config names (GG2, decided); for what the command
+     line can't carry, e.g. a NetworkManager connection for `piwulf`.
+   - cloud-init NoCloud served by `serve`'s HTTP
+     (`ds=nocloud;s=http://…/`), for images that have cloud-init (Rocky Pi
+     does not).
+   - Grow the root filesystem (Rocky ships `rootfs-expand` and `growpart`).
+4. **Node reports "up"**: a signal stage0 can wait for other than the
+   console's login prompt (e.g. an HTTP call from first boot, or SSH
+   answering).
+
+## Install routes
+
+The agent writes a stock disk image (xz, checked by SHA-256) to the disk and
+then lays first-boot files on top (decided: HH1). Two ways to get the image
+to the agent:
+
+- **HTTP** after the kernel brings up the network (built; the default).
+- **Inside the initramfs**, so Linux never touches the network (built; kept
+  for nodes where that matters). Limited by the Pi bootloader's 60 s per
+  TFTP file, about 180 MB here. To try: raise `TFTP_FILE_TIMEOUT` in the
+  EEPROM, or split the image over several initramfs files if `config.txt`
+  allows a list (both unverified).
+
+Later, for UEFI and QEMU machines: a stock installer ISO with an answer file
+(kickstart, preseed, autoinstall). Distro installers don't netboot a Pi 5.
+The earlier plan (the target's own kernel and tools running from a
+chroot, or a container built here) is dropped.
 
 ## Components (one static Go binary)
 
@@ -36,63 +79,40 @@ insomniacslk/dhcp, go-containerregistry, go-diskfs, go-ipmi with SOL,
 go-serial) and `../lab`'s `chunk` already used that stack. Python lost its TFTP
 base (fbtftp, archived 2022-11); Rust has no DHCPv6 server.
 
-The boot artifact is one kernel + initramfs per platform: a UKI on UEFI, a Pi
-file set on Pi (a Pi cannot boot a UKI).
+Built: site config, switch control, serial consoles, `serve` (DHCPv4, TFTP,
+HTTP), the agent, initramfs and seed builders (see
+[`docs/development.md`](docs/development.md)). Planned:
 
-- **Site config** (`site.yaml`): every field defaulted except the target;
-  inventory nodes get extra per-node settings. Credentials live in `.secrets`
-  (git-ignored) and the config refers to them by name.
-- **Network modes:** *own* (DHCPv4, DHCPv6, RA), *proxy* (DHCPv4 alongside an
-  existing server), *boot-only* (DHCPv6 boot URL alongside an existing SLAAC
-  router), *none* (firmware or EEPROM configured with a static IP or SLAAC and
-  a fixed boot server).
-- **Boot services:** dynamic TFTP (Pi first), HTTP (UEFI HTTP boot, ISO and
-  image downloads, node API), read-only OCI registry cache pinned by digest.
+- **Site config:** credentials live in `.secrets` (git-ignored) and the
+  config refers to them by name. Still to come: defaults for everything but
+  the target, per-image config files.
+- **Network modes:** *own* (built for IPv4; DHCPv6 and RA to come), *proxy*
+  (DHCPv4 alongside an existing server), *boot-only* (DHCPv6 boot URL
+  alongside an existing SLAAC router), *none* (firmware or EEPROM configured
+  with a static IP or SLAAC and a fixed boot server).
+- **Boot services:** UEFI HTTP boot, a node API, a read-only OCI registry
+  cache pinned by digest (images from a registry).
 - **Control:** power (QEMU QMP, IPMI), console (QEMU serial, IPMI SOL;
-  always logged), and console input for people. PoE power, switch VLANs and
-  local serial capture are built (see
-  [`docs/development.md`](docs/development.md)); new control follows the same
-  CLI pattern.
-- **Test bed:** QEMU (x86_64 q35 + OVMF, aarch64 virt + AAVMF) on a socket
-  network, with a virtual BMC in front of QEMU so the IPMI client and SOL are
-  tested without hardware.
-
-## Install routes
-
-Image handling (decompress, partition tables, filesystems, cpio) is done in
-Go, not with host tools.
-
-Both routes give the installer a root filesystem to chroot into, so the disk
-work is done by the target OS's own tools either way. Built together.
-
-1. **Container built here:** layers unpacked into RAM.
-2. **Stock image:** the distro's own partition images (e.g. a Pi image's root
-   partition) shipped as raw images inside an OCI artifact and mounted, not
-   unpacked into files.
-
-Decided for the Pi 5:
-- The installer runs the **target image's own kernel and initramfs**, with the
-  stage0 agent added (modules match; close to stock).
-- **Target disk:** NVMe if present, otherwise named in the site config.
-- **First-boot settings:** cloud-init seed where the image has cloud-init,
-  files written from the chroot otherwise.
-- **First image:** Rocky 10 SBC RaspberryPi (no UEFI shim), used as shipped;
-  one config file per distro image.
-- **Unknown machines** install only when stage0 runs with `--install-any`, and
-  then exactly one.
-
-A third route, stock installer ISO + answer file, is possible later for UEFI
-machines; distro installers do not netboot a Pi 5.
+  always logged), interactive console input for people.
+- **Firmware:** update the Pi EEPROM on free nodes, ideally with a small
+  netbooted updater.
+- **Test bed (GG3, decided):** QEMU VMs (x86_64 q35 + OVMF, aarch64 virt +
+  AAVMF) on a virtual Ethernet switch built into stage0, which QEMU joins
+  with `-netdev stream` over a Unix socket. stage0 is a port on that switch
+  through either a user-owned tap device (one-time root setup; `serve` runs
+  unchanged) or gVisor's netstack (no root). A virtual BMC in front of QEMU
+  tests the IPMI client and SOL without hardware.
 
 ## Milestones (order tentative)
 
-1. **Pi 5 over IPv4 TFTP:** dynamic TFTP, both install routes; a Pi 5 head
-   node up with SSH.
-2. Pi 5 over IPv6.
-3. Network modes beyond *own*: none, boot-only, proxy.
-4. UEFI and QEMU (x86_64, aarch64): HTTP boot, QEMU power and console, IPMI
-   client with SOL against a virtual BMC; CI test bed.
-5. Install-once state, workflow plans, optional state export for stage 1.
+1. **Pi 5 head node over IPv4:** `stage0 install k52` installs Rocky 10.2
+   and leaves it reachable over SSH with its hostname and key.
+2. QEMU test bed on the virtual switch; the same install for an aarch64 VM.
+3. Pi 5 over IPv6.
+4. Network modes beyond *own*: none, boot-only, proxy.
+5. UEFI and x86_64: HTTP boot, installer ISO route, QEMU power and console,
+   IPMI client with SOL against a virtual BMC.
+6. Install-once state, workflow plans, optional state export for stage 1.
 
 ## Later goals
 
