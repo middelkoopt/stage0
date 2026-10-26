@@ -1,6 +1,7 @@
 package config
 
 import (
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -155,6 +156,56 @@ func TestLoadSiteNodeErrors(t *testing.T) {
 		"duplicate":         "nodes:\n  - name: a\n  - name: a\n",
 		"console no device": "nodes:\n  - name: a\n    console: {baud: 9600}\n",
 		"negative baud":     "nodes:\n  - name: a\n    console: {device: /dev/x, baud: -1}\n",
+	}
+	for name, body := range tests {
+		if _, err := LoadSite(write(t, "site.yaml", body, 0o644)); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}
+
+func TestLoadSiteNetworks(t *testing.T) {
+	p := write(t, "site.yaml", `
+networks:
+  - name: pinet
+    interface: eth0.3
+    address: 10.0.3.1/24
+    pool: 10.0.3.100-10.0.3.199
+`, 0o644)
+	s, err := LoadSite(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, err := s.Network("pinet")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n.Interface != "eth0.3" || n.Server != netip.MustParseAddr("10.0.3.1") ||
+		n.Subnet != netip.MustParsePrefix("10.0.3.0/24") ||
+		n.PoolFirst != netip.MustParseAddr("10.0.3.100") || n.PoolLast != netip.MustParseAddr("10.0.3.199") {
+		t.Errorf("network = %+v", n)
+	}
+	if _, err := s.Network("nope"); err == nil {
+		t.Error("unknown network: want error")
+	}
+}
+
+func TestLoadSiteNetworkErrors(t *testing.T) {
+	net := func(fields string) string {
+		return "networks:\n  - {name: pinet, interface: eth0.3, " + fields + "}\n"
+	}
+	tests := map[string]string{
+		"no name":            "networks:\n  - {interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199}\n",
+		"no interface":       "networks:\n  - {name: pinet, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199}\n",
+		"duplicate":          net("address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199") + "  - {name: pinet, interface: eth0.4, address: 10.0.4.1/24, pool: 10.0.4.100-10.0.4.199}\n",
+		"no prefix length":   net("address: 10.0.3.1, pool: 10.0.3.100-10.0.3.199"),
+		"IPv6 address":       net("address: fd00::1/64, pool: 10.0.3.100-10.0.3.199"),
+		"pool not a range":   net("address: 10.0.3.1/24, pool: 10.0.3.100"),
+		"pool reversed":      net("address: 10.0.3.1/24, pool: 10.0.3.199-10.0.3.100"),
+		"pool outside":       net("address: 10.0.3.1/24, pool: 10.0.4.100-10.0.4.199"),
+		"pool holds server":  net("address: 10.0.3.1/24, pool: 10.0.3.1-10.0.3.199"),
+		"pool holds network": net("address: 10.0.3.1/24, pool: 10.0.3.0-10.0.3.9"),
+		"pool holds bcast":   net("address: 10.0.3.1/24, pool: 10.0.3.250-10.0.3.255"),
 	}
 	for name, body := range tests {
 		if _, err := LoadSite(write(t, "site.yaml", body, 0o644)); err == nil {

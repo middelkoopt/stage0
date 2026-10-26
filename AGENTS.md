@@ -156,5 +156,6 @@ others work from. One line each, linking to the doc that owns it.
   commit, print or paste its contents. See [`ROADMAP.md`](ROADMAP.md#components-one-static-go-binary).
 - The lab switch and nodes are shared and live: switch VLAN or PoE changes and
   node power cycles need an explicit yes each time, except ports 1 and 3-8,
-  whose machines are free for testing, including wiping their OS. See
+  whose machines are free for testing (PoE, root, wiping the OS, firmware
+  updates). k53 (port 2) may be powered and used as root, never wiped. See
   [`docs/development.md`](docs/development.md#gs316ep-notes).

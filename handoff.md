@@ -4,10 +4,11 @@ Stage0 installs a head node from this repo alone. Read
 for code and [`docs/netboot.md`](docs/netboot.md) for Pi work.
 
 ## Status (2026-10-25)
-Second slice committed and verified live: `stage0 power`, `stage0 set port`,
-`stage0 console`, `site.yaml` nodes with consoles (k52 on the Debug Probe,
-k400 on the CP2102). Switch quirks are in
-[`docs/development.md`](docs/development.md#gs316ep-notes).
+`stage0 serve pinet --root DIR` (DHCPv4 for PXE clients + read-only TFTP,
+as an ordinary user, pinned to eth0.3 at 10.0.3.1) booted k52 into Rocky's
+kernel and initramfs from k53's boot files; k52's own disk then failed to
+switch root (emergency shell). Built and tested, not committed. k52's port is
+now PVID pinet(3); pilab's eth0.3 carries 10.0.3.1/24 (systemd-networkd).
 
 ## Open decisions
 - **K2/K3** How the install reaches the disk. Exploring first: **agent +
@@ -22,9 +23,13 @@ k400 on the CP2102). Switch quirks are in
   image over the network.
 
 ## Next session
-1. DHCPv4 + TFTP on `pinet` (VLAN 3) with transfer logging, and the agent +
-   payload experiment on **k52** (Pi 5, port 1, console on the Debug Probe;
-   free to wipe). k52 now netboots warewulf's image from k53 on `piwulf` and
-   hangs at `ignition-fetch` (so does k400); moving its port to `pinet` takes
-   it off warewulf. k53 is the working warewulf head: use it from the inside,
-   don't power it.
+1. Agent + payload on k52: a stage0 agent as PID 1 in a large initramfs
+   (appended to the Rocky initramfs, or alone), first just reporting the
+   disks over the console; then the image write. The large-initramfs test
+   also answers the ~92 MB TFTP question (the TFTP library wraps its 16-bit
+   block counter rather than failing; whether the Pi accepts that is open).
+2. Update the Pi EEPROM firmware on the free nodes once they boot (allowed);
+   ideally a small netbooted updater.
+3. k53 is powered off (it may run DHCP on piwulf); it may be powered and
+   used as root to watch the network, stopping (not disabling) its services.
+   Its `sudo` needs a password stage0 doesn't have.

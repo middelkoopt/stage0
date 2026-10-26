@@ -20,8 +20,10 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | Path | What |
 | --- | --- |
 | `cmd/stage0` | `main`: signal handling, exit code; nothing else |
-| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`); every command supports `-o json`, write commands `--dry-run` |
-| `internal/config` | `site.yaml` (committed: switches, nodes) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
+| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`); every command supports `-o json`, write commands `--dry-run` |
+| `internal/config` | `site.yaml` (committed: switches, nodes, networks) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
+| `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients only, in-memory leases, the Pi's option 43 |
+| `internal/tftpd` | Read-only TFTP from one directory (confined with `os.Root`), every request logged |
 | `internal/console` | Serial console capture: copy to screen and log, stop on a pattern (`--until`) |
 | `internal/netswitch` | Switch model (ports, PoE, VLANs), port and VLAN lookup, change planning, the `Reader` and `Controller` interfaces |
 | `internal/netswitch/gs316ep` | NETGEAR GS316EP driver over its web UI |
@@ -37,8 +39,18 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
   Write commands print `before -> after`; `--dry-run` prints the plan and
   writes nothing.
 - **Libraries:** cobra (CLI), `go.yaml.in/yaml/v3` (YAML),
-  `golang.org/x/net/html` (switch pages), `go.bug.st/serial` (consoles).
-  Prefer the standard library otherwise.
+  `golang.org/x/net/html` (switch pages), `go.bug.st/serial` (consoles),
+  `insomniacslk/dhcp` (DHCPv4 packets only; the socket is stage0's),
+  `pin/tftp/v3` (TFTP). Prefer the standard library otherwise.
+- **`serve` runs as an ordinary user, on one interface.** Its sockets are
+  pinned with `SO_BINDTODEVICE` (allowed unprivileged on this kernel), and it
+  refuses to start unless the network's interface is up and is the only one
+  carrying the network's address. Ports 67 and 69 bind unprivileged here
+  because `/etc/sysctl.d/50-unprivileged-ports.conf` sets
+  `net.ipv4.ip_unprivileged_port_start=0`; elsewhere, give the binary
+  `cap_net_bind_service` (lost on each rebuild). DHCP replies are broadcast,
+  so no raw sockets are needed. The host's address on the network is the
+  host's own config (systemd-networkd here), not stage0's.
 
 ## GS316EP notes
 

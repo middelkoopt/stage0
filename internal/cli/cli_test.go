@@ -56,13 +56,15 @@ func testStatus() netswitch.Status {
 	}
 }
 
-// testSite names one switch and two nodes, one with a console.
+// testSite names one switch, two nodes (one with a console) and a network.
 const testSite = `
 switches:
   - {name: lab, address: switch.example}
 nodes:
   - {name: k53, console: {device: /dev/serial/by-id/probe}}
   - {name: k41}
+networks:
+  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199}
 `
 
 // run executes the CLI against testSite, with the switch served by sw.

@@ -9,8 +9,10 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"net/netip"
 	"os"
 	"slices"
+	"strings"
 
 	"go.yaml.in/yaml/v3"
 )
@@ -23,8 +25,9 @@ const (
 
 // Site is site.yaml.
 type Site struct {
-	Switches []Switch `yaml:"switches"`
-	Nodes    []Node   `yaml:"nodes"`
+	Switches []Switch  `yaml:"switches"`
+	Nodes    []Node    `yaml:"nodes"`
+	Networks []Network `yaml:"networks"`
 }
 
 // Switch is a managed switch.
@@ -44,6 +47,20 @@ type Node struct {
 type Console struct {
 	Device string `yaml:"device"`         // prefer the stable /dev/serial/by-id/... name
 	Baud   int    `yaml:"baud,omitempty"` // default 115200
+}
+
+// Network is a provisioning network stage0 serves (DHCPv4 and TFTP). The
+// host's interface already carries Address; stage0 doesn't configure it.
+type Network struct {
+	Name      string `yaml:"name"`
+	Interface string `yaml:"interface"` // e.g. eth0.3
+	Address   string `yaml:"address"`   // stage0's IPv4 address with prefix, e.g. 10.0.3.1/24
+	Pool      string `yaml:"pool"`      // addresses to lease: first-last
+
+	// Parsed from the fields above.
+	Server              netip.Addr   `yaml:"-"`
+	Subnet              netip.Prefix `yaml:"-"`
+	PoolFirst, PoolLast netip.Addr   `yaml:"-"`
 }
 
 // Drivers are the switch drivers stage0 knows.
@@ -103,7 +120,76 @@ func (s *Site) normalize() error {
 			}
 		}
 	}
+
+	seen = map[string]bool{}
+	for i := range s.Networks {
+		n := &s.Networks[i]
+		switch {
+		case n.Name == "":
+			return fmt.Errorf("network %d: no name", i+1)
+		case seen[n.Name]:
+			return fmt.Errorf("network %q: defined twice", n.Name)
+		case n.Interface == "":
+			return fmt.Errorf("network %q: no interface", n.Name)
+		}
+		seen[n.Name] = true
+		if err := n.parse(); err != nil {
+			return fmt.Errorf("network %q: %w", n.Name, err)
+		}
+	}
 	return nil
+}
+
+func (n *Network) parse() error {
+	p, err := netip.ParsePrefix(n.Address)
+	if err != nil {
+		return fmt.Errorf("address %q: want an IPv4 address with prefix length, e.g. 10.0.3.1/24", n.Address)
+	}
+	if !p.Addr().Is4() {
+		return fmt.Errorf("address %q: only IPv4 is served so far", n.Address)
+	}
+	n.Server, n.Subnet = p.Addr(), p.Masked()
+
+	first, last, ok := strings.Cut(n.Pool, "-")
+	if !ok {
+		return fmt.Errorf("pool %q: want first-last, e.g. 10.0.3.100-10.0.3.199", n.Pool)
+	}
+	if n.PoolFirst, err = netip.ParseAddr(strings.TrimSpace(first)); err != nil {
+		return fmt.Errorf("pool %q: %w", n.Pool, err)
+	}
+	if n.PoolLast, err = netip.ParseAddr(strings.TrimSpace(last)); err != nil {
+		return fmt.Errorf("pool %q: %w", n.Pool, err)
+	}
+	broadcast := lastAddr(n.Subnet)
+	switch {
+	case n.PoolLast.Less(n.PoolFirst):
+		return fmt.Errorf("pool %q: last is before first", n.Pool)
+	case !n.Subnet.Contains(n.PoolFirst) || !n.Subnet.Contains(n.PoolLast):
+		return fmt.Errorf("pool %q is not inside %s", n.Pool, n.Subnet)
+	case n.PoolFirst == n.Subnet.Addr() || n.PoolLast == broadcast:
+		return fmt.Errorf("pool %q includes the network or broadcast address", n.Pool)
+	case !n.Server.Less(n.PoolFirst) && !n.PoolLast.Less(n.Server):
+		return fmt.Errorf("pool %q includes stage0's own address %s", n.Pool, n.Server)
+	}
+	return nil
+}
+
+// lastAddr is the last (broadcast) address of an IPv4 prefix.
+func lastAddr(p netip.Prefix) netip.Addr {
+	a := p.Addr().As4()
+	host := uint32(1)<<(32-p.Bits()) - 1
+	v := uint32(a[0])<<24 | uint32(a[1])<<16 | uint32(a[2])<<8 | uint32(a[3]) | host
+	return netip.AddrFrom4([4]byte{byte(v >> 24), byte(v >> 16), byte(v >> 8), byte(v)})
+}
+
+// Network returns the named network.
+func (s *Site) Network(name string) (Network, error) {
+	for _, n := range s.Networks {
+		if n.Name == name {
+			return n, nil
+		}
+	}
+	return Network{}, fmt.Errorf("no network %q in site config", name)
 }
 
 // Node returns the named node.

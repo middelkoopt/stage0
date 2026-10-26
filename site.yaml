@@ -13,3 +13,11 @@ nodes:
   - name: k400
     console:
       device: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
+
+# Provisioning networks stage0 serves (DHCPv4 + TFTP). The host's interface
+# must already carry the address; stage0 doesn't configure the host.
+networks:
+  - name: pinet
+    interface: eth0.3
+    address: 10.0.3.1/24
+    pool: 10.0.3.100-10.0.3.199

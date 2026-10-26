@@ -52,6 +52,15 @@ Source unless noted: Raspberry Pi documentation
   back to `config.txt` at the root; later files follow paths set in
   `config.txt`. A 49 MB `initramfs8` came over TFTP in about 15 s. The log
   line reads `Boot mode: NETWORK (02) order f41`.
+- **Booted by stage0** (k52, same bootloader, `stage0 serve pinet` serving
+  k53's Rocky 10.2 boot partition, 2026-10-25): the option 43 bytes in
+  `internal/dhcpd` work. The bootloader asked in order: `563cea77/config.txt`
+  (missing), `config.txt`, `pieeprom.sig` (missing), the device tree,
+  `/config.txt`, `kernel_2712.img` and `armstub8-2712.bin` (missing), then
+  `kernel8.img` and `initramfs8`. For the kernel and initramfs it first
+  requests the size (tsize) and aborts with "Early terminate", then fetches.
+  52 MB took 17 s (3 MB/s, default block size). With `console=serial0` the
+  firmware hands the kernel `console=ttyAMA10`, the 3-pin debug connector.
 
 ## IPv6 boot information
 
