@@ -44,7 +44,8 @@ func TestCaptureCopiesUntilEOF(t *testing.T) {
 
 func TestCaptureStopsAtMatch(t *testing.T) {
 	var out bytes.Buffer
-	src := &chunks{[]string{"Rocky Linux 10\r\nk53 log", "in: ", "never read"}}
+	// The empty chunk is the port going quiet after the prompt.
+	src := &chunks{[]string{"Rocky Linux 10\r\nk53 log", "in: ", "", "never read"}}
 	m, err := Capture(context.Background(), src, &out, regexp.MustCompile(`login: `))
 	if err != nil {
 		t.Fatal(err)
@@ -86,5 +87,23 @@ func TestCaptureKeepsOnlyRecentOutputForMatching(t *testing.T) {
 	m, err := Capture(context.Background(), &chunks{[]string{"lo", big, "gin: "}}, io.Discard, regexp.MustCompile(`login: `))
 	if err == nil || m != "" {
 		t.Errorf("match %q, err %v; text split by more than the window should not match", m, err)
+	}
+}
+
+func TestCaptureWaitsForTheRestOfAMatch(t *testing.T) {
+	// A long line arrives in pieces; a match that reaches the end of what
+	// has arrived so far may grow, so it is taken only once more output
+	// comes, the port goes quiet (an empty read), or the output ends.
+	re := regexp.MustCompile(`STAGE0-REPORT .*`)
+	src := &chunks{[]string{"boot\r\nSTAGE0-REPORT {", `"disks":[]}`, "\r\nmore", "never read"}}
+	m, err := Capture(context.Background(), src, io.Discard, re)
+	if err != nil || m != `STAGE0-REPORT {"disks":[]}`+"\r" {
+		t.Errorf("match = %q, %v", m, err)
+	}
+
+	// A prompt with no newline after it is taken when the port goes quiet.
+	src = &chunks{[]string{"k52 login: ", "", "never read"}}
+	if m, err := Capture(context.Background(), src, io.Discard, regexp.MustCompile(`login: `)); err != nil || m != "login: " {
+		t.Errorf("prompt match = %q, %v", m, err)
 	}
 }

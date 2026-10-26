@@ -15,6 +15,7 @@ import (
 
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/console"
+	"github.com/middelkoopt/stage0/internal/initrd"
 	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/netswitch/gs316ep"
 )
@@ -25,6 +26,7 @@ type App struct {
 	OpenSwitch  func(config.Switch, config.SwitchSecret) (netswitch.Controller, error)
 	OpenConsole func(device string, baud int) (io.ReadCloser, error)
 	OpenNetwork func(context.Context, config.Network) (dhcp, tftp net.PacketConn, err error)
+	CheckStatic func(path string) error
 
 	sitePath    string
 	secretsPath string
@@ -36,7 +38,7 @@ type App struct {
 
 // New returns the stage0 root command wired to the real world.
 func New() *cobra.Command {
-	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork}).Command()
+	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic}).Command()
 }
 
 // Command builds the command tree.
@@ -54,7 +56,7 @@ func (a *App) Command() *cobra.Command {
 	f.DurationVar(&a.timeout, "timeout", 30*time.Second, "time limit for the whole command")
 	f.StringVar(&a.switchName, "switch", "", "switch to use (default: the only one in the site config)")
 
-	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand())
+	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand())
 	return root
 }
 

@@ -19,11 +19,14 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 
 | Path | What |
 | --- | --- |
-| `cmd/stage0` | `main`: signal handling, exit code; nothing else |
-| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`); every command supports `-o json`, write commands `--dry-run` |
+| `cmd/stage0` | `main`: signal handling, exit code; runs the agent instead when it is PID 1 |
+| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`, `build initrd`); every command supports `-o json`, write commands `--dry-run` |
 | `internal/config` | `site.yaml` (committed: switches, nodes, networks) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
 | `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients only, in-memory leases, the Pi's option 43 |
 | `internal/tftpd` | Read-only TFTP from one directory (confined with `os.Root`), every request logged |
+| `internal/agent` | stage0 on the node (PID 1 of its initramfs): prints `STAGE0-REPORT {json}` (disks, interfaces, payload SHA-256); writes an xz image to a disk only when the kernel command line has `stage0.disk=` and a matching `stage0.sha256=` |
+| `internal/initrd` | Builds that initramfs: the static stage0 binary as `/init`, `/dev/console`, optional `/payload` |
+| `internal/cpio` | newc cpio reader and writer (the initramfs format), no root or host tools |
 | `internal/console` | Serial console capture: copy to screen and log, stop on a pattern (`--until`) |
 | `internal/netswitch` | Switch model (ports, PoE, VLANs), port and VLAN lookup, change planning, the `Reader` and `Controller` interfaces |
 | `internal/netswitch/gs316ep` | NETGEAR GS316EP driver over its web UI |
@@ -41,7 +44,10 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 - **Libraries:** cobra (CLI), `go.yaml.in/yaml/v3` (YAML),
   `golang.org/x/net/html` (switch pages), `go.bug.st/serial` (consoles),
   `insomniacslk/dhcp` (DHCPv4 packets only; the socket is stage0's),
-  `pin/tftp/v3` (TFTP). Prefer the standard library otherwise.
+  `pin/tftp/v3` (TFTP), `ulikunitz/xz` (image decompression on the node).
+  Prefer the standard library otherwise.
+- **The agent is the same binary.** Build it static (`CGO_ENABLED=0 go build
+  ./cmd/stage0`); `stage0 build initrd` refuses a dynamically linked one.
 - **`serve` runs as an ordinary user, on one interface.** Its sockets are
   pinned with `SO_BINDTODEVICE` (allowed unprivileged on this kernel), and it
   refuses to start unless the network's interface is up and is the only one
@@ -51,6 +57,11 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
   `cap_net_bind_service` (lost on each rebuild). DHCP replies are broadcast,
   so no raw sockets are needed. The host's address on the network is the
   host's own config (systemd-networkd here), not stage0's.
+- **Packet capture without sudo:** `/usr/bin/tcpdump` has
+  `cap_net_raw,cap_net_admin`, so plain `tcpdump` works for every user, e.g.
+  `tcpdump -i eth0.3 -n port 67 or port 69`; `sudo tcpdump` always prompts.
+  An apt upgrade of tcpdump drops the capabilities; reapply with
+  `sudo setcap cap_net_raw,cap_net_admin=eip /usr/bin/tcpdump`.
 
 ## GS316EP notes
 

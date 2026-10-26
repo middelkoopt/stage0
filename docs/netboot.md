@@ -59,8 +59,14 @@ Source unless noted: Raspberry Pi documentation
   `/config.txt`, `kernel_2712.img` and `armstub8-2712.bin` (missing), then
   `kernel8.img` and `initramfs8`. For the kernel and initramfs it first
   requests the size (tsize) and aborts with "Early terminate", then fetches.
-  52 MB took 17 s (3 MB/s, default block size). With `console=serial0` the
-  firmware hands the kernel `console=ttyAMA10`, the 3-pin debug connector.
+  52 MB took 17 s (3 MB/s). With `console=serial0` the firmware hands the
+  kernel `console=ttyAMA10`, the 3-pin debug connector.
+- **TFTP size: no ~92 MB ceiling here** (k52, same bootloader, 2026-10-25).
+  Every request asks `tsize 0 blksize 1468` (seen with tcpdump). A 106 MB
+  initramfs (72,469 blocks, so the 16-bit block number wrapped) arrived
+  intact in 34 s: the agent's SHA-256 of its 100 MB random payload matched.
+  The ceiling reported in `../lab` may have been another server or an older
+  bootloader; unverified.
 
 ## IPv6 boot information
 

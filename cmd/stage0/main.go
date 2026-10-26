@@ -8,10 +8,15 @@ import (
 	"os"
 	"os/signal"
 
+	"github.com/middelkoopt/stage0/internal/agent"
 	"github.com/middelkoopt/stage0/internal/cli"
 )
 
 func main() {
+	// As /init of stage0's initramfs, stage0 is the agent on the node.
+	if os.Getpid() == 1 {
+		agent.Main()
+	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
 	if err := cli.New().ExecuteContext(ctx); err != nil {

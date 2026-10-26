@@ -35,13 +35,21 @@ func Open(device string, baud int) (io.ReadCloser, error) {
 
 // Capture copies src to dst until src ends or ctx is done. With until set,
 // it also stops at the first match in the recent output and returns the
-// matched text; ending without a match is then an error. A read that returns
-// no data (a serial read timeout) just loops.
+// matched text; ending without a match is then an error. A match that runs
+// to the end of the output so far might still grow (a long line arriving in
+// pieces), so it is taken once more output follows it, the port goes quiet
+// (a read that returns no data, i.e. a serial read timeout), or the output
+// ends.
 func Capture(ctx context.Context, src io.Reader, dst io.Writer, until *regexp.Regexp) (string, error) {
 	buf := make([]byte, 4096)
 	var recent []byte
+	pending := false // a match touches the end of recent
+	match := func() string { return string(until.Find(recent)) }
 	for {
 		if err := ctx.Err(); err != nil {
+			if pending {
+				return match(), nil
+			}
 			if until != nil {
 				return "", fmt.Errorf("stopped (time limit or interrupt) with no match for %q", until)
 			}
@@ -57,12 +65,20 @@ func Capture(ctx context.Context, src io.Reader, dst io.Writer, until *regexp.Re
 				if len(recent) > tail {
 					recent = recent[len(recent)-tail:]
 				}
-				if m := until.Find(recent); m != nil {
-					return string(m), nil
+				if loc := until.FindIndex(recent); loc != nil {
+					if loc[1] < len(recent) {
+						return string(recent[loc[0]:loc[1]]), nil
+					}
+					pending = true
 				}
 			}
+		} else if pending && err == nil {
+			return match(), nil // quiet: the match is complete
 		}
 		if err == io.EOF {
+			if pending {
+				return match(), nil
+			}
 			if until != nil {
 				return "", fmt.Errorf("console output ended with no match for %q", until)
 			}
