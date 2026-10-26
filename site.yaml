@@ -1,10 +1,11 @@
 # Stage0 site configuration. Credentials go in .secrets (git-ignored, mode
 # 600), keyed by the switch name used here.
 
-# Public keys that may log in to installed nodes as root (the private half
-# of stage0@pilab is in ~/.cache/stage0/ssh on pilab).
+# Public keys that may log in to installed nodes as root: the stage0@pilab
+# lab key (private half in ~/.cache/stage0/ssh on pilab) and the human's.
 sshKeys:
   - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKZy0O24eEGhCIjhD/f/ARp+HXk7mQqud0uC6cWuIiup stage0@pilab
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIF2JnbcdZKinoEd5t48r0+Nf91U5KAA2toDkNvs/hYea mtim@pilab
 
 switches:
   - name: switch

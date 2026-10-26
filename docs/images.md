@@ -37,6 +37,13 @@ in the `.CHECKSUM` file beside it). Raw size 3,508,535,296 bytes.
   `/usr/lib/tmpfiles.d/provision.conf` is present with
   `f^ /root/.ssh/authorized_keys … ssh.authorized_keys.root`, and root
   logs in with a key over SSH (2026-10-26, installed by stage0).
+- **`cmdline.txt` is cut short** (k52, 2026-10-26): of a 1,068-byte
+  `cmdline.txt`, the kernel got the firmware's 265 bytes plus only the
+  first 864 of ours (`/proc/cmdline` 1,130 bytes), so a base64 credential
+  at the end arrived broken ("Failed to decode binary credential … Broken
+  pipe") and systemd dropped it. One ed25519 key (about 350 bytes in all)
+  works; an RSA 3072 key doesn't fit. The kernel allows 2,047; where the
+  cut happens (firmware?) is unverified. stage0 refuses more than 850.
 - **No cloud-init:** no `/usr/bin/cloud-init`, no `/etc/cloud`.
 - **`rpm -q` is unreliable on this image:** `rpm -qa` skips 51 packages
   ("Header V4 RSA/SHA256 Signature, key ID 6fedfc85: BAD"), so it reports

@@ -251,3 +251,15 @@ func TestGetAddress(t *testing.T) {
 		t.Errorf("node never installed: err = %v", err)
 	}
 }
+
+func TestInstalledCmdlineTooLong(t *testing.T) {
+	rsa := "ssh-rsa " + strings.Repeat("A", 540) + " someone@host" // an RSA 3072 key's size
+	if _, err := installedCmdline("console=serial0,115200 root=PARTUUID=abc rootwait", "k52", []string{rsa}); err == nil ||
+		!strings.Contains(err.Error(), "ed25519") {
+		t.Errorf("err = %v, want a too-long error pointing at key size", err)
+	}
+	ed := "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIKZy0O24eEGhCIjhD/f/ARp+HXk7mQqud0uC6cWuIiup stage0@pilab"
+	if _, err := installedCmdline("console=serial0,115200 root=PARTUUID=abc rootwait", "k52", []string{ed, ed, ed}); err != nil {
+		t.Errorf("three ed25519 keys: %v", err)
+	}
+}

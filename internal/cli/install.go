@@ -138,6 +138,10 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		return err
 	}
 	ready, _ := regexp.Compile(img.Ready) // checked by Load
+	installed, err := installedCmdline(img.Cmdline, node.Hostname, site.SSHKeys)
+	if err != nil {
+		return err
+	}
 
 	sw, err := a.openSite()
 	if err != nil {
@@ -176,10 +180,6 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}
 	say("image %s: %s", img.Name, imgPath)
 	run := filepath.Join(o.cache, "run", node.Name)
-	installed, err := installedCmdline(img.Cmdline, node.Hostname, site.SSHKeys)
-	if err != nil {
-		return err
-	}
 	if err := a.stage(run, imgPath, img, installed, disk, n.Server.String(), filepath.Join(o.cache, "boot", img.SHA256)); err != nil {
 		return err
 	}
@@ -404,8 +404,10 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, disk, serv
 	})
 }
 
-// maxCmdline is the most the kernel takes (arm64 COMMAND_LINE_SIZE is 2048).
-const maxCmdline = 2047
+// maxCmdline bounds cmdline.txt. The kernel takes 2047 bytes, but on k52
+// (Pi 5) only the first 864 bytes of a 1068-byte cmdline.txt reached the
+// kernel (the firmware adds 265 of its own); where it is cut is unverified.
+const maxCmdline = 850
 
 // installedCmdline is the installed system's kernel command line: the
 // image's, plus its hostname and root's SSH keys as systemd settings (the
@@ -418,7 +420,7 @@ func installedCmdline(base, hostname string, keys []string) (string, error) {
 			base64.StdEncoding.EncodeToString([]byte(strings.Join(keys, "\n")+"\n"))
 	}
 	if len(line) > maxCmdline {
-		return "", fmt.Errorf("the installed system's command line would be %d bytes; the kernel takes %d (fewer sshKeys?)", len(line), maxCmdline)
+		return "", fmt.Errorf("the installed system's cmdline.txt would be %d bytes; a Pi passes on about %d (sshKeys: ed25519 keys are about 5 times smaller than RSA)", len(line), maxCmdline)
 	}
 	return line, nil
 }

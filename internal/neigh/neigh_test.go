@@ -61,9 +61,21 @@ func TestMatch(t *testing.T) {
 		{Index: 7, Addr: netip.MustParseAddr("fe80::2"), MAC: other},
 		{Index: 3, Addr: netip.MustParseAddr("fe80::3"), MAC: hw},
 	}
-	got := match(table, 7, []net.HardwareAddr{hw})
+	answered := map[netip.Addr]bool{}
+	for _, n := range table {
+		answered[n.Addr] = true
+	}
+	got := match(table, 7, []net.HardwareAddr{hw}, answered)
 	if len(got) != 2 || got[0].String() != "fe80::1" || got[1].String() != "2001:db8::1" {
 		t.Errorf("match = %v, want link-local first, only interface 7", got)
+	}
+
+	// An earlier install's address lingers in the table (STALE) but no
+	// longer answers; only this round's answers count.
+	stale := append(table, Neighbor{Index: 7, Addr: netip.MustParseAddr("fe80::0:1"), MAC: hw})
+	got = match(stale, 7, []net.HardwareAddr{hw}, map[netip.Addr]bool{netip.MustParseAddr("fe80::1"): true})
+	if len(got) != 1 || got[0].String() != "fe80::1" {
+		t.Errorf("match = %v, want only the address that answered", got)
 	}
 }
 

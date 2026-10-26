@@ -41,14 +41,15 @@ func Find(ctx context.Context, ifname string, macs []net.HardwareAddr) ([]netip.
 	}
 	defer c.Close()
 	for {
-		if err := probe(c, ifname); err != nil {
+		answered, err := probe(c, ifname)
+		if err != nil {
 			return nil, err
 		}
 		table, err := Table()
 		if err != nil {
 			return nil, err
 		}
-		if found := match(table, ifc.Index, macs); len(found) > 0 {
+		if found := match(table, ifc.Index, macs, answered); len(found) > 0 {
 			return found, nil
 		}
 		select {
@@ -59,8 +60,9 @@ func Find(ctx context.Context, ifname string, macs []net.HardwareAddr) ([]netip.
 	}
 }
 
-// probe pings all nodes on the interface, then each one that answers.
-func probe(c *icmp.PacketConn, ifname string) error {
+// probe pings all nodes on the interface, then each one that answers, and
+// returns the addresses that answered.
+func probe(c *icmp.PacketConn, ifname string) (map[netip.Addr]bool, error) {
 	echo := func(dst netip.Addr) error {
 		m := icmp.Message{Type: ipv6.ICMPTypeEchoRequest, Body: &icmp.Echo{ID: 1, Seq: 1, Data: []byte("stage0")}}
 		b, err := m.Marshal(nil)
@@ -71,7 +73,7 @@ func probe(c *icmp.PacketConn, ifname string) error {
 		return err
 	}
 	if err := echo(netip.MustParseAddr("ff02::1")); err != nil {
-		return fmt.Errorf("neigh: ping ff02::1%%%s: %w", ifname, err)
+		return nil, fmt.Errorf("neigh: ping ff02::1%%%s: %w", ifname, err)
 	}
 	seen := map[netip.Addr]bool{}
 	buf := make([]byte, 1500)
@@ -90,15 +92,16 @@ func probe(c *icmp.PacketConn, ifname string) error {
 		}
 	}
 	time.Sleep(200 * time.Millisecond)
-	return nil
+	return seen, nil
 }
 
 // match returns the addresses of entries on interface index with one of
-// macs, link-local ones first.
-func match(table []Neighbor, index int, macs []net.HardwareAddr) []netip.Addr {
+// macs that answered this round (the table keeps old addresses for a
+// while, e.g. a reinstalled node's), link-local ones first.
+func match(table []Neighbor, index int, macs []net.HardwareAddr, answered map[netip.Addr]bool) []netip.Addr {
 	var out []netip.Addr
 	for _, n := range table {
-		if n.Index == index && slices.ContainsFunc(macs, func(m net.HardwareAddr) bool { return m.String() == n.MAC.String() }) {
+		if n.Index == index && answered[n.Addr] && slices.ContainsFunc(macs, func(m net.HardwareAddr) bool { return m.String() == n.MAC.String() }) {
 			out = append(out, n.Addr)
 		}
 	}
