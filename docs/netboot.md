@@ -73,6 +73,19 @@ Source unless noted: Raspberry Pi documentation
   EEPROM; the lab set 60000 on Pi 5s) is the knob, and that the ~92 MB
   ceiling in `../lab` is the same limit at 30 s, are inferences, unverified.
 
+## QEMU (aarch64)
+
+- **Debian 13's UEFI firmware for QEMU can't netboot** (checked on pilab,
+  `qemu-efi-aarch64` 2025.02-8+deb13u1, 2026-10-26): `AAVMF_CODE.fd`,
+  `AAVMF_CODE.no-secboot.fd` and `QEMU_EFI.fd` bind their Virtio network
+  driver to a `virtio-net-pci` card, but have no network stack (no MNP,
+  IP4, DHCP or PXE drivers in the shell's `drivers`; `ifconfig -l` lists
+  nothing), so with `bootindex=0` on the card they still fall through to
+  the UEFI shell.
+- The firmware follows QEMU's `bootindex`; it needs `-drive if=pflash`
+  for code and a writable copy of `AAVMF_VARS.fd` to keep its boot
+  entries.
+
 ## IPv6 boot information
 
 - **A router advertisement cannot carry a boot path.** RA options are the

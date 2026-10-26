@@ -32,6 +32,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/ptable` | GPT and MBR partition tables of a disk image |
 | `internal/fat` | Read-only FAT12/16/32 as an `io/fs.FS`, long names included |
 | `internal/neigh` | Finds a MAC's IPv6 addresses on an interface: echo to `ff02::1`, then the netlink neighbour table |
+| `internal/vswitch` | Virtual Ethernet switch for the QEMU test bed: QEMU joins over a Unix socket (`-netdev stream`, 4-byte big-endian length per frame); learns MACs, floods the rest. Not yet used by a command |
 | `internal/cpio` | newc cpio reader and writer (the initramfs format), no root or host tools |
 | `internal/console` | Serial console capture: copy to screen and log, stop on a pattern (`--until`) |
 | `internal/netswitch` | Switch model (ports, PoE, VLANs), port and VLAN lookup, change planning, the `Reader` and `Controller` interfaces |
