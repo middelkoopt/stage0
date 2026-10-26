@@ -16,6 +16,7 @@ import (
 
 	"github.com/middelkoopt/stage0/internal/agent"
 	"github.com/middelkoopt/stage0/internal/config"
+	"github.com/middelkoopt/stage0/internal/reach"
 )
 
 // addressWait is how long install looks for the node's address at the end.
@@ -185,5 +186,59 @@ func (a *App) addressCommand() *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVar(&network, "network", "", "network to look on (default: the only one in site.yaml)")
+	return cmd
+}
+
+func (a *App) checkCommand() *cobra.Command {
+	var network string
+	cmd := &cobra.Command{
+		Use:   "check <node>",
+		Short: "Check an installed node answers ping and SSH",
+		Long: "Check that a node stage0 installed answers ping and that its SSH server\n" +
+			"greets, at its IPv4 address from the install record, else its IPv6 address\n" +
+			"found on the network. Fails if it doesn't within --timeout.",
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if err := a.checkOutput(); err != nil {
+				return err
+			}
+			site, err := config.LoadSite(a.sitePath)
+			if err != nil {
+				return err
+			}
+			n, err := oneNetwork(site, network)
+			if err != nil {
+				return err
+			}
+			rec, err := a.loadRecord(args[0])
+			if err != nil {
+				return err
+			}
+			ctx, cancel := a.context(cmd)
+			defer cancel()
+			addr := rec.IPv4
+			if addr == "" {
+				if addr, err = a.address(ctx, rec, n); err != nil {
+					return err
+				}
+			}
+			r := a.Reach(ctx, addr)
+			if a.output == "json" {
+				if err := a.writeJSON(struct {
+					Node string `json:"node"`
+					reach.Result
+				}{rec.Node, r}); err != nil {
+					return err
+				}
+			} else if r.OK() {
+				fmt.Fprintf(a.Stdout, "%s: %s answers ping and ssh (%s)\n", rec.Node, addr, r.SSH)
+			}
+			if !r.OK() {
+				return fmt.Errorf("%s: %s not reachable: %s", rec.Node, addr, r.Err)
+			}
+			return nil
+		},
+	}
+	cmd.Flags().StringVar(&network, "network", "", "network the node is on (default: the only one in site.yaml)")
 	return cmd
 }

@@ -46,6 +46,10 @@ type Config struct {
 	// Ready matches the installed system's console once it has booted;
 	// default "login: ".
 	Ready string `yaml:"ready,omitempty"`
+
+	// Config are config.txt lines (Pi firmware settings) to ensure, for the
+	// agent's boot and the installed system's (see EnsureConfig).
+	Config []string `yaml:"config,omitempty"`
 }
 
 var (
@@ -91,10 +95,55 @@ func Load(dir, name string) (Config, error) {
 	case c.BootPartition < 0:
 		return c, fmt.Errorf("%s: bootPartition %d", p, c.BootPartition)
 	}
+	for _, l := range c.Config {
+		if strings.ContainsAny(l, "\r\n") || strings.TrimSpace(l) == "" {
+			return c, fmt.Errorf("%s: config: %q is not one line", p, l)
+		}
+	}
 	if _, err := regexp.Compile(c.Ready); err != nil {
 		return c, fmt.Errorf("%s: ready: %w", p, err)
 	}
 	return c, nil
+}
+
+// EnsureConfig returns a Pi config.txt with each of lines in force for every
+// board: lines already there (exactly, ignoring surrounding space, before
+// any section or under [all]) stay as they are; the others are appended in
+// an [all] section marked as stage0's. In config.txt the last value of a
+// setting wins.
+func EnsureConfig(cfg []byte, lines []string) []byte {
+	have := map[string]bool{}
+	all := true // before any section, or in [all]: applies to every board
+	for l := range strings.Lines(string(cfg)) {
+		l = strings.TrimSpace(l)
+		if strings.HasPrefix(l, "[") && strings.HasSuffix(l, "]") {
+			all = l == "[all]"
+			continue
+		}
+		if all {
+			have[l] = true
+		}
+	}
+	var add []string
+	for _, l := range lines {
+		l = strings.TrimSpace(l)
+		if !have[l] {
+			add = append(add, l)
+			have[l] = true
+		}
+	}
+	if len(add) == 0 {
+		return cfg
+	}
+	out := append([]byte(nil), cfg...)
+	if len(out) > 0 && out[len(out)-1] != '\n' {
+		out = append(out, '\n')
+	}
+	out = append(out, "\n# Added by stage0.\n[all]\n"...)
+	for _, l := range add {
+		out = append(out, l+"\n"...)
+	}
+	return out
 }
 
 // File is the image's file name, from its URL.

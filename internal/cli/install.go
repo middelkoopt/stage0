@@ -12,6 +12,7 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -25,10 +26,12 @@ import (
 	"github.com/middelkoopt/stage0/internal/image"
 	"github.com/middelkoopt/stage0/internal/initrd"
 	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/internal/reach"
 )
 
-// Time limits for the two waits, unless --timeout is given for the whole.
+// Time limits for the waits, unless --timeout is given for the whole.
 const (
+	reachWait = time.Minute      // lease to answering ping and SSH
 	agentWait = 20 * time.Minute // power on to STAGE0-INSTALLED
 	readyWait = 10 * time.Minute // power cycle to the installed system's prompt
 )
@@ -49,8 +52,9 @@ type installResult struct {
 	Seconds   float64         `json:"seconds"`
 	Address   string          `json:"address,omitempty"` // IPv6, found on the network after boot
 	Network   string          `json:"network"`
-	MAC       string          `json:"mac,omitempty"`  // the interface it netbooted on
-	IPv4      string          `json:"ipv4,omitempty"` // its lease from stage0 on Network
+	MAC       string          `json:"mac,omitempty"`   // the interface it netbooted on
+	IPv4      string          `json:"ipv4,omitempty"`  // its lease from stage0 on Network
+	Reach     *reach.Result   `json:"reach,omitempty"` // ping and SSH to IPv4 after boot
 	Log       string          `json:"log"`
 	ServeLog  string          `json:"serveLog"`
 }
@@ -301,7 +305,17 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	if res.MAC != "" {
 		hw, _ := net.ParseMAC(res.MAC)
 		if waitAcked(ctx, leases, hw, addressWait) {
-			say("%s: %s (IPv4 from stage0: keep `stage0 serve %s` running to keep it)\n  ssh root@%s", node.Name, res.IPv4, n.Name, res.IPv4)
+			// The goal: it answers ping and SSH.
+			rctx, cancel := context.WithTimeout(ctx, reachWait)
+			r := a.Reach(rctx, res.IPv4)
+			cancel()
+			res.Reach = &r
+			if r.OK() {
+				say("%s: %s answers ping and ssh (%s); keep `stage0 serve %s` running to keep the address\n  ssh root@%s",
+					node.Name, res.IPv4, r.SSH, n.Name, res.IPv4)
+			} else {
+				say("%s: %s is leased but not reachable yet: %s", node.Name, res.IPv4, r.Err)
+			}
 		} else {
 			say("%s: its system has not asked stage0 for its address %s yet", node.Name, res.IPv4)
 		}
@@ -384,8 +398,10 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, disk, serv
 	if err != nil {
 		return fmt.Errorf("image %s: no config.txt in its boot partition: %w", img.Name, err)
 	}
-	cfg = fmt.Appendf(cfg, "\n# Added by stage0: its agent, as the initramfs.\n[all]\ninitramfs %s followkernel\n", initrdName)
-	if err := os.WriteFile(filepath.Join(run, "config.txt"), cfg, 0o644); err != nil {
+	// The agent boots with stage0's initramfs, on the serial console
+	// (enable_uart: a Pi 4's GPIO serial port is off without it).
+	agentCfg := image.EnsureConfig(cfg, append(slices.Clone(img.Config), "initramfs "+initrdName+" followkernel", "enable_uart=1"))
+	if err := os.WriteFile(filepath.Join(run, "config.txt"), agentCfg, 0o644); err != nil {
 		return err
 	}
 	base := "http://" + server
@@ -416,6 +432,11 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, disk, serv
 	}
 	if err := os.WriteFile(filepath.Join(seed, "cmdline.txt"), []byte(installed+"\n"), 0o644); err != nil {
 		return err
+	}
+	if len(img.Config) > 0 {
+		if err := os.WriteFile(filepath.Join(seed, "config.txt"), image.EnsureConfig(cfg, img.Config), 0o644); err != nil {
+			return err
+		}
 	}
 	if err := writeFile(filepath.Join(run, "seed.cpio"), func(w io.Writer) error {
 		_, err := initrd.BuildSeed(w, seed)

@@ -110,7 +110,10 @@ func runApp(t *testing.T, app *App, args ...string) (string, error) {
 	var out bytes.Buffer
 	app.Stdout = &out
 	cmd := app.Command()
-	cmd.SetArgs(append([]string{"--site", site, "--secrets", filepath.Join(dir, ".secrets")}, args...))
+	// --state defaults to an empty directory, so tests never read the real
+	// install records; a later --state in args wins.
+	cmd.SetArgs(append([]string{"--site", site, "--secrets", filepath.Join(dir, ".secrets"),
+		"--state", filepath.Join(dir, "state")}, args...))
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	err := cmd.ExecuteContext(context.Background())

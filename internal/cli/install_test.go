@@ -26,6 +26,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/cpio"
 	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/internal/reach"
 )
 
 func gunzipFile(t *testing.T, path string) []byte {
@@ -113,7 +114,7 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 	images := filepath.Join(dir, "images")
 	os.Mkdir(images, 0o755)
 	os.WriteFile(filepath.Join(images, "test.yaml"), []byte("url: "+srv.URL+"/test.raw.xz\nsha256: "+sum+
-		"\ncmdline: console=serial0,115200 root=PARTUUID=abc rootwait\n"), 0o644)
+		"\ncmdline: console=serial0,115200 root=PARTUUID=abc rootwait\nconfig: [dtoverlay=disable-bt]\n"), 0o644)
 	agent := filepath.Join(dir, "stage0")
 	os.WriteFile(agent, []byte("AGENT"), 0o755)
 
@@ -170,6 +171,9 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 			}
 			return []netip.Addr{netip.MustParseAddr("fe80::5662:976b:2c19:7e38")}, nil
 		},
+		Reach: func(_ context.Context, addr string) reach.Result {
+			return reach.Result{Address: addr, Ping: true, SSH: "SSH-2.0-OpenSSH_9.9"}
+		},
 	}
 	env.state = filepath.Join(dir, "state")
 	return env
@@ -205,14 +209,18 @@ func TestInstall(t *testing.T) {
 		Ready     string          `json:"ready"`
 		Address   string          `json:"address"`
 		IPv4      string          `json:"ipv4"`
-		Network   string          `json:"network"`
+		Reach     struct {
+			Address string `json:"address"`
+			SSH     string `json:"ssh"`
+		} `json:"reach"`
+		Network string `json:"network"`
 	}
 	if err := json.Unmarshal([]byte(out), &res); err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if res.Node != "k53" || res.Disk != "mmcblk0" || !strings.Contains(string(res.Installed), "3508535296") ||
 		res.Ready != "login: " || res.Address != "fe80::5662:976b:2c19:7e38%eth0.3" ||
-		res.IPv4 != "10.0.3.100" || res.Network != "pinet" {
+		res.IPv4 != "10.0.3.100" || res.Network != "pinet" || res.Reach.Address != "10.0.3.100" || res.Reach.SSH == "" {
 		t.Errorf("result %+v", res)
 	}
 	if b, err := os.ReadFile(filepath.Join(env.state, "nodes", "k53.json")); err != nil || !strings.Contains(string(b), "d8:3a:dd:c5:c1:f3") {
@@ -232,7 +240,8 @@ func TestInstall(t *testing.T) {
 		}
 	}
 	if b, _ := os.ReadFile(filepath.Join(run, "config.txt")); !strings.HasPrefix(string(b), "arm_64bit=1\n") ||
-		!strings.Contains(string(b), "initramfs stage0-initrd followkernel") {
+		!strings.Contains(string(b), "initramfs stage0-initrd followkernel") || !strings.Contains(string(b), "enable_uart=1") ||
+		!strings.Contains(string(b), "dtoverlay=disable-bt") {
 		t.Errorf("config.txt = %q; want the image's, plus stage0's initramfs", b)
 	}
 	if _, err := os.Stat(filepath.Join(run, "stage0-initrd")); err != nil {
@@ -244,8 +253,21 @@ func TestInstall(t *testing.T) {
 	}
 	defer f.Close()
 	r := cpio.NewReader(f)
-	h, err := r.Next()
-	body, _ := io.ReadAll(r)
+	seed := map[string]string{}
+	for {
+		h, err := r.Next()
+		if err != nil {
+			break
+		}
+		b, _ := io.ReadAll(r)
+		seed[h.Name] = string(b)
+	}
+	if c := seed["config.txt"]; !strings.HasPrefix(c, "arm_64bit=1\n") || !strings.HasSuffix(c, "[all]\ndtoverlay=disable-bt\n") ||
+		strings.Contains(c, "stage0-initrd") {
+		t.Errorf("seed config.txt = %q; want the image's plus its config lines, without the agent's", c)
+	}
+	h := cpio.Header{Name: "cmdline.txt"}
+	body, err := []byte(seed["cmdline.txt"]), error(nil)
 	key := base64.StdEncoding.EncodeToString([]byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample stage0@test\n"))
 	want := "console=serial0,115200 root=PARTUUID=abc rootwait systemd.hostname=k53" +
 		" systemd.set_credential_binary=ssh.authorized_keys.root:" + key + "\n"
@@ -341,5 +363,29 @@ func TestServeAnswersInstalledNodes(t *testing.T) {
 	out := <-done
 	if !strings.Contains(out, "dhcp: offer") || !strings.Contains(out, "ip=10.0.3.150") || !strings.Contains(out, "installed=1") {
 		t.Errorf("serve log:\n%s", out)
+	}
+}
+
+func TestCheck(t *testing.T) {
+	state := t.TempDir()
+	os.MkdirAll(filepath.Join(state, "nodes"), 0o755)
+	os.WriteFile(filepath.Join(state, "nodes", "k53.json"), []byte(`{"node":"k53","ipv4":"10.0.3.100"}`), 0o644)
+	ok := true
+	app := &App{Reach: func(_ context.Context, addr string) reach.Result {
+		if addr != "10.0.3.100" {
+			t.Errorf("checked %s", addr)
+		}
+		if !ok {
+			return reach.Result{Address: addr, Err: "ping 10.0.3.100: no reply"}
+		}
+		return reach.Result{Address: addr, Ping: true, SSH: "SSH-2.0-OpenSSH_9.9"}
+	}}
+	out, err := runApp(t, app, "--state", state, "check", "k53")
+	if err != nil || !strings.Contains(out, "answers ping and ssh (SSH-2.0-OpenSSH_9.9)") {
+		t.Errorf("%q, %v", out, err)
+	}
+	ok = false
+	if _, err := runApp(t, app, "--state", state, "check", "k53"); err == nil || !strings.Contains(err.Error(), "no reply") {
+		t.Errorf("unreachable: err = %v", err)
 	}
 }

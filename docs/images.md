@@ -44,6 +44,15 @@ in the `.CHECKSUM` file beside it). Raw size 3,508,535,296 bytes.
   pipe") and systemd dropped it. One ed25519 key (about 350 bytes in all)
   works; an RSA 3072 key doesn't fit. The kernel allows 2,047; where the
   cut happens (firmware?) is unverified. stage0 refuses more than 850.
+- **On a Pi 4 / Pi 400 the GPIO serial console is silent** without
+  `enable_uart=1`, which the image's `config.txt` lacks (the mini UART is
+  off by default; a Pi 5's debug connector is a separate, always-on UART).
+  On k400 the first agent boot without it printed nothing after the
+  firmware and never fetched the image (its first console write probably
+  blocked; inferred). `images/rocky-10.2-rpi.yaml` ensures it.
+- **On a Pi 400 the firmware picks `kernel8.img`**, which runs the agent
+  (k400, 2026-10-26); writing the image to its SD card took 378 s
+  (k52's: 101 s).
 - **No cloud-init:** no `/usr/bin/cloud-init`, no `/etc/cloud`.
 - **`rpm -q` is unreliable on this image:** `rpm -qa` skips 51 packages
   ("Header V4 RSA/SHA256 Signature, key ID 6fedfc85: BAD"), so it reports

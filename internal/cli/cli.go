@@ -20,6 +20,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/neigh"
 	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/netswitch/gs316ep"
+	"github.com/middelkoopt/stage0/internal/reach"
 )
 
 // App holds what commands need from the outside world, so tests can replace it.
@@ -31,6 +32,7 @@ type App struct {
 	CheckStatic func(path string) error
 	Executable  func() (string, error) // this binary, packed as the agent
 	FindAddress func(ctx context.Context, ifname string, macs []net.HardwareAddr) ([]netip.Addr, error)
+	Reach       func(ctx context.Context, addr string) reach.Result // waits until addr answers ping and SSH
 
 	sitePath    string
 	secretsPath string
@@ -43,7 +45,7 @@ type App struct {
 
 // New returns the stage0 root command wired to the real world.
 func New() *cobra.Command {
-	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic, Executable: os.Executable, FindAddress: neigh.Find}).Command()
+	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic, Executable: os.Executable, FindAddress: neigh.Find, Reach: reach.Wait}).Command()
 }
 
 // Command builds the command tree.
@@ -62,7 +64,7 @@ func (a *App) Command() *cobra.Command {
 	f.StringVar(&a.switchName, "switch", "", "switch to use (default: the only one in the site config)")
 	f.StringVar(&a.statePath, "state", "", "records of installed nodes (default: $XDG_STATE_HOME/stage0 or ~/.local/state/stage0)")
 
-	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand(), a.installCommand())
+	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand(), a.installCommand(), a.checkCommand())
 	return root
 }
 

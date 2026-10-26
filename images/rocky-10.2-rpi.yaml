@@ -6,3 +6,8 @@ sha256: d2b20199e4bf356e725690e5520ca559ee918187cab4bc6a57d757b7f92d1a70
 # The shipped cmdline.txt names the root by LABEL, which a Pi 5 can't
 # resolve without an initramfs; this one names partition 3 by PARTUUID.
 cmdline: console=tty1 console=serial0,115200 root=PARTUUID=ae437f98-7402-4a21-9752-30303d4a7a8a rootfstype=ext4 rootwait
+
+# A Pi 4's GPIO serial console (serial0) is off without enable_uart; the
+# image's config.txt doesn't set it.
+config:
+  - enable_uart=1

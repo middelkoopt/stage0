@@ -17,9 +17,9 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
 ## What it needs
 
 - **`images/<name>.yaml`:** the image's URL and SHA-256 (an xz raw disk
-  image), the `cmdline.txt` the installed system needs, optionally its
-  boot partition (default 1) and the console pattern that means it is up
-  (default `login: `).
+  image), the `cmdline.txt` the installed system needs, optionally
+  `config.txt` lines to ensure (`config:`), its boot partition (default 1)
+  and the console pattern that means it is up (default `login: `).
 - **`site.yaml`:** the node with a `console` and a `disk` (optionally a
   `hostname`, default its name), `sshKeys` (public keys for root on
   installed nodes), and one network with the `vlan` the node's port must be
@@ -38,8 +38,12 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
    `~/.cache/stage0/run/<node>/`: those files; their `config.txt` plus
    `initramfs stage0-initrd followkernel`; `stage0-initrd` (this binary as
    the agent); `cmdline.txt` with the agent's plan; `seed.cpio` with the
-   installed system's `cmdline.txt` (see First-boot settings); the image
-   under `images/`. The Pi firmware picks the
+   installed system's `cmdline.txt` (see First-boot settings) and, if the
+   image config has `config:` lines, its `config.txt`; the image under
+   `images/`. Both `config.txt` files get the image's `config:` lines
+   ensured: present as they are, or appended in a stage0 `[all]` section
+   (the last value of a setting wins); the agent's also gets `enable_uart=1`,
+   since a Pi 4's GPIO serial console is off without it. The Pi firmware picks the
    image's own kernel for the board (`kernel_2712.img` on a Pi 5); both of
    the Rocky image's kernels run the agent.
 3. **Serve.** The same servers as `stage0 serve` answer DHCPv4, TFTP and

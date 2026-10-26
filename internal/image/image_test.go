@@ -158,3 +158,35 @@ func TestBootFilesRealImage(t *testing.T) {
 	ents, _ := os.ReadDir(boot)
 	t.Logf("%d entries in the boot partition", len(ents))
 }
+
+func TestLoadConfigLines(t *testing.T) {
+	dir := t.TempDir()
+	sum := strings.Repeat("ab", 32)
+	writeConfig(t, dir, "pi", "url: https://e.org/a.raw.xz\nsha256: "+sum+"\ncmdline: x\nconfig: [enable_uart=1, dtoverlay=disable-bt]\n")
+	c, err := Load(dir, "pi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(c.Config, ",") != "enable_uart=1,dtoverlay=disable-bt" {
+		t.Errorf("config %v", c.Config)
+	}
+	writeConfig(t, dir, "bad", "url: https://e.org/a.raw.xz\nsha256: "+sum+"\ncmdline: x\nconfig: [\"a=1\\nb=2\"]\n")
+	if _, err := Load(dir, "bad"); err == nil {
+		t.Error("multi-line config entry: want error")
+	}
+}
+
+func TestEnsureConfig(t *testing.T) {
+	base := "arm_64bit=1\nauto_initramfs=1\n[pi4]\nenable_uart=1\n"
+	got := string(EnsureConfig([]byte(base), []string{"arm_64bit=1", "enable_uart=1", "dtoverlay=disable-bt"}))
+	want := base + "\n# Added by stage0.\n[all]\nenable_uart=1\ndtoverlay=disable-bt\n"
+	if got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+	if got := string(EnsureConfig([]byte(base), nil)); got != base {
+		t.Errorf("nothing to add changed the file: %q", got)
+	}
+	if got := string(EnsureConfig([]byte("arm_64bit=1"), []string{"enable_uart=1"})); !strings.HasPrefix(got, "arm_64bit=1\n\n#") {
+		t.Errorf("no final newline: %q", got)
+	}
+}
