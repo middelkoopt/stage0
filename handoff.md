@@ -20,10 +20,9 @@ Pi 400 (firmware can't read its boot partition; see
   (stage 0.5); the head also needs to stay reachable from stage0.
 
 ## Next session
-1. [`ROADMAP.md`](ROADMAP.md#next) item 2: the agent reports to stage0
-   over HTTP, so `install` works without a serial console.
-2. Then item 4 (Raspberry Pi OS or Ubuntu for Pi: MBR, cloud-init), or
-   milestone 2 (the QEMU test bed).
+1. [`ROADMAP.md`](ROADMAP.md#next): Raspberry Pi OS or Ubuntu for Pi
+   (MBR, cloud-init), or milestone 2 (the QEMU test bed). Installs no
+   longer need a serial console (the agent reports over HTTP).
 3. k53 is powered off (it may run DHCP on piwulf); it may be powered and
    used as root, stopping (not disabling) its services. Its `sudo` needs a
    password stage0 doesn't have.

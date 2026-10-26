@@ -20,8 +20,8 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
   image), the `cmdline.txt` the installed system needs, optionally
   `config.txt` lines to ensure (`config:`), its boot partition (default 1)
   and the console pattern that means it is up (default `login: `).
-- **`site.yaml`:** the node with a `console` and a `disk` (optionally a
-  `hostname`, default its name), `sshKeys` (public keys for root on
+- **`site.yaml`:** the node with a `disk` (optionally a serial `console`
+  and a `hostname`, default its name), `sshKeys` (public keys for root on
   installed nodes), and one network with the `vlan` the node's port must be
   on. `install` checks the port's PVID and stops if it is wrong, unless
   `--set-port` is given: then it makes the network's VLAN the port's PVID
@@ -79,8 +79,13 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
    `install` waits for the image's `ready` pattern on the console, then for
    that lease.
 
-`install` follows the console throughout (`logs/<node>.log`; serve's log is
-`logs/<node>-serve.log`). On a `STAGE0-ERROR` line it powers the node off
+The agent reports to `install` over HTTP (`stage0.report=`: POSTs of its
+report, result or error to `serve`'s `/stage0/report/<kind>`, the one
+write `serve` accepts) and on the serial console. With a console,
+`install` follows it throughout (`logs/<node>.log`) and waits for the
+image's `ready` pattern after the reboot; without one, the node is up when
+its installed system takes its lease and answers ping and SSH. serve's log
+is `logs/<node>-serve.log`. On an agent error `install` powers the node off
 and stops. The steps can also be run by hand with `build initrd`, `build
 seed`, `serve`, `power` and `console`.
 
@@ -150,6 +155,7 @@ else, so booting it never wipes a disk by accident.
 | `stage0.sha256=<64 hex>` | SHA-256 of the xz image; nothing is written unless it matches |
 | `stage0.url=http://…` | Fetch the image from here (needs `ip=dhcp`); otherwise use `/payload` |
 | `stage0.seed=http://…` | First-boot files to unpack over partition 1 after writing |
+| `stage0.report=http://…` | Also POST the report, result or error to `<url>/<kind>` |
 
 ## Limits
 

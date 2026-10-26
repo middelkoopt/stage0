@@ -23,7 +23,8 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`, `build initrd`, `build seed`, `install`, `get address`); every command supports `-o json`, write commands `--dry-run` |
 | `internal/config` | `site.yaml` (committed: switches, nodes with console and install disk, networks with their VLAN) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
 | `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients, then the same MACs' kernels (`ip=dhcp`, no vendor class) with the same address; installed nodes get plain leases (24 h) and no answer to PXE; in-memory leases; the Pi's option 43 |
-| `internal/httpd` | Read-only HTTP (port 80) from the same root, every request logged; for images too big or slow for TFTP |
+| `internal/httpd` | HTTP (port 80) from the same root, every request logged; for images too big or slow for TFTP. Read-only except agents' `POST /stage0/report/<kind>`, when a listener is set |
+| `internal/reach` | Ping (unprivileged ICMP) and the SSH server's greeting |
 | `internal/tftpd` | Read-only TFTP from one directory (confined with `os.Root`), every request logged |
 | `internal/agent` | stage0 on the node (PID 1 of its initramfs): prints `STAGE0-REPORT {json}` (disks, interfaces, payload SHA-256); writes an xz image to a disk only when the kernel command line has `stage0.disk=` and a matching `stage0.sha256=`; fetches it first from `stage0.url=` (HTTP, with `ip=dhcp`) or uses `/payload`; then unpacks `stage0.seed=` (a cpio of first-boot files) over the image's first (FAT) partition |
 | `internal/initrd` | Builds that initramfs: the static stage0 binary as `/init`, `/dev/console`, optional `/payload`; and seeds (`build seed`) |

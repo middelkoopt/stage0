@@ -7,6 +7,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"io/fs"
 	"log/slog"
 	"net"
@@ -25,7 +26,14 @@ const Port = 80
 type Server struct {
 	files fs.FS // confined to the root, symlinks included
 	log   *slog.Logger
+
+	// Report, if set, receives what agents POST to /stage0/report/<kind>
+	// (report, installed or error): the one thing that isn't read-only.
+	Report func(from, kind string, body []byte)
 }
+
+// reportKinds are what an agent may report.
+var reportKinds = map[string]bool{"report": true, "installed": true, "error": true}
 
 // New returns a server for the files under dir.
 func New(dir string, log *slog.Logger) (*Server, error) {
@@ -85,6 +93,20 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	if kind, ok := strings.CutPrefix(r.URL.Path, "/stage0/report/"); ok && r.Method == http.MethodPost && s.Report != nil {
+		if !reportKinds[kind] {
+			http.NotFound(lw, r)
+			return
+		}
+		body, err := io.ReadAll(http.MaxBytesReader(lw, r.Body, 1<<20))
+		if err != nil {
+			http.Error(lw, err.Error(), http.StatusBadRequest)
+			return
+		}
+		s.Report(remoteIP(r.RemoteAddr), kind, body)
+		lw.WriteHeader(http.StatusNoContent)
+		return
+	}
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		http.Error(lw, "read-only", http.StatusMethodNotAllowed)
 		return

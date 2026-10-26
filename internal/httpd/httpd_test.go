@@ -111,3 +111,42 @@ func TestReadOnly(t *testing.T) {
 		t.Errorf("POST: %d", r.StatusCode)
 	}
 }
+
+func TestReport(t *testing.T) {
+	dir := t.TempDir()
+	logs := &syncBuffer{}
+	s, err := New(dir, slog.New(slog.NewTextHandler(logs, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	type rep struct{ from, kind, body string }
+	got := make(chan rep, 4)
+	s.Report = func(from, kind string, body []byte) { got <- rep{from, kind, string(body)} }
+	ln, _ := net.Listen("tcp4", "127.0.0.1:0")
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	go s.Serve(ctx, ln)
+	base := "http://" + ln.Addr().String()
+
+	r, err := http.Post(base+"/stage0/report/installed", "application/octet-stream", strings.NewReader(`{"bytes":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+	r.Body.Close()
+	if r.StatusCode != http.StatusNoContent {
+		t.Errorf("status %d", r.StatusCode)
+	}
+	if g := <-got; g.kind != "installed" || g.body != `{"bytes":1}` || g.from != "127.0.0.1" {
+		t.Errorf("report %+v", g)
+	}
+	for _, p := range []string{"/stage0/report/bogus", "/stage0/report/../x", "/other"} {
+		r, err := http.Post(base+p, "text/plain", strings.NewReader("x"))
+		if err != nil {
+			t.Fatal(err)
+		}
+		r.Body.Close()
+		if r.StatusCode/100 == 2 {
+			t.Errorf("POST %s: %d", p, r.StatusCode)
+		}
+	}
+}

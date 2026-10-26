@@ -132,9 +132,6 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	if err != nil {
 		return err
 	}
-	if node.Console == nil {
-		return fmt.Errorf("node %q has no console in %s; install follows the console", node.Name, a.sitePath)
-	}
 	disk := o.disk
 	if disk == "" {
 		disk = node.Disk
@@ -225,17 +222,23 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}
 	defer serveLog.Close()
 
-	// Follow the console from before power-on to the end.
-	portIO, err := a.OpenConsole(node.Console.Device, node.Console.Baud)
-	if err != nil {
-		return err
-	}
-	defer portIO.Close()
-	fmt.Fprintf(consoleLog, "\n=== stage0 install %s %s %s ===\n", node.Name, img.Name, time.Now().Format(time.RFC3339))
+	// The agent's progress comes over HTTP and, with a serial console,
+	// from the console too, followed from before power-on to the end.
 	cctx, stopConsole := context.WithCancel(ctx)
 	defer stopConsole()
 	w := newWatcher(cctx, ready)
-	go console.Capture(cctx, portIO, io.MultiWriter(consoleLog, w), nil)
+	if node.Console != nil {
+		portIO, err := a.OpenConsole(node.Console.Device, node.Console.Baud)
+		if err != nil {
+			return err
+		}
+		defer portIO.Close()
+		fmt.Fprintf(consoleLog, "\n=== stage0 install %s %s %s ===\n", node.Name, img.Name, time.Now().Format(time.RFC3339))
+		go console.Capture(cctx, portIO, io.MultiWriter(consoleLog, w), nil)
+	}
+	report := func(from, kind string, body []byte) {
+		w.send(event{map[string]string{"report": agent.ReportPrefix, "installed": agent.InstalledPrefix, "error": errorPrefix}[kind], string(body)})
+	}
 
 	// Serve for the whole install: the agent, then the installed system's
 	// DHCP. Other installed nodes keep their addresses.
@@ -249,7 +252,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	serveDone := make(chan struct{})
 	var serveErr error
 	go func() {
-		serveErr = a.serve(sctx, n, run, leases, slog)
+		serveErr = a.serve(sctx, n, run, leases, report, slog)
 		close(serveDone)
 	}()
 	defer func() { stopServe(); <-serveDone }()
@@ -264,14 +267,16 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	for done := false; !done; {
 		select {
 		case <-actx.Done():
-			return fmt.Errorf("%s: no STAGE0-INSTALLED on the console (console: %s): %w", node.Name, res.Log, actx.Err())
+			return fmt.Errorf("%s: the agent did not report STAGE0-INSTALLED (logs: %s, %s): %w", node.Name, res.Log, res.ServeLog, actx.Err())
 		case <-serveDone:
 			return fmt.Errorf("serve stopped: %v (log: %s)", serveErr, res.ServeLog)
 		case e := <-w.events:
 			switch e.kind {
 			case agent.ReportPrefix:
+				if res.Report == nil { // it may come by console and by HTTP
+					say("%s: agent running", node.Name)
+				}
 				res.Report = json.RawMessage(e.text)
-				say("%s: agent running", node.Name)
 			case agent.InstalledPrefix:
 				res.Installed = json.RawMessage(e.text)
 				var r agent.Result
@@ -282,7 +287,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 				if _, err := sw.SetPoE(ctx, port.ID, false); err != nil {
 					say("%s: powering off: %v", node.Name, err)
 				}
-				return fmt.Errorf("%s: agent: %s (node powered off; console: %s)", node.Name, e.text, res.Log)
+				return fmt.Errorf("%s: agent: %s (node powered off; logs: %s, %s)", node.Name, e.text, res.Log, res.ServeLog)
 			}
 		}
 	}
@@ -304,7 +309,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	say("%s: rebooting from %s", node.Name, disk)
 	rctx, cancel := context.WithTimeout(ctx, readyWait)
 	defer cancel()
-	for res.Ready == "" {
+	for node.Console != nil && res.Ready == "" {
 		select {
 		case <-rctx.Done():
 			return fmt.Errorf("%s: installed, but no %q on the console (console: %s): %w", node.Name, img.Ready, res.Log, rctx.Err())
@@ -315,10 +320,20 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		}
 	}
 	res.Seconds = time.Since(start).Round(time.Second).Seconds()
-	say("%s: up (%q on the console) after %.0f s", node.Name, res.Ready, res.Seconds)
+	if node.Console != nil {
+		say("%s: up (%q on the console) after %.0f s", node.Name, res.Ready, res.Seconds)
+	}
+	// Without a console, the lease and ping and SSH are how it shows it's up.
+	leaseWait := addressWait
+	if node.Console == nil {
+		leaseWait = readyWait
+	}
+	if res.MAC == "" && node.Console == nil {
+		return fmt.Errorf("%s: no MAC with a lease in the agent's report, so no way to tell it's up", node.Name)
+	}
 	if res.MAC != "" {
 		hw, _ := net.ParseMAC(res.MAC)
-		if waitAcked(ctx, leases, hw, addressWait) {
+		if waitAcked(ctx, leases, hw, leaseWait) {
 			// The goal: it answers ping and SSH.
 			rctx, cancel := context.WithTimeout(ctx, reachWait)
 			r := a.Reach(rctx, res.IPv4)
@@ -327,9 +342,13 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 			if r.OK() {
 				say("%s: %s answers ping and ssh (%s); keep `stage0 serve %s` running to keep the address\n  ssh root@%s",
 					node.Name, res.IPv4, r.SSH, n.Name, res.IPv4)
+			} else if node.Console == nil {
+				return fmt.Errorf("%s: installed and leased %s, but not reachable: %s", node.Name, res.IPv4, r.Err)
 			} else {
 				say("%s: %s is leased but not reachable yet: %s", node.Name, res.IPv4, r.Err)
 			}
+		} else if node.Console == nil {
+			return fmt.Errorf("%s: installed, but its system never asked stage0 for its address %s", node.Name, res.IPv4)
 		} else {
 			say("%s: its system has not asked stage0 for its address %s yet", node.Name, res.IPv4)
 		}
@@ -420,8 +439,8 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 	}
 	base := "http://" + server
 	// serial0 is the Pi's console UART.
-	cmdline := fmt.Sprintf("console=serial0,115200 ip=dhcp stage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.seed=%s/seed.cpio\n",
-		disk, img.SHA256, base, img.File(), base)
+	cmdline := fmt.Sprintf("console=serial0,115200 ip=dhcp stage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
+		disk, img.SHA256, base, img.File(), base, base)
 	if err := os.WriteFile(filepath.Join(run, "cmdline.txt"), []byte(cmdline), 0o644); err != nil {
 		return err
 	}
@@ -543,6 +562,14 @@ func newWatcher(ctx context.Context, ready *regexp.Regexp) *watcher {
 	return &watcher{ctx: ctx, ready: ready, events: make(chan event, 16)}
 }
 
+// send delivers an event unless the watcher is done.
+func (w *watcher) send(e event) {
+	select {
+	case w.events <- e:
+	case <-w.ctx.Done():
+	}
+}
+
 // armReady starts looking for the ready pattern, in output from now on.
 func (w *watcher) armReady() {
 	w.mu.Lock()
@@ -584,10 +611,7 @@ func (w *watcher) Write(p []byte) (int, error) {
 	}
 	w.mu.Unlock()
 	for _, e := range found {
-		select {
-		case w.events <- e:
-		case <-w.ctx.Done():
-		}
+		w.send(e)
 	}
 	return len(p), nil
 }

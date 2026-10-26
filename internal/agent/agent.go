@@ -76,14 +76,16 @@ func Main() {
 			fmt.Fprintf(out, "STAGE0-ERROR mount %s: %v\n", m.dir, err)
 		}
 	}
+	cmdline, _ := os.ReadFile("/proc/cmdline")
+	e := emitter{out: out, url: reportURL(string(cmdline))}
 	r, err := settle("/", 500*time.Millisecond, 3*time.Second, 30*time.Second)
 	if err != nil {
-		fmt.Fprintf(out, "STAGE0-ERROR report: %v\n", err)
+		e.emit(kindError, fmt.Appendf(nil, "report: %v", err))
 	} else {
 		b, _ := json.Marshal(r)
-		fmt.Fprintf(out, "%s%s\n", ReportPrefix, b)
+		e.emit(kindReport, b)
 	}
-	install(out, r.Cmdline)
+	install(e, string(cmdline))
 	fmt.Fprintln(out, "stage0 agent: done; waiting to be powered off")
 	for {
 		time.Sleep(time.Hour)
@@ -91,11 +93,13 @@ func Main() {
 }
 
 // install writes the disk if the command line asks for it.
-func install(out io.Writer, cmdline string) {
+func install(e emitter, cmdline string) {
+	out := e.out
+	fail := func(what string, err error) { e.emit(kindError, fmt.Appendf(nil, "%s: %v", what, err)) }
 	plan, err := ParsePlan(cmdline)
 	switch {
 	case err != nil:
-		fmt.Fprintf(out, "STAGE0-ERROR install: %v\n", err)
+		fail("install", err)
 		return
 	case plan == nil:
 		return
@@ -103,30 +107,30 @@ func install(out io.Writer, cmdline string) {
 	if plan.URL != "" {
 		fmt.Fprintf(out, "stage0 agent: fetching %s\n", plan.URL)
 		if _, err := Fetch(plan.URL, "/"+PayloadPath, out); err != nil {
-			fmt.Fprintf(out, "STAGE0-ERROR install: %v\n", err)
+			fail("install", err)
 			return
 		}
 	}
 	fmt.Fprintf(out, "stage0 agent: installing the payload on /dev/%s\n", plan.Disk)
 	res, err := Install("/"+PayloadPath, "/dev/"+plan.Disk, plan.SHA256, out)
 	if err != nil {
-		fmt.Fprintf(out, "STAGE0-ERROR install: %v\n", err)
+		fail("install", err)
 		return
 	}
 	if plan.Seed != "" {
 		fmt.Fprintf(out, "stage0 agent: fetching first-boot files %s\n", plan.Seed)
 		const seed = "/seed.cpio"
 		if _, err := Fetch(plan.Seed, seed, out); err != nil {
-			fmt.Fprintf(out, "STAGE0-ERROR seed: %v\n", err)
+			fail("seed", err)
 			return
 		}
 		if res.Seeded, err = seedDisk(plan.Disk, seed); err != nil {
-			fmt.Fprintf(out, "STAGE0-ERROR seed: %v\n", err)
+			fail("seed", err)
 			return
 		}
 	}
 	b, _ := json.Marshal(res)
-	fmt.Fprintf(out, "%s%s\n", InstalledPrefix, b)
+	e.emit(kindInstalled, b)
 }
 
 // settle gathers until the disk list has stayed the same for quiet (disks

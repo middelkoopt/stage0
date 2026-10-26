@@ -21,7 +21,7 @@ so different stage-1 provisioners can be CI-tested on real and virtual hardware.
 | 0.1 | Target netboots (TFTP or HTTP) | Built (IPv4 TFTP) |
 | 0.2 | The agent identifies the node and gets its plan | Built: the plan is the node's `cmdline.txt`, written by `install` |
 | 0.3 | Write the image to disk, then the first-boot files | Built |
-| 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" | Hostname and root's SSH key set (kernel command line); IPv4 lease from stage0 and IPv6 link-local, both printed; root filesystem not grown; "up" is the console's login prompt |
+| 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" (console prompt, or lease plus ping and SSH) | Hostname and root's SSH key set (kernel command line); IPv4 lease from stage0 and IPv6 link-local, both printed; root filesystem not grown; "up" is the console's login prompt |
 | 0.5 | Mark the node installed (stop answering it), move its port to the cluster VLAN, stop | Stops answering (one node per run); no VLAN move |
 
 Boot order stays **network first**: no answer means the node falls through to
@@ -44,16 +44,12 @@ reboot.
    - cloud-init NoCloud served by `serve`'s HTTP
      (`ds=nocloud;s=http://…/`), for images that have cloud-init (Rocky Pi
      does not).
-2. **Node reports "up" without a console:** `install` now checks ping and
-   SSH after the lease, but still needs the console to know when the agent
-   is done and the system has booted. Next: the agent reports to stage0
-   over HTTP, so nodes without a serial console can be installed.
-3. **Moving ports after the install** (stage 0.5): to a cluster VLAN, once
+2. **Moving ports after the install** (stage 0.5): to a cluster VLAN, once
    decided what it is (the head needs stage0's network too). Moving to the
    provisioning VLAN before is built (`install --set-port`).
-4. **More images:** Raspberry Pi OS or Ubuntu for Pi (MBR, cloud-init).
+3. **More images:** Raspberry Pi OS or Ubuntu for Pi (MBR, cloud-init).
    Built: Rocky 10.2 (Pi 5; doesn't boot a Pi 4) and AlmaLinux 10.1 (Pi 4).
-5. **Router advertisements**, for a stable IPv6 address; needs
+4. **Router advertisements**, for a stable IPv6 address; needs
    `CAP_NET_RAW` for stage0 (a decision for the human).
 
 ## Install routes

@@ -8,6 +8,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net"
 	"net/http"
@@ -96,6 +97,9 @@ func (s *scripted) Write(p []byte) (int, error) { return len(p), nil }
 func (s *scripted) Close() error                { return nil }
 
 type installEnv struct {
+	http   net.Listener
+	ask    func(pxe bool)
+	httpAt func() net.Addr
 	state  string
 	app    *App
 	sw     *fakeSwitch
@@ -120,7 +124,7 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 
 	sw := &fakeSwitch{st: testStatus()}
 	env := &installEnv{sw: sw, cache: filepath.Join(dir, "cache"), images: images, sum: sum}
-	var dhcpAddr net.Addr
+	var dhcpAddr, httpAddr net.Addr
 	var dhcpMu sync.Mutex
 	// ask sends a DHCP discover and request for 10.0.3.100 from k53's MAC.
 	ask := func(pxe bool) {
@@ -159,8 +163,14 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 			dhcpMu.Lock()
 			dhcpAddr = d.LocalAddr()
 			dhcpMu.Unlock()
+			defer func() {
+				dhcpMu.Lock()
+				httpAddr = env.http.Addr()
+				dhcpMu.Unlock()
+			}()
 			tf, _ := net.ListenPacket("udp4", "127.0.0.1:0")
 			h, _ := net.Listen("tcp4", "127.0.0.1:0")
+			env.http = h
 			return Sockets{DHCP: d, TFTP: tf, HTTP: h}, nil
 		},
 		CheckStatic: func(string) error { return nil },
@@ -176,6 +186,12 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 		},
 	}
 	env.state = filepath.Join(dir, "state")
+	env.ask = ask
+	env.httpAt = func() net.Addr {
+		dhcpMu.Lock()
+		defer dhcpMu.Unlock()
+		return httpAddr
+	}
 	return env
 }
 
@@ -400,5 +416,54 @@ func TestInstallSetPort(t *testing.T) {
 	// PVID pinet(3), the old PVID piwulf(5) kept tagged; then off and on.
 	if got := strings.Join(env.sw.writes, ","); !strings.HasPrefix(got, "vlans 2 3 [5 23],poe 2 false,poe 2 true") {
 		t.Errorf("switch writes %s", got)
+	}
+}
+
+func TestInstallWithoutConsole(t *testing.T) {
+	// k52 has no console: the agent reports over HTTP, and the node is up
+	// when its system takes its lease and answers ping and SSH.
+	env := newInstallEnv(t, nil)
+	env.app.OpenConsole = func(string, int) (io.ReadWriteCloser, error) {
+		t.Error("opened a console for a node without one")
+		return nil, errors.New("no console")
+	}
+	go func() {
+		for env.sw.ons() < 1 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		env.ask(true) // the bootloader
+		var to net.Addr
+		for to == nil {
+			time.Sleep(10 * time.Millisecond)
+			to = env.httpAt()
+		}
+		post := func(kind, body string) {
+			r, err := http.Post("http://"+to.String()+"/stage0/report/"+kind, "application/octet-stream", strings.NewReader(body))
+			if err != nil {
+				t.Error(err)
+				return
+			}
+			r.Body.Close()
+		}
+		post("report", `{"model":"Pi 5","interfaces":[{"name":"eth0","mac":"d8:3a:dd:c5:c1:f3"}]}`)
+		post("installed", `{"disk":"/dev/mmcblk0","bytes":3508535296,"seconds":100}`)
+		for env.sw.ons() < 2 {
+			time.Sleep(10 * time.Millisecond)
+		}
+		env.ask(false) // the installed system
+	}()
+	t.Chdir(t.TempDir())
+	out, err := runApp(t, env.app, "--state", env.state, "install", "k52", "--image", "test", "--set-port",
+		"--images", env.images, "--cache", env.cache, "--timeout", "20s")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	for _, want := range []string{"agent running", "wrote 3.5 GB", "10.0.3.100 answers ping and ssh"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "on the console") {
+		t.Errorf("mentions a console:\n%s", out)
 	}
 }

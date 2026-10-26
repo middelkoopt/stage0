@@ -61,7 +61,7 @@ func (a *App) serveCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.serve(ctx, n, root, a.newLeases(n, installed, log), log)
+			return a.serve(ctx, n, root, a.newLeases(n, installed, log), nil, log)
 		},
 	}
 	cmd.Flags().StringVar(&root, "root", "", "directory of boot files to serve over TFTP and HTTP (none: DHCP only)")
@@ -81,8 +81,10 @@ func (a *App) newLeases(n config.Network, installed map[string]netip.Addr, log *
 }
 
 // serve answers DHCPv4 with leases, and TFTP and HTTP from root (if
-// any), on network n until ctx is done.
-func (a *App) serve(ctx context.Context, n config.Network, root string, leases *dhcpd.Server, log *slog.Logger) error {
+// any), on network n until ctx is done. report, if set, receives what
+// agents POST.
+func (a *App) serve(ctx context.Context, n config.Network, root string, leases *dhcpd.Server,
+	report func(from, kind string, body []byte), log *slog.Logger) error {
 	var files *tftpd.Server
 	var web *httpd.Server
 	if root != "" {
@@ -93,6 +95,7 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 		if web, err = httpd.New(root, log); err != nil {
 			return err
 		}
+		web.Report = report
 	}
 	socks, err := a.OpenNetwork(ctx, n)
 	if err != nil {

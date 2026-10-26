@@ -82,6 +82,7 @@ switches:
 nodes:
   - {name: k53, console: {device: /dev/serial/by-id/probe}, disk: mmcblk0}
   - {name: k41}
+  - {name: k52, disk: mmcblk0}
 networks:
   - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199, vlan: pinet}
 `
