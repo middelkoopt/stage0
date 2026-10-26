@@ -2,6 +2,7 @@ package cli
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -174,7 +175,11 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}
 	say("image %s: %s", img.Name, imgPath)
 	run := filepath.Join(o.cache, "run", node.Name)
-	if err := a.stage(run, imgPath, img, disk, n.Server.String(), filepath.Join(o.cache, "boot", img.SHA256)); err != nil {
+	installed, err := installedCmdline(img.Cmdline, node.Hostname, site.SSHKeys)
+	if err != nil {
+		return err
+	}
+	if err := a.stage(run, imgPath, img, installed, disk, n.Server.String(), filepath.Join(o.cache, "boot", img.SHA256)); err != nil {
 		return err
 	}
 	say("staged boot files in %s", run)
@@ -302,7 +307,7 @@ func (a *App) powerCycle(ctx context.Context, sw netswitch.Controller, port int)
 // stage builds the directory serve offers the node: the image's boot files
 // with stage0's initramfs added to config.txt, a cmdline.txt carrying the
 // agent's plan, the seed, and the image itself under images/.
-func (a *App) stage(run, imgPath string, img image.Config, disk, server, bootCache string) error {
+func (a *App) stage(run, imgPath string, img image.Config, installed, disk, server, bootCache string) error {
 	if _, err := os.Stat(bootCache); err != nil {
 		tmp := bootCache + ".tmp"
 		os.RemoveAll(tmp)
@@ -354,7 +359,7 @@ func (a *App) stage(run, imgPath string, img image.Config, disk, server, bootCac
 	if err := os.MkdirAll(seed, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(seed, "cmdline.txt"), []byte(strings.TrimSpace(img.Cmdline)+"\n"), 0o644); err != nil {
+	if err := os.WriteFile(filepath.Join(seed, "cmdline.txt"), []byte(installed+"\n"), 0o644); err != nil {
 		return err
 	}
 	if err := writeFile(filepath.Join(run, "seed.cpio"), func(w io.Writer) error {
@@ -385,6 +390,25 @@ func (a *App) stage(run, imgPath string, img image.Config, disk, server, bootCac
 		_, err := io.Copy(w, src)
 		return err
 	})
+}
+
+// maxCmdline is the most the kernel takes (arm64 COMMAND_LINE_SIZE is 2048).
+const maxCmdline = 2047
+
+// installedCmdline is the installed system's kernel command line: the
+// image's, plus its hostname and root's SSH keys as systemd settings (the
+// keys as a credential that systemd's provision.conf writes to
+// /root/.ssh/authorized_keys). Base64 keeps the keys' spaces off the line.
+func installedCmdline(base, hostname string, keys []string) (string, error) {
+	line := strings.TrimSpace(base) + " systemd.hostname=" + hostname
+	if len(keys) > 0 {
+		line += " systemd.set_credential_binary=ssh.authorized_keys.root:" +
+			base64.StdEncoding.EncodeToString([]byte(strings.Join(keys, "\n")+"\n"))
+	}
+	if len(line) > maxCmdline {
+		return "", fmt.Errorf("the installed system's command line would be %d bytes; the kernel takes %d (fewer sshKeys?)", len(line), maxCmdline)
+	}
+	return line, nil
 }
 
 // writeFile writes path with fill.

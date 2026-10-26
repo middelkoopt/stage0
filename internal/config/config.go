@@ -29,6 +29,9 @@ type Site struct {
 	Switches []Switch  `yaml:"switches"`
 	Nodes    []Node    `yaml:"nodes"`
 	Networks []Network `yaml:"networks"`
+
+	// SSHKeys are public keys allowed to log in to installed nodes as root.
+	SSHKeys []string `yaml:"sshKeys"`
 }
 
 // Switch is a managed switch.
@@ -43,6 +46,9 @@ type Node struct {
 	Name    string   `yaml:"name"`
 	Console *Console `yaml:"console,omitempty"`
 	Disk    string   `yaml:"disk,omitempty"` // install target under /dev, e.g. mmcblk0
+
+	// Hostname the installed system gets; default the node's name.
+	Hostname string `yaml:"hostname,omitempty"`
 }
 
 // Console is a node's local serial console.
@@ -66,7 +72,11 @@ type Network struct {
 	PoolFirst, PoolLast netip.Addr   `yaml:"-"`
 }
 
-var diskName = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
+var (
+	diskName   = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
+	hostname   = regexp.MustCompile(`^[a-zA-Z0-9]([a-zA-Z0-9-]{0,61}[a-zA-Z0-9])?$`)
+	sshKeyType = regexp.MustCompile(`^(ssh-(ed25519|rsa|dss)|ecdsa-sha2-nistp(256|384|521)|sk-[a-z0-9@.-]+)$`)
+)
 
 // Drivers are the switch drivers stage0 knows.
 var Drivers = []string{"gs316ep"}
@@ -114,6 +124,12 @@ func (s *Site) normalize() error {
 			return fmt.Errorf("node %q: defined twice", n.Name)
 		}
 		seen[n.Name] = true
+		if n.Hostname == "" {
+			n.Hostname = n.Name
+		}
+		if !hostname.MatchString(n.Hostname) {
+			return fmt.Errorf("node %q: hostname %q is not a valid host name", n.Name, n.Hostname)
+		}
 		if n.Disk != "" && !diskName.MatchString(n.Disk) {
 			return fmt.Errorf("node %q: disk %q is not a name under /dev like mmcblk0", n.Name, n.Disk)
 		}
@@ -126,6 +142,13 @@ func (s *Site) normalize() error {
 			case c.Baud == 0:
 				c.Baud = 115200
 			}
+		}
+	}
+
+	for i, k := range s.SSHKeys {
+		f := strings.Fields(k)
+		if strings.ContainsAny(k, "\r\n") || len(f) < 2 || !sshKeyType.MatchString(f[0]) {
+			return fmt.Errorf("sshKeys %d: not a one-line public key (\"ssh-ed25519 AAAA... comment\")", i+1)
 		}
 	}
 

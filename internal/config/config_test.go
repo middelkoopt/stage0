@@ -239,3 +239,36 @@ networks:
 		}
 	}
 }
+
+func TestLoadSiteFirstBoot(t *testing.T) {
+	p := write(t, "site.yaml", `
+sshKeys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample stage0@pilab
+nodes:
+  - {name: k52}
+  - {name: k400, hostname: head}
+`, 0o644)
+	s, err := LoadSite(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(s.SSHKeys) != 1 {
+		t.Errorf("keys %v", s.SSHKeys)
+	}
+	if n, _ := s.Node("k52"); n.Hostname != "k52" {
+		t.Errorf("k52 hostname %q, want its name by default", n.Hostname)
+	}
+	if n, _ := s.Node("k400"); n.Hostname != "head" {
+		t.Errorf("k400 hostname %q", n.Hostname)
+	}
+	for name, body := range map[string]string{
+		"private key":  "sshKeys: ['-----BEGIN OPENSSH PRIVATE KEY-----']\n",
+		"not a key":    "sshKeys: ['hello']\n",
+		"multi-line":   "sshKeys: [\"ssh-ed25519 AAAA x\\nssh-rsa BBBB y\"]\n",
+		"bad hostname": "nodes:\n  - {name: k52, hostname: 'k 52'}\n",
+	} {
+		if _, err := LoadSite(write(t, "site.yaml", body, 0o644)); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}

@@ -21,7 +21,7 @@ so different stage-1 provisioners can be CI-tested on real and virtual hardware.
 | 0.1 | Target netboots (TFTP or HTTP) | Built (IPv4 TFTP) |
 | 0.2 | The agent identifies the node and gets its plan | Built: the plan is the node's `cmdline.txt`, written by `install` |
 | 0.3 | Write the image to disk, then the first-boot files | Built |
-| 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" | Boots; `install` waits for the login prompt; nothing set yet |
+| 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" | Hostname and root's SSH key set (kernel command line); no address beyond IPv6 link-local; root filesystem not grown; "up" is the console's login prompt |
 | 0.5 | Mark the node installed (stop answering it), move its port to the cluster VLAN, stop | Stops answering (one node per run); no VLAN move |
 
 Boot order stays **network first**: no answer means the node falls through to
@@ -31,17 +31,18 @@ reboot.
 
 ## Next
 
-1. **First-boot settings (stage 0.4)**, in order of preference:
-   - kernel command line: `systemd.hostname=`, and the SSH key as a systemd
-     credential (`ssh.authorized_keys.root`); no disk mounting. Untested on
-     Rocky (needs its `provision.conf` tmpfiles rule).
-   - seed with top-level `boot/` and `root/` directories, unpacked onto the
-     partitions the image config names (GG2, decided); for what the command
-     line can't carry, e.g. a NetworkManager connection for `piwulf`.
+1. **First-boot settings (stage 0.4), the rest:** hostname and root's SSH
+   key are built (systemd settings on the kernel command line; see
+   [`docs/install.md`](docs/install.md#first-boot-settings)). Still to do:
+   - an address on the cluster network (`piwulf`) for the new head: a
+     NetworkManager connection file through the seed's `root/` directory
+     (GG2, decided), since `ip=` on the command line needs an initramfs;
+   - grow the root filesystem to the disk (Rocky ships `rootfs-expand`
+     and `growpart`; a systemd unit or `systemd-repart` config via the
+     seed);
    - cloud-init NoCloud served by `serve`'s HTTP
      (`ds=nocloud;s=http://…/`), for images that have cloud-init (Rocky Pi
      does not).
-   - Grow the root filesystem (Rocky ships `rootfs-expand` and `growpart`).
 2. **Node reports "up"**: a signal stage0 can wait for other than the
    console's login prompt (e.g. an HTTP call from first boot, or SSH
    answering).
@@ -113,7 +114,8 @@ HTTP), the agent, initramfs and seed builders (see
 ## Milestones (order tentative)
 
 1. **Pi 5 head node over IPv4:** `stage0 install k52` installs Rocky 10.2
-   and leaves it reachable over SSH with its hostname and key.
+   and leaves it reachable over SSH with its hostname and key. Done except
+   an IPv4 address: reachable today over IPv6 link-local.
 2. QEMU test bed on the virtual switch; the same install for an aarch64 VM.
 3. Pi 5 over IPv6.
 4. Network modes beyond *own*: none, boot-only, proxy.

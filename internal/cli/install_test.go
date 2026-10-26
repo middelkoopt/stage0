@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"io"
@@ -182,8 +183,11 @@ func TestInstall(t *testing.T) {
 	r := cpio.NewReader(f)
 	h, err := r.Next()
 	body, _ := io.ReadAll(r)
-	if err != nil || h.Name != "cmdline.txt" || string(body) != "console=serial0,115200 root=PARTUUID=abc rootwait\n" {
-		t.Errorf("seed: %+v %q %v", h, body, err)
+	key := base64.StdEncoding.EncodeToString([]byte("ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample stage0@test\n"))
+	want := "console=serial0,115200 root=PARTUUID=abc rootwait systemd.hostname=k53" +
+		" systemd.set_credential_binary=ssh.authorized_keys.root:" + key + "\n"
+	if err != nil || h.Name != "cmdline.txt" || string(body) != want {
+		t.Errorf("seed: %+v %v\n got %q\nwant %q", h, err, body, want)
 	}
 }
 

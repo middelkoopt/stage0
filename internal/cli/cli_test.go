@@ -75,6 +75,8 @@ func testStatus() netswitch.Status {
 
 // testSite names one switch, two nodes (one with a console) and a network.
 const testSite = `
+sshKeys:
+  - ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample stage0@test
 switches:
   - {name: lab, address: switch.example}
 nodes:

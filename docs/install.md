@@ -20,9 +20,11 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
   image), the `cmdline.txt` the installed system needs, optionally its
   boot partition (default 1) and the console pattern that means it is up
   (default `login: `).
-- **`site.yaml`:** the node with a `console` and a `disk`, and one network
-  with the `vlan` the node's port must be on. `install` checks the port's
-  PVID and stops if it is wrong; it does not move ports.
+- **`site.yaml`:** the node with a `console` and a `disk` (optionally a
+  `hostname`, default its name), `sshKeys` (public keys for root on
+  installed nodes), and one network with the `vlan` the node's port must be
+  on. `install` checks the port's PVID and stops if it is wrong; it does
+  not move ports.
 
 ## The sequence
 
@@ -36,7 +38,8 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
    `~/.cache/stage0/run/<node>/`: those files; their `config.txt` plus
    `initramfs stage0-initrd followkernel`; `stage0-initrd` (this binary as
    the agent); `cmdline.txt` with the agent's plan; `seed.cpio` with the
-   image's `cmdline`; the image under `images/`. The Pi firmware picks the
+   installed system's `cmdline.txt` (see First-boot settings); the image
+   under `images/`. The Pi firmware picks the
    image's own kernel for the board (`kernel_2712.img` on a Pi 5); both of
    the Rocky image's kernels run the agent.
 3. **Serve.** The same servers as `stage0 serve` answer DHCPv4, TFTP and
@@ -72,6 +75,25 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
 `logs/<node>-serve.log`). On a `STAGE0-ERROR` line it powers the node off
 and stops. The steps can also be run by hand with `build initrd`, `build
 seed`, `serve`, `power` and `console`.
+
+## First-boot settings
+
+The installed system's `cmdline.txt` is the image's `cmdline` plus:
+
+- `systemd.hostname=<hostname>`;
+- `systemd.set_credential_binary=ssh.authorized_keys.root:<base64>`: the
+  site's `sshKeys`, which systemd's `provision.conf` tmpfiles rule writes
+  to `/root/.ssh/authorized_keys` at boot (base64 because keys contain
+  spaces). Public keys only: any user can read `/proc/cmdline`.
+
+Nothing is mounted or written inside the installed root filesystem. On k52
+(Rocky 10.2) the result logs in as `ssh root@<node>` with a site key and
+shows `k52 login:` on the console. The kernel takes at most 2047 bytes of
+command line, which bounds the number of keys.
+
+After the install nothing gives the node an IPv4 address on the
+provisioning network; it is reachable by its IPv6 link-local address
+(`ping -6 ff02::1%eth0.3`, then `ip -6 neigh`).
 
 ## The agent's command line
 
