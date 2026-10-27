@@ -28,6 +28,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/deb"
 	"github.com/middelkoopt/stage0/internal/fat"
 	"github.com/middelkoopt/stage0/internal/ptable"
+	"github.com/middelkoopt/stage0/internal/registry"
 )
 
 // Config is one image's config file.
@@ -37,9 +38,10 @@ type Config struct {
 	URL    string `yaml:"url"`    // an xz-compressed raw disk image
 	SHA256 string `yaml:"sha256"` // of the file at URL
 
-	// Container, instead of URL, installs a container image: the OCI
-	// layout directory <cache>/oci/<Container> (podman save --format
-	// oci-dir). Its labels say how (docs/containers.md).
+	// Container, instead of URL, installs a container image: a registry
+	// reference (with a "/": quay.io/org/image:tag, pulled into the cache),
+	// or the name of an OCI layout directory <cache>/oci/<Container>
+	// (podman save --format oci-dir). Its labels say how (docs/containers.md).
 	Container string `yaml:"container,omitempty"`
 
 	// Partitions and Installer, for a container, override its labels
@@ -136,8 +138,12 @@ func Load(dir, name string) (Config, error) {
 	}
 	if c.Container != "" {
 		switch {
+		case strings.Contains(c.Container, "/"):
+			if _, err := registry.ParseRef(c.Container); err != nil {
+				return c, fmt.Errorf("%s: container: %w", p, err)
+			}
 		case !validName.MatchString(c.Container):
-			return c, fmt.Errorf("%s: container %q: use lowercase letters, digits, '.', '_' and '-'", p, c.Container)
+			return c, fmt.Errorf("%s: container %q: a registry reference, or a layout name of lowercase letters, digits, '.', '_' and '-'", p, c.Container)
 		case c.URL != "" || c.SHA256 != "" || c.Kernel != nil:
 			return c, fmt.Errorf("%s: container goes without url, sha256, kernel and initrd", p)
 		case c.Cmdline == "":
@@ -272,8 +278,18 @@ func (c Config) File() string { return path.Base(c.URL) }
 
 // Fetch makes sure the image is in cacheDir with the right checksum,
 // downloading it if not, and returns its path. For a container it
-// returns its OCI layout directory, which must be there.
+// returns its OCI layout directory: pulled from its registry, or saved
+// there by hand.
 func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (string, error) {
+	if strings.Contains(c.Container, "/") {
+		ref, err := registry.ParseRef(c.Container)
+		if err != nil {
+			return "", err
+		}
+		fmt.Fprintf(progress, "pulling %s\n", ref)
+		// Pis and the test bed's VMs are arm64.
+		return (&registry.Client{}).Pull(ctx, ref, "arm64", filepath.Join(cacheDir, "oci", "registry"))
+	}
 	if c.Container != "" {
 		dir := filepath.Join(cacheDir, "oci", c.Container)
 		if _, err := os.Stat(filepath.Join(dir, "index.json")); err != nil {

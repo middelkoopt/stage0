@@ -362,3 +362,15 @@ func TestFetchDebFile(t *testing.T) {
 		t.Error("a file not in the package: want error")
 	}
 }
+
+func TestLoadContainerRef(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, "ref", "container: quay.io/org/rocky10-rpi:10\ncmdline: x\n")
+	if c, err := Load(dir, "ref"); err != nil || c.Container != "quay.io/org/rocky10-rpi:10" {
+		t.Errorf("Load = %+v, %v", c, err)
+	}
+	writeConfig(t, dir, "bad", "container: quay.io/Org/x:10\ncmdline: x\n")
+	if _, err := Load(dir, "bad"); err == nil {
+		t.Error("an upper-case repository: want error")
+	}
+}
