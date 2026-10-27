@@ -20,11 +20,11 @@ serial console.
 (none)
 
 ## Next session
-1. Ignition for container partitioning
-   ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)). `stage0 bmc`
-   serves k52 (6231) and k400 (6238) ([`docs/bmc.md`](docs/bmc.md));
-   `stage0 get nodes -o json` lists nodes for stage 1.
-2. k400's serial console is off (installed before `enable_uart=1`);
-   reinstalling it fixes that.
+1. Choose the next arc ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)):
+   x86_64 and real BMCs (another lab), network modes, Ignition's files
+   and users on the installed system, private registries.
+2. k52 runs Rocky from the container partitioned by Ignition (separate
+   `/var`); k400 Rocky from the container, its console working.
+   `stage0 bmc` serves both ([`docs/bmc.md`](docs/bmc.md)).
 3. k53 is powered off; it may be powered and used as root, stopping (not
    disabling) its services. Its `sudo` needs a password stage0 doesn't have.

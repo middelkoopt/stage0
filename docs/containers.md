@@ -68,6 +68,50 @@ without `enable_uart=1`, now in the image config.
 
 Not yet: VMs, private registries (credentials).
 
+## Partitioning by Ignition
+
+**Works on a Pi 5** (k52, 2026-10-27, `images/rocky10-rpi-ignition.yaml`
+with `images/rocky10-rpi-var.ign`: boot, a 4 GiB `/var`, root): the
+installer's own Ignition makes the partitions and filesystems, and the
+agent only mounts them and unpacks; up in 208 s.
+
+- **Giving it:** `ignition: <file.ign>` (Ignition spec 3 JSON; write
+  Butane and convert with `butane`) on a node in `site.yaml` or in an image
+  config, or the label `pi.provision.ignition`, in place of `partitions:`
+  / `pi.provision.partition`, with the same precedence. stage0 reads the
+  layout from its `storage` (the one disk's partitions, each with a vfat or
+  ext4 filesystem on `/dev/disk/by-partlabel/<label>` and a mount path) to
+  know where to mount; raid, luks, several disks and other formats are
+  refused.
+- **Serving it:** stage0 serves the config as `ignition.ign` with the
+  disk's `device` set to the node's disk, `wipeTable` and every
+  `wipeFilesystem` on (a fresh install: new partitions at old offsets would
+  otherwise keep old filesystems), and FAT partitions without a `typeGuid`
+  typed Microsoft basic data: Ignition's default type, Linux filesystem,
+  left k52 with "GPT: No bootable partitions". The installer's command line
+  gets `ignition.firstboot ignition.platform.id=metal
+  ignition.config.url=<base>/ignition.ign`; `layout.json` says
+  `"ignition": true`, so the agent skips sgdisk and mkfs and waits for the
+  partitions by label.
+- **The container** has Ignition (2.26, Rocky's) in its installer
+  initramfs (`dracut --add "network-manager ignition"`); its dracut module
+  wants `mlxbf_bootctl` on aarch64 (NVIDIA BlueField), which a Pi kernel
+  lacks, so the Containerfile makes it optional. Without
+  `ignition.firstboot` Ignition does nothing.
+- **Ordering:** Ignition's fetch, kargs and disks stages run (disks took
+  about 22 s on k52), but dracut's pre-mount hooks didn't wait for them:
+  the agent tried to mount the root while Ignition formatted it ("device or
+  resource busy"). The appended archive carries a systemd drop-in,
+  `dracut-pre-mount.service.d/90-stage0.conf` with
+  `After=ignition-disks.service`. Ignition's mount and files stages wait
+  for a `/sysroot` the installer never mounts, so files, users and units
+  in the config aren't applied.
+- **The console garbles the agent's lines** while systemd prints its
+  status: the console copy of the report replaced the good HTTP copy, so
+  stage0 found no MAC, didn't mark the node installed, and the reboot
+  netbooted the installer again. `install` now takes only reports and
+  results that are valid JSON.
+
 ## The installer initramfs
 
 - **Built in the container** with `dracut --no-hostonly --add

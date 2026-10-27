@@ -69,7 +69,7 @@ to partition, format, copy and install the bootloader (LL1).
 **Container route (A, decided BA1–BA3): built** for Pis over IPv4
 ([containers](docs/containers.md)). Layouts come from the node, the image
 config or the labels (BB1). A container comes from a registry, podman's
-local store (`podman:<image>`) or a saved layout. Works over IPv6 too. Next for it: private registries. Partitioning could come from an **Ignition** config's
+local store (`podman:<image>`) or a saved layout. Works over IPv6 too. Next for it: private registries. Partitioning can come from an **Ignition** config's
 `storage` section (disks, partitions, filesystems) instead of the
 `pi.provision.partition` label, with dracut's ignition module or the agent
 reading it (unexplored). Later, bootc (E) for UEFI machines, testable in
@@ -130,7 +130,9 @@ HTTP), the agent, initramfs and seed builders (see
 4. **Pis' virtual BMC:** done (`stage0 bmc`: IPMI 2.0 with power by PoE and
    SOL by the serial console, [bmc](docs/bmc.md); `stage0 get nodes -o
    json` for stage 1).
-5. Ignition for container partitioning (next).
+5. Ignition for container partitioning: done (the installer's Ignition
+   partitions, [containers](docs/containers.md#partitioning-by-ignition));
+   its files, users and units aren't applied yet.
 6. UEFI and x86_64: aarch64 VMs netboot the agent as a UKI by UEFI HTTP
    boot, or PXE (done, [test bed](docs/testbed.md)); next x86_64, the
    installer ISO route, an IPMI client against real BMCs (in another lab).
