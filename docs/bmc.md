@@ -2,7 +2,7 @@
 
 `stage0 bmc` answers IPMI for nodes that have no BMC of their own (the
 Pis), so stage-1 tools can drive them like servers: chassis power switches
-the node's PoE port. Code: `internal/ipmi` (the protocol),
+the node's PoE port, Serial-over-LAN bridges its serial console. Code: `internal/ipmi` (the protocol),
 `internal/cli/bmc.go` (nodes, switch).
 
 > Last verified: 2026-10-27
@@ -47,9 +47,22 @@ line.)
   that, one `power on` ran four times. Status shows the switch's state, so
   it can lag a command by seconds.
 
+- **SOL** (`ipmitool sol activate`): Get SOL Configuration Parameters
+  (enabled, 115200 baud, channel 1, this UDP port), Activate and
+  Deactivate Payload, Get Payload Activation Status; one SOL session per
+  node. Activating opens the node's serial console (its `console:` in
+  `site.yaml`) and deactivating closes it, so `stage0 console` and SOL
+  can't hold the port at once. Output goes in packets of up to 200
+  characters, one in flight, resent every 500 ms up to 7 times until
+  acknowledged; typed characters are written to the console and
+  acknowledged.
+
 Verified with ipmitool 1.8.19 on pilab (2026-10-27): power status, off, on
 and cycle on k400, which came back up; `mc info`; a wrong password is
-refused. `go test ./internal/ipmi` runs the same with ipmitool against a
-fake node (skipped where ipmitool isn't installed).
+refused; SOL on k52 showed `k52 login:`, took `root` and gave a root shell
+(k400 printed nothing: it was installed before its image config had
+`enable_uart=1`). `go test ./internal/ipmi` runs the same with ipmitool
+against a fake node and console (skipped where ipmitool isn't installed);
+the race detector can't run on pilab's kernel ("unsupported VMA range").
 
-Not yet: SOL (the serial console), more than one user, IPv6.
+Not yet: more than one user, IPv6.

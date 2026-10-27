@@ -13,15 +13,18 @@ netboots the agent as a UKI by UEFI HTTP boot (128 s;
 [`docs/testbed.md`](docs/testbed.md)). **IPv6:** `install --ipv6` runs
 over IPv6 alone for disk images, containers and VMs. k52 runs the Rocky
 container (installed over IPv6), k400 Rocky from the container.
+**BMC:** `stage0 bmc` answers IPMI for the Pis: power by PoE, SOL by the
+serial console.
 
 ## Open decisions
-- BG1: the Pis' virtual BMC protocol — IPMI 2.0 with SOL (what warewulf
-  and ipmitool speak; RMCP+ sessions and the SOL payload to implement) or
-  Redfish (HTTP/JSON, simpler, no standard serial console). Recommended:
-  IPMI; turns on what the stage-1 tools speak.
+(none)
 
 ## Next session
-1. The Pis' virtual BMC (milestone 4 in [`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)),
-   with `stage0 get nodes`; then Ignition.
-2. k53 is powered off; it may be powered and used as root, stopping (not
+1. `stage0 get nodes` (all installed nodes, `-o json`), the last piece of
+   the virtual BMC milestone ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative));
+   then Ignition. `stage0 bmc` serves k52 (6231) and k400 (6238)
+   ([`docs/bmc.md`](docs/bmc.md)).
+2. k400's serial console is off (installed before `enable_uart=1`);
+   reinstalling it fixes that.
+3. k53 is powered off; it may be powered and used as root, stopping (not
    disabling) its services. Its `sudo` needs a password stage0 doesn't have.
