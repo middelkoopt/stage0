@@ -623,6 +623,10 @@ func TestInstallVM(t *testing.T) {
 		}
 		f.Close()
 	}
+	// The record has the IPv6 address found after boot (get nodes shows it).
+	if b, _ := os.ReadFile(filepath.Join(env.state, "nodes", "vm1.json")); !strings.Contains(string(b), `"address": "fe80::5054:ff:fe12:3456`) {
+		t.Errorf("record: %s", b)
+	}
 	ud, _ := os.ReadFile(filepath.Join(env.cache, "run", "vm1", "nocloud", "vm1", "user-data"))
 	if !strings.Contains(string(ud), "hostname: vm1") || !strings.Contains(string(ud), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample stage0@test") {
 		t.Errorf("user-data:\n%s", ud)

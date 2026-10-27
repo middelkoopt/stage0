@@ -208,3 +208,28 @@ func TestBMCRefuses(t *testing.T) {
 		t.Errorf("err = %v", err)
 	}
 }
+
+func TestGetNodes(t *testing.T) {
+	state := t.TempDir()
+	os.MkdirAll(filepath.Join(state, "nodes"), 0o755)
+	os.WriteFile(filepath.Join(state, "nodes", "k53.json"), []byte(`{"node":"k53","image":"rocky","network":"pinet","mac":"d8:3a:dd:c5:c1:f3","ipv4":"10.0.3.100","address":"fe80::1%eth0.3","port":2}`), 0o644)
+	out, err := run(t, &fakeSwitch{st: testStatus()}, "-o", "json", "--state", state, "get", "nodes")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	var nodes []struct {
+		Name, Hostname, Network string
+		Installed               *struct{ Image, MAC, IPv4, IPv6, Time string }
+	}
+	if err := json.Unmarshal([]byte(out), &nodes); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if len(nodes) != 4 || nodes[0].Name != "k53" || nodes[0].Installed == nil || nodes[0].Installed.IPv4 != "10.0.3.100" ||
+		nodes[0].Installed.MAC != "d8:3a:dd:c5:c1:f3" || nodes[0].Installed.Time == "" || nodes[1].Installed != nil {
+		t.Errorf("nodes %+v", nodes)
+	}
+	out, err = run(t, &fakeSwitch{st: testStatus()}, "--state", state, "get", "nodes")
+	if err != nil || !strings.Contains(out, "k53") || !strings.Contains(out, "10.0.3.100") {
+		t.Errorf("text: %v\n%s", err, out)
+	}
+}

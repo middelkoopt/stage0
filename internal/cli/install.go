@@ -439,6 +439,9 @@ waitReady:
 	} else {
 		res.Address = addr
 		say("%s: %s\n  ssh root@%s", node.Name, addr, addr)
+		if err := a.saveRecord(res); err != nil { // now with the address
+			return err
+		}
 	}
 	if a.output == "json" {
 		if err := a.writeJSON(res); err != nil {
