@@ -5,25 +5,26 @@ for how an install works and [`docs/development.md`](docs/development.md)
 for code.
 
 ## Status (2026-10-27)
-**Pis:** three images install and come up with SSH on the Pi 5 (k52) and
-the Pi 400 (k400) (Rocky 10.2: Pi 5 only), over IPv4 or, with
-`install --ipv6`, IPv6 alone; bootloaders at 2026-09. k52 runs Raspberry
-Pi OS (`10.0.3.100`), k400 Alma (`10.0.3.101`), both on. **VMs:**
-`stage0 install vm1 --image rocky-10.2-vm` installs Rocky's aarch64 cloud
-image in a QEMU VM on the private test network (96 s;
-[`docs/testbed.md`](docs/testbed.md)).
+**Pis:** four images install and come up with SSH (Rocky 10.2: Pi 5 only;
+Ubuntu 26.04: Pi 5 tried), over IPv4 or, with `install --ipv6`, IPv6
+alone. k52 runs Ubuntu 26.04 (link-local only: nothing serves DHCP; its
+`ubuntu` user has a throwaway password set on the console), k400 Alma.
+**VMs:** `stage0 install vm1 --image rocky-10.2-vm` installs in QEMU
+([`docs/testbed.md`](docs/testbed.md)). **Containers:**
+`containers/rocky10-rpi` builds with podman on pilab (installer initramfs
+inside); stage0 can't install from it yet.
 
 ## Open decisions
 (none)
 
 ## Next session
-1. IPv6: `install --ipv6` works end to end on k52 (Rocky, Raspberry Pi
-   OS) and k400 (Alma) ([`docs/netboot.md`](docs/netboot.md#ipv6-netboot-on-a-pi-5));
-   run from `/usr/local/bin/stage0` (`tools/install-capped.sh` after a
-   rebuild); both nodes have `USE_IPV6=1` in their EEPROM. Not done: VMs
-   over IPv6 (`--ipv6` refuses; `stage0tap0` would need `fd00:10:9::1`).
-2. Milestone 4 (network modes) or 5 (UEFI/x86_64)
-   ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)).
-3. k53 is powered off (it may run DHCP on piwulf); it may be powered and
-   used as root, stopping (not disabling) its services. Its `sudo` needs a
-   password stage0 doesn't have.
+1. Container route A prototype ([`ROADMAP.md`](ROADMAP.md#install-routes)):
+   `podman save --format oci-dir localhost/stage0/rocky10-rpi`, read the
+   layout in Go, take kernel and installer initramfs from the layers,
+   append agent plus dracut hook; first check that dracut runs a hook
+   from an appended cpio. Ignition for partitioning is a candidate.
+2. UEFI netboot in QEMU with Ubuntu's firmware
+   ([`docs/netboot.md`](docs/netboot.md#qemu-aarch64)); bootc (E) later.
+3. Not done: VMs over IPv6 (`stage0tap0` would need `fd00:10:9::1`).
+4. k53 is powered off; it may be powered and used as root, stopping (not
+   disabling) its services. Its `sudo` needs a password stage0 doesn't have.
