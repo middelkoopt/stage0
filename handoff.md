@@ -16,10 +16,8 @@ site's keys from NoCloud, in 96 s ([`docs/testbed.md`](docs/testbed.md)).
 (none)
 
 ## Next session
-1. CI use of the test bed: a script or `go test` that runs `install vm1`
-   end to end (`install --keep` keeps a VM up for stage 1 to work on).
-2. Milestone 3 and on ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)):
+1. Milestone 3 and on ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)):
    IPv6 netboot, other network modes, x86_64/UEFI.
-3. k53 is powered off (it may run DHCP on piwulf); it may be powered and
+2. k53 is powered off (it may run DHCP on piwulf); it may be powered and
    used as root, stopping (not disabling) its services. Its `sudo` needs a
    password stage0 doesn't have.

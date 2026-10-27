@@ -21,6 +21,10 @@ network lives in the `install` process; with `--keep`, `install` keeps the
 switch, serve and the VM running until interrupted (or `--timeout`), so
 stage 1 can be pointed at it.
 
+`tools/test-vm.sh [node] [image]` is the end-to-end check for CI: it
+builds stage0 and runs that install, printing its JSON result and exiting
+non-zero if it fails (101 s on pilab).
+
 The sections below are the pieces, and how they were first run by hand.
 
 > Last verified: 2026-10-26
