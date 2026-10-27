@@ -167,10 +167,6 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	switch {
 	case o.ipv6 && !n.Server6.IsValid():
 		return fmt.Errorf("--ipv6: network %q has no prefix6", n.Name)
-	case o.ipv6 && node.VM != nil:
-		return errors.New("--ipv6: not for VMs yet")
-	case o.ipv6 && img.Container != "":
-		return errors.New("--ipv6: not for containers yet")
 	case node.VM != nil && img.Container != "":
 		return errors.New("containers install on Pis only, for now")
 	}
@@ -200,7 +196,11 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	say("image %s: %s", img.Name, imgPath)
 	run := filepath.Join(o.cache, "run", node.Name)
 	if img.VM() {
+		// Over IPv6 the agent takes its address by SLAAC itself.
 		base := "http://" + n.Server.String()
+		if o.ipv6 {
+			base = "http://[" + n.Server6.String() + "]"
+		}
 		cmdline := fmt.Sprintf("console=ttyAMA0 stage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.report=%s/stage0/report",
 			disk, img.SHA256, base, img.File(), base)
 		err = a.stageVM(ctx, run, img, imgPath, node, site.SSHKeys, cmdline, o.cache, progress)
@@ -273,6 +273,11 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}
 	slog := slog.New(slog.NewTextHandler(serveLog, nil)).With("network", n.Name)
 	leases := a.newLeases(n, others, slog)
+	if o.ipv6 && node.VM != nil {
+		// UEFI tries IPv4 first: leave that unanswered.
+		hw, _ := net.ParseMAC(node.VM.MAC)
+		leases.BootIPv6(hw)
+	}
 
 	// The machine: a Pi on its port, or a VM on the test bed's switch,
 	// which install runs while it works.
@@ -777,12 +782,18 @@ func (a *App) stageContainer(run, layout string, img image.Config, node config.N
 		return err
 	}
 	// dracut brings the network up, asking DHCP as the agent does, then
-	// its hook runs the agent. No ip=dhcp: a Pi kernel with its own DHCP
+	// its hook runs the agent. No ip=: a Pi kernel with its own DHCP
 	// client built in would take it first, without the agent's class, and
-	// retry for minutes (k52, Rocky).
+	// retry for minutes (k52, Rocky). Over IPv6 (server "[…]") the
+	// installer takes its address by SLAAC, and without the agent's class
+	// stage0's DHCPv4 leaves it alone.
 	base := "http://" + server
-	cmdline := fmt.Sprintf("console=serial0,115200 rd.neednet=1 rd.net.dhcp.vendor-class=%s stage0.disk=%s stage0.sha256=%s stage0.oci=%s/oci stage0.layout=%s/layout.json stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
-		dhcpd.AgentClass, disk, digest, base, base, base, base)
+	dhcpClass := "rd.net.dhcp.vendor-class=" + dhcpd.AgentClass + " "
+	if strings.HasPrefix(server, "[") {
+		dhcpClass = ""
+	}
+	cmdline := fmt.Sprintf("console=serial0,115200 rd.neednet=1 %sstage0.disk=%s stage0.sha256=%s stage0.oci=%s/oci stage0.layout=%s/layout.json stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
+		dhcpClass, disk, digest, base, base, base, base)
 	if err := os.WriteFile(filepath.Join(run, "cmdline.txt"), []byte(cmdline), 0o644); err != nil {
 		return err
 	}

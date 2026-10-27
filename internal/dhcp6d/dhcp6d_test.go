@@ -108,3 +108,22 @@ func TestIgnoresInstalled(t *testing.T) {
 		t.Error("ignored a node that isn't installed")
 	}
 }
+
+func TestAdvertiseUEFIHTTP(t *testing.T) {
+	// edk2's HTTP boot over IPv6: architecture 19.
+	s := testServer()
+	m := solicit(t, "52:54:00:12:34:56", false)
+	m.AddOption(dhcpv6.OptRequestedOption(dhcpv6.OptionBootfileURL))
+	m.AddOption(dhcpv6.OptClientArchType(iana.EFI_ARM64_HTTP))
+	r := s.Reply(m)
+	if r == nil {
+		t.Fatal("no answer to UEFI HTTP boot")
+	}
+	if u := r.Options.BootFileURL(); u != "http://[fd00:10:3::1]/uki.efi" {
+		t.Errorf("bootfile url %q", u)
+	}
+	vc := r.Options.VendorClasses()
+	if len(vc) != 1 || len(vc[0].Data) != 1 || string(vc[0].Data[0]) != "HTTPClient" {
+		t.Errorf("vendor class %v", vc)
+	}
+}

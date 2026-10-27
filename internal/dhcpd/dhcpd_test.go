@@ -360,3 +360,26 @@ func TestOfferToUEFIHTTP(t *testing.T) {
 		t.Errorf("boot file %q, class %q", r.BootFileName, r.ClassIdentifier())
 	}
 }
+
+func TestBootIPv6(t *testing.T) {
+	// A VM installing over IPv6 alone: its firmware's DHCPv4 boot requests
+	// (it tries HTTP boot over IPv4 first) go unanswered; other clients
+	// still get theirs.
+	s := testServer(t, "10.0.3.199")
+	s.BootIPv6(mac("52:54:00:12:34:56"))
+	d := discover(t, "52:54:00:12:34:56", "HTTPClient:Arch:00019:UNDI:003000")
+	d.UpdateOption(dhcpv4.OptClientArch(iana.EFI_ARM64_HTTP))
+	if r := s.Reply(d); r != nil {
+		t.Errorf("answered an IPv6-only boot over IPv4: %v", r.Summary())
+	}
+	if r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", piClass)); r == nil {
+		t.Error("another node went unanswered")
+	}
+	// Once installed (Reserve), its system's plain request is answered.
+	if _, ok := s.Reserve(mac("52:54:00:12:34:56")); !ok {
+		t.Fatal("no reservation")
+	}
+	if r := s.Reply(discover(t, "52:54:00:12:34:56", "")); r == nil {
+		t.Error("the installed system went unanswered")
+	}
+}

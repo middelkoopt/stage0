@@ -66,6 +66,7 @@ type Server struct {
 	mu        sync.Mutex
 	leases    map[string]netip.Addr // MAC -> address
 	installed map[string]bool
+	ipv6Boot  map[string]bool       // MACs netbooting over IPv6 alone (BootIPv6)
 	acked     map[string]netip.Addr // MAC -> address last acknowledged
 }
 
@@ -79,6 +80,7 @@ func New(cfg Config, log *slog.Logger) *Server {
 		replyTo:   func(net.Addr) net.Addr { return &net.UDPAddr{IP: net.IPv4bcast, Port: dhcpv4.ClientPort} },
 		leases:    map[string]netip.Addr{},
 		installed: map[string]bool{},
+		ipv6Boot:  map[string]bool{},
 		acked:     map[string]netip.Addr{},
 	}
 	for mac, ip := range cfg.Installed {
@@ -120,6 +122,15 @@ func (s *Server) Reserve(mac net.HardwareAddr) (netip.Addr, bool) {
 		return ip, false
 	}
 	return s.Install(mac)
+}
+
+// BootIPv6 makes the node with mac netboot over IPv6 alone: its DHCPv4
+// boot requests (PXE, UEFI HTTP boot) go unanswered, as UEFI tries IPv4
+// first.
+func (s *Server) BootIPv6(mac net.HardwareAddr) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.ipv6Boot[mac.String()] = true
 }
 
 // IsInstalled reports whether mac is an installed node.
@@ -202,8 +213,15 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 	s.mu.Lock()
 	installed := s.installed[mac]
 	s.mu.Unlock()
+	s.mu.Lock()
+	v6 := s.ipv6Boot[mac]
+	s.mu.Unlock()
 	if pxe && installed {
 		log.Debug("dhcp: ignored, installed node (it boots from its disk)", "type", req.MessageType())
+		return nil
+	}
+	if pxe && v6 {
+		log.Debug("dhcp: ignored, the node netboots over IPv6", "type", req.MessageType())
 		return nil
 	}
 	if !pxe && !agent {

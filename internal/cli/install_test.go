@@ -753,3 +753,25 @@ func TestStageContainer(t *testing.T) {
 		t.Error(err)
 	}
 }
+
+func TestStageContainerIPv6(t *testing.T) {
+	dir := t.TempDir()
+	layout := filepath.Join(dir, "oci", "rocky")
+	ocitest.Write(t, layout, map[string]string{
+		"pi.provision.partition": `[{"name":"piboot","size":"512MiB","type":"vfat","path":"/boot/efi"},{"name":"piroot","type":"ext4","path":"/"}]`,
+		"pi.provision.installer": `{"kernel":"/boot/efi/kernel8.img","initramfs":"/boot/installer.img"}`,
+	}, map[string][]byte{"boot/efi": nil, "boot/efi/config.txt": []byte("arm_64bit=1\n"), "boot/installer.img": []byte("DRACUT")})
+	agent := filepath.Join(dir, "stage0")
+	os.WriteFile(agent, []byte("AGENT"), 0o755)
+	a := &App{Executable: func() (string, error) { return agent, nil }, CheckStatic: func(string) error { return nil }}
+	run := filepath.Join(dir, "run")
+	if err := a.stageContainer(run, layout, image.Config{Name: "ct", Container: "rocky"}, config.Node{Name: "k52", Hostname: "k52"},
+		"root=PARTLABEL=piroot", "mmcblk0", "[fd00:10:3::1]", filepath.Join(dir, "boot")); err != nil {
+		t.Fatal(err)
+	}
+	cmdline, _ := os.ReadFile(filepath.Join(run, "cmdline.txt"))
+	if !strings.Contains(string(cmdline), "stage0.oci=http://[fd00:10:3::1]/oci") ||
+		strings.Contains(string(cmdline), "vendor-class") || strings.Contains(string(cmdline), " ip=") {
+		t.Errorf("cmdline.txt: %s", cmdline)
+	}
+}

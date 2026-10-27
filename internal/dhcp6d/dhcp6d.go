@@ -12,6 +12,7 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"slices"
 	"sync"
 	"syscall"
 	"time"
@@ -19,6 +20,8 @@ import (
 	"github.com/insomniacslk/dhcp/dhcpv6"
 	"github.com/insomniacslk/dhcp/iana"
 	"golang.org/x/net/ipv6"
+
+	"github.com/middelkoopt/stage0/internal/dhcpd"
 )
 
 // Config describes the network served.
@@ -141,9 +144,15 @@ func (s *Server) Reply(m *dhcpv6.Message) *dhcpv6.Message {
 			s.OnLease(ip, mac)
 		}
 	}
-	mods := []dhcpv6.Modifier{
-		dhcpv6.WithServerID(s.duid),
-		dhcpv6.WithOption(dhcpv6.OptBootFileURL("tftp://[" + s.cfg.Server.String() + "]/")),
+	mods := []dhcpv6.Modifier{dhcpv6.WithServerID(s.duid)}
+	if slices.Contains(m.Options.ArchTypes(), iana.EFI_ARM64_HTTP) {
+		// UEFI HTTP boot: the UKI's URL, and the HTTPClient vendor class
+		// edk2 looks for (enterprise 343, the one it sends).
+		mods = append(mods,
+			dhcpv6.WithOption(dhcpv6.OptBootFileURL("http://["+s.cfg.Server.String()+"]/"+dhcpd.UEFIBootFile)),
+			dhcpv6.WithOption(&dhcpv6.OptVendorClass{EnterpriseNumber: 343, Data: [][]byte{[]byte("HTTPClient")}}))
+	} else {
+		mods = append(mods, dhcpv6.WithOption(dhcpv6.OptBootFileURL("tftp://["+s.cfg.Server.String()+"]/")))
 	}
 	if m.Options.OneIANA() != nil {
 		mods = append(mods, dhcpv6.WithOption(&dhcpv6.OptIANA{IaId: iaid, T1: preferred / 2, T2: preferred * 4 / 5,
