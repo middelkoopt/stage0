@@ -73,10 +73,9 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
   host's own config (systemd-networkd here), not stage0's.
 - **`CAP_NET_RAW` for router advertisements:** `/usr/local/bin/stage0` is a
   copy with the capability; after a rebuild, refresh it with
-  `sudo install -m 0755 stage0 /usr/local/bin/stage0` and
-  `sudo setcap cap_net_raw=ep /usr/local/bin/stage0` (allowed in this repo's
-  `.claude/settings.local.json`; the global `ask` rule on `sudo` still
-  prompts). Run `serve` and `install` from it to advertise `prefix6`.
+  `tools/install-capped.sh` (its two `sudo` commands only; allowed without
+  a prompt in this repo's `.claude/settings.local.json`, while other `sudo`
+  still asks). Run `serve` and `install` from it to advertise `prefix6`.
 - **The test bed's tap device** `stage0tap0` (owned by mtim, `10.0.9.1/24`,
   connected to nothing real) comes from
   `/etc/systemd/network/stage0tap0.netdev` and `.network`.
