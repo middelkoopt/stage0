@@ -65,6 +65,9 @@ Source unless noted: Raspberry Pi documentation
   Every request asks `tsize 0 blksize 1468` (seen with tcpdump). A 106 MB
   initramfs (72,469 blocks, so the 16-bit block number wrapped) arrived
   intact in 34 s: the agent's SHA-256 of its 100 MB random payload matched.
+- **The 60 s is k52's EEPROM setting:** its config has
+  `TFTP_FILE_TIMEOUT=60000` (read with `rpi-eeprom-config`, 2026-10-26),
+  set in this lab; the firmware default is unverified.
 - **The limit is time, not size** (k52, 2026-10-25): with a 1 GB
   initramfs the bootloader gave up after 60.0 s at 183 MB ("Read initramfs8
   failed", then "initramfs disabled") and booted the kernel without it. So a
@@ -72,6 +75,23 @@ Source unless noted: Raspberry Pi documentation
   MB/s here: about 180 MB in 60 s. That `TFTP_FILE_TIMEOUT` (ms, in the
   EEPROM; the lab set 60000 on Pi 5s) is the knob, and that the ~92 MB
   ceiling in `../lab` is the same limit at 30 s, are inferences, unverified.
+
+## Bootloader (EEPROM) updates
+
+Done on the free nodes (2026-10-26) with Raspberry Pi's own tools, from
+Raspberry Pi OS installed by stage0 (`images/raspios-trixie-lite.yaml`):
+`rpi-eeprom-update -a` stages `pieeprom.upd`, `pieeprom.sig` and
+`recovery.bin` on the boot partition with the current EEPROM settings
+carried over; on the next boot (network first, nothing answering, then the
+SD card) the bootloader flashes it and removes the files.
+
+| Node | Before | After | Settings kept |
+| --- | --- | --- | --- |
+| k52 (Pi 5) | 2025-12-08 | 2026-09-25 | `BOOT_UART=1`, `BOOT_ORDER=0xf412`, `POWER_OFF_ON_HALT=0`, `USE_IPV6=0`, `TFTP_FILE_TIMEOUT=60000`, `PSU_MAX_CURRENT=5000` |
+| k400 (Pi 400) | 2025-11-05 | 2026-09-23 | `BOOT_UART=1`, `BOOT_ORDER=0xf412` |
+
+An installed system needs a lease to be reached after the reboot: run
+`stage0 serve pinet`.
 
 ## QEMU (aarch64)
 

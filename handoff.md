@@ -6,8 +6,9 @@ for code.
 
 ## Status (2026-10-26)
 **Pis:** three images install and come up with SSH on the Pi 5 (k52) and
-the Pi 400 (k400) (Rocky 10.2: Pi 5 only); k52 runs Alma (`10.0.3.100`),
-k400 Raspberry Pi OS (`10.0.3.101`), both on. **VMs:** `stage0 install vm1
+the Pi 400 (k400) (Rocky 10.2: Pi 5 only); both run Raspberry Pi OS
+(`10.0.3.100`, `10.0.3.101`) and are on, their bootloaders updated to
+2026-09 ([`docs/netboot.md`](docs/netboot.md#bootloader-eeprom-updates)). **VMs:** `stage0 install vm1
 --image rocky-10.2-vm` installs Rocky's aarch64 cloud image in a QEMU VM on
 the private test network and sees it up with SSH, hostname `vm1` and the
 site's keys from NoCloud, in 96 s ([`docs/testbed.md`](docs/testbed.md)).

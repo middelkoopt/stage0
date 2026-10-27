@@ -88,8 +88,11 @@ HTTP), the agent, initramfs and seed builders (see
   cache pinned by digest (images from a registry).
 - **Control:** power (QEMU QMP, IPMI), console (QEMU serial, IPMI SOL;
   always logged), interactive console input for people.
-- **Firmware:** update the Pi EEPROM on free nodes, ideally with a small
-  netbooted updater.
+- **Firmware:** a netbooted EEPROM updater (the bootloader asks for
+  `pieeprom.sig` over TFTP while netbooting), so a node needn't run
+  Raspberry Pi OS to be updated; it needs the node's EEPROM settings from
+  somewhere (site.yaml, or read by the agent) to carry them over. The free
+  nodes were updated with Raspberry Pi's tools ([`docs/netboot.md`](docs/netboot.md#bootloader-eeprom-updates)).
 - **Test bed (GG3, decided):** QEMU VMs (x86_64 q35 + OVMF, aarch64 virt +
   AAVMF) on a virtual Ethernet switch built into stage0, which QEMU joins
   with `-netdev stream` over a Unix socket. stage0 is a port on that switch
