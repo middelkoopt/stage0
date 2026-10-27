@@ -5,6 +5,7 @@ import (
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
+	"debug/pe"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
@@ -32,6 +33,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/oci/ocitest"
 	"github.com/middelkoopt/stage0/internal/reach"
+	"github.com/middelkoopt/stage0/internal/uki/ukitest"
 	"github.com/middelkoopt/stage0/internal/vswitch"
 )
 
@@ -510,8 +512,8 @@ func TestInstallSilentConsole(t *testing.T) {
 	}
 }
 
-// fakeQEMU is a VM: it serves the console socket QEMU would and, booted
-// with -kernel, plays the agent; booted from disk, the installed system.
+// fakeQEMU is a VM: it serves the console socket QEMU would and, netbooted,
+// plays the agent; booted from disk, the installed system.
 type fakeQEMU struct{ ln net.Listener }
 
 func (q *fakeQEMU) Stop() error { return q.ln.Close() }
@@ -533,9 +535,15 @@ func TestInstallVM(t *testing.T) {
 		srv.URL, sum(img), srv.URL, sum(files["/vmlinuz"]), srv.URL, sum(files["/initrd.img"]))), 0o644)
 	os.WriteFile(filepath.Join(env.cache, "disk.qcow2"), img, 0o644)
 
-	fw := filepath.Join(t.TempDir(), "AAVMF_CODE.fd")
-	os.WriteFile(fw, []byte("CODE"), 0o644)
-	os.WriteFile(filepath.Join(filepath.Dir(fw), "AAVMF_VARS.fd"), []byte("VARS"), 0o644)
+	// The firmware and UKI stub stage0 would fetch, already in the cache.
+	for _, f := range []struct{ dir, sha, name, body string }{
+		{"firmware", uefiFirmware.SHA256, filepath.Base(uefiFirmwareCode), "CODE"},
+		{"firmware", uefiFirmware.SHA256, filepath.Base(uefiFirmwareVars), "VARS"},
+		{"uki", ukiStub.SHA256, filepath.Base(ukiStubPath), string(ukitest.Stub())},
+	} {
+		os.MkdirAll(filepath.Join(env.cache, f.dir, f.sha), 0o755)
+		os.WriteFile(filepath.Join(env.cache, f.dir, f.sha, f.name), []byte(f.body), 0o644)
+	}
 	env.app.OpenTap = func(name string) (vswitch.Port, error) {
 		if name != "stage0tap0" {
 			t.Errorf("tap %q", name)
@@ -554,7 +562,7 @@ func TestInstallVM(t *testing.T) {
 	var boots []string
 	env.app.StartVM = func(args []string, _ io.Writer) (VMProcess, error) {
 		joined := strings.Join(args, " ")
-		agentBoot := strings.Contains(joined, "-kernel")
+		agentBoot := strings.Contains(joined, "-no-reboot") // the netboot
 		boots = append(boots, map[bool]string{true: "agent", false: "disk"}[agentBoot])
 		var sock string
 		for _, f := range strings.Split(joined, ",") {
@@ -562,7 +570,7 @@ func TestInstallVM(t *testing.T) {
 				sock = p
 			}
 		}
-		if agentBoot && (!strings.Contains(joined, "stage0.disk=vda") || !strings.Contains(joined, "/initrd ")) {
+		if agentBoot && !strings.Contains(joined, "mac=52:54:00:12:34:56,bootindex=0") {
 			t.Errorf("agent boot args: %s", joined)
 		}
 		if !agentBoot && !strings.Contains(joined, "serial=ds=nocloud;s=http://10.0.9.1/nocloud/vm1/") {
@@ -603,6 +611,17 @@ func TestInstallVM(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
+	}
+	// The UKI the firmware netboots carries the kernel, initrd and plan.
+	if f, err := pe.Open(filepath.Join(env.cache, "run", "vm1", "uki.efi")); err != nil {
+		t.Error(err)
+	} else {
+		cmd, _ := f.Section(".cmdline").Data()
+		lin, _ := f.Section(".linux").Data()
+		if !strings.Contains(string(cmd), "stage0.disk=vda") || !strings.HasPrefix(string(lin), "KERNEL") {
+			t.Errorf("uki: cmdline %q, linux %q", cmd, lin[:min(len(lin), 8)])
+		}
+		f.Close()
 	}
 	ud, _ := os.ReadFile(filepath.Join(env.cache, "run", "vm1", "nocloud", "vm1", "user-data"))
 	if !strings.Contains(string(ud), "hostname: vm1") || !strings.Contains(string(ud), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample stage0@test") {

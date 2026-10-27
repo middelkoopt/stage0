@@ -111,8 +111,9 @@ func (s *Server) read(name string, rf io.ReaderFrom) error {
 	start := time.Now()
 	n, err := rf.ReadFrom(f)
 	d := time.Since(start)
-	if err != nil && n == 0 && strings.Contains(err.Error(), "Early terminate") {
-		// A Pi asks for the size first, aborts, then asks for the data.
+	if err != nil && n == 0 && (strings.Contains(err.Error(), "Early terminate") || strings.Contains(err.Error(), "User aborted")) {
+		// A Pi ("Early terminate") and UEFI (edk2: "User aborted the
+		// transfer") ask for the size first, abort, then ask for the data.
 		log.Info("tftp: size probe")
 		return nil
 	}

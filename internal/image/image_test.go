@@ -1,11 +1,13 @@
 package image
 
 import (
+	"archive/tar"
 	"bytes"
 	"compress/gzip"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -320,5 +322,43 @@ partitions:
 	writeConfig(t, dir, "img", "url: https://e.org/u.img.xz\nsha256: "+strings.Repeat("ab", 32)+"\ncmdline: x\npartitions: [{name: r, type: ext4, path: /}]\n")
 	if _, err := Load(dir, "img"); err == nil || !strings.Contains(err.Error(), "for containers") {
 		t.Errorf("partitions on a disk image: err = %v", err)
+	}
+}
+
+func TestFetchDebFile(t *testing.T) {
+	// A .deb: ar of debian-binary and data.tar.gz.
+	var tarball bytes.Buffer
+	z := gzip.NewWriter(&tarball)
+	tw := tar.NewWriter(z)
+	tw.WriteHeader(&tar.Header{Name: "./usr/lib/stub.efi", Typeflag: tar.TypeReg, Mode: 0o644, Size: 4})
+	tw.Write([]byte("STUB"))
+	tw.Close()
+	z.Close()
+	var deb bytes.Buffer
+	deb.WriteString("!<arch>\n")
+	for _, m := range []struct {
+		name string
+		body []byte
+	}{{"debian-binary", []byte("2.0\n")}, {"data.tar.gz", tarball.Bytes()}} {
+		fmt.Fprintf(&deb, "%-16s%-12s%-6s%-6s%-8s%-10d`\n", m.name, "0", "0", "0", "100644", len(m.body))
+		deb.Write(m.body)
+		if len(m.body)%2 == 1 {
+			deb.WriteByte('\n')
+		}
+	}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(deb.Bytes()) }))
+	defer srv.Close()
+	sum := sha256.Sum256(deb.Bytes())
+	f := File{URL: srv.URL + "/x_1_arm64.deb", SHA256: hex.EncodeToString(sum[:])}
+	cache := t.TempDir()
+	p, err := FetchDebFile(context.Background(), f, "/usr/lib/stub.efi", cache, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "STUB" || filepath.Base(p) != "stub.efi" {
+		t.Errorf("%s: %q", p, b)
+	}
+	if _, err := FetchDebFile(context.Background(), f, "/usr/lib/missing", cache, io.Discard); err == nil {
+		t.Error("a file not in the package: want error")
 	}
 }

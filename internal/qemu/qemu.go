@@ -28,29 +28,36 @@ type VM struct {
 	Vars     string // writable copy of the UEFI variable store
 }
 
-func (vm VM) common() []string {
+// args are the VM's QEMU arguments, booting the network first (the
+// agent, by UEFI netboot) or the disk.
+func (vm VM) args(netFirst bool) []string {
+	disk, nic := ",bootindex=0", ""
+	if netFirst {
+		disk, nic = ",bootindex=1", ",bootindex=0"
+	}
 	return []string{
 		"-M", "virt", "-accel", "kvm", "-cpu", "host",
 		"-m", strconv.Itoa(vm.Memory), "-smp", strconv.Itoa(vm.CPUs), "-display", "none",
 		"-chardev", "socket,id=console,path=" + vm.Console + ",server=on,wait=on", "-serial", "chardev:console",
-		"-drive", "file=" + vm.Disk + ",if=virtio,format=raw",
+		"-drive", "if=pflash,format=raw,readonly=on,file=" + vm.Firmware,
+		"-drive", "if=pflash,format=raw,file=" + vm.Vars,
+		"-drive", "file=" + vm.Disk + ",if=none,id=disk,format=raw",
+		"-device", "virtio-blk-pci,drive=disk" + disk,
 		"-netdev", "stream,id=net0,server=off,addr.type=unix,addr.path=" + vm.Switch,
-		"-device", "virtio-net-pci,netdev=net0,mac=" + vm.MAC,
+		"-device", "virtio-net-pci,netdev=net0,mac=" + vm.MAC + nic,
 	}
 }
 
-// AgentArgs boot the agent: kernel and initrd straight from QEMU. With
-// -no-reboot the VM's own reboot ends QEMU.
-func (vm VM) AgentArgs(kernel, initrd, cmdline string) []string {
-	return append(vm.common(), "-kernel", kernel, "-initrd", initrd, "-append", cmdline, "-no-reboot")
+// NetArgs boot the agent: the firmware netboots (stage0's DHCP names a
+// UKI). With -no-reboot the VM's own reboot ends QEMU.
+func (vm VM) NetArgs() []string {
+	return append(vm.args(true), "-no-reboot")
 }
 
-// DiskArgs boot the disk with UEFI, with serial (e.g. a cloud-init NoCloud
-// pointer) as the SMBIOS system serial number.
+// DiskArgs boot the disk, with serial (e.g. a cloud-init NoCloud pointer)
+// as the SMBIOS system serial number.
 func (vm VM) DiskArgs(serial string) []string {
-	args := append(vm.common(),
-		"-drive", "if=pflash,format=raw,readonly=on,file="+vm.Firmware,
-		"-drive", "if=pflash,format=raw,file="+vm.Vars)
+	args := vm.args(false)
 	if serial != "" {
 		args = append(args, "-smbios", "type=1,serial="+serial)
 	}

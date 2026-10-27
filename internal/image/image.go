@@ -25,6 +25,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/middelkoopt/stage0/internal/container"
+	"github.com/middelkoopt/stage0/internal/deb"
 	"github.com/middelkoopt/stage0/internal/fat"
 	"github.com/middelkoopt/stage0/internal/ptable"
 )
@@ -281,6 +282,38 @@ func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (
 		return dir, nil
 	}
 	return FetchFile(ctx, File{URL: c.URL, SHA256: c.SHA256}, cacheDir, progress)
+}
+
+// FetchDebFile makes sure the file name (an absolute path) from the
+// Debian package f is in cacheDir, fetching f (checked by its SHA-256) and
+// extracting it if not, and returns its path: <cacheDir>/<f's
+// SHA-256>/<name's base>.
+func FetchDebFile(ctx context.Context, f File, name, cacheDir string, progress io.Writer) (string, error) {
+	dst := filepath.Join(cacheDir, f.SHA256, path.Base(name))
+	if _, err := os.Stat(dst); err == nil {
+		return dst, nil
+	}
+	debPath, err := FetchFile(ctx, f, cacheDir, progress)
+	if err != nil {
+		return "", err
+	}
+	d, err := os.Open(debPath)
+	if err != nil {
+		return "", err
+	}
+	defer d.Close()
+	b, err := deb.File(d, name)
+	if err != nil {
+		return "", fmt.Errorf("%s: %w", f.File(), err)
+	}
+	if err := os.MkdirAll(filepath.Dir(dst), 0o755); err != nil {
+		return "", err
+	}
+	tmp := dst + ".tmp"
+	if err := os.WriteFile(tmp, b, 0o644); err != nil {
+		return "", err
+	}
+	return dst, os.Rename(tmp, dst)
 }
 
 // FetchFile makes sure f is in cacheDir with the right checksum,

@@ -157,43 +157,48 @@ func TestNoWrites(t *testing.T) {
 }
 
 func TestSizeProbe(t *testing.T) {
-	// A Pi's bootloader asks for a file's size (tsize), then aborts with
-	// "Early terminate" and asks again for the data. That is routine, not a
-	// failure.
-	conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer conn.Close()
-	_, logs := serveOn(t, conn)
-	cli, err := net.ListenPacket("udp4", "127.0.0.1:0")
-	if err != nil {
-		t.Fatal(err)
-	}
-	defer cli.Close()
-	// RRQ config.txt octet tsize 0
-	rrq := append([]byte{0, 1}, "config.txt\x00octet\x00tsize\x000\x00"...)
-	if _, err := cli.WriteTo(rrq, conn.LocalAddr()); err != nil {
-		t.Fatal(err)
-	}
-	cli.SetReadDeadline(time.Now().Add(5 * time.Second))
-	buf := make([]byte, 516)
-	_, from, err := cli.ReadFrom(buf)
-	if err != nil {
-		t.Fatal(err)
-	}
-	if buf[1] != 6 {
-		t.Fatalf("got opcode %d, want an OACK (6)", buf[1])
-	}
-	// ERROR code 0 "Early terminate", to the transfer's own port.
-	if _, err := cli.WriteTo(append([]byte{0, 5, 0, 0}, "Early terminate\x00"...), from); err != nil {
-		t.Fatal(err)
-	}
-	deadline := time.Now().Add(5 * time.Second)
-	for !strings.Contains(logs.String(), "tftp: size probe") && time.Now().Before(deadline) {
-		time.Sleep(10 * time.Millisecond)
-	}
-	if l := logs.String(); !strings.Contains(l, "tftp: size probe") || strings.Contains(l, "transfer failed") {
-		t.Errorf("want a size probe, not a failure:\n%s", l)
+	// A Pi's bootloader and UEFI firmware (edk2) ask for a file's size
+	// (tsize), then abort and ask again for the data. That is routine, not
+	// a failure. Each aborts its own way: ERROR code and message.
+	for _, abort := range []struct {
+		code byte
+		msg  string
+	}{{0, "Early terminate"}, {8, "User aborted the transfer"}} {
+		conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer conn.Close()
+		_, logs := serveOn(t, conn)
+		cli, err := net.ListenPacket("udp4", "127.0.0.1:0")
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer cli.Close()
+		// RRQ config.txt octet tsize 0
+		rrq := append([]byte{0, 1}, "config.txt\x00octet\x00tsize\x000\x00"...)
+		if _, err := cli.WriteTo(rrq, conn.LocalAddr()); err != nil {
+			t.Fatal(err)
+		}
+		cli.SetReadDeadline(time.Now().Add(5 * time.Second))
+		buf := make([]byte, 516)
+		_, from, err := cli.ReadFrom(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if buf[1] != 6 {
+			t.Fatalf("got opcode %d, want an OACK (6)", buf[1])
+		}
+		// The ERROR, to the transfer's own port.
+		if _, err := cli.WriteTo(append([]byte{0, 5, 0, abort.code}, abort.msg+"\x00"...), from); err != nil {
+			t.Fatal(err)
+		}
+		deadline := time.Now().Add(5 * time.Second)
+		for !strings.Contains(logs.String(), "tftp: size probe") && time.Now().Before(deadline) {
+			time.Sleep(10 * time.Millisecond)
+		}
+		if l := logs.String(); !strings.Contains(l, "tftp: size probe") || strings.Contains(l, "transfer failed") {
+			t.Errorf("%q: want a size probe, not a failure:\n%s", abort.msg, l)
+		}
 	}
 }

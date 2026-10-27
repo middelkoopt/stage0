@@ -12,23 +12,23 @@ func testVM() VM {
 	}
 }
 
-func TestAgentArgs(t *testing.T) {
-	got := strings.Join(testVM().AgentArgs("/c/vmlinuz", "/c/initrd", "console=ttyAMA0 stage0.disk=vda"), " ")
+func TestNetArgs(t *testing.T) {
+	got := strings.Join(testVM().NetArgs(), " ")
 	for _, want := range []string{
 		"-M virt -accel kvm -cpu host -m 2048 -smp 2 -display none",
 		"-chardev socket,id=console,path=/c/vm1.console,server=on,wait=on -serial chardev:console",
-		"-kernel /c/vmlinuz -initrd /c/initrd -append console=ttyAMA0 stage0.disk=vda",
-		"-drive file=/c/vm1.raw,if=virtio,format=raw",
+		"-drive if=pflash,format=raw,readonly=on,file=/fw/AAVMF_CODE.fd -drive if=pflash,format=raw,file=/c/vm1.vars",
+		"-drive file=/c/vm1.raw,if=none,id=disk,format=raw -device virtio-blk-pci,drive=disk,bootindex=1",
 		"-netdev stream,id=net0,server=off,addr.type=unix,addr.path=/c/vnet.sock",
-		"-device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56",
+		"-device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56,bootindex=0",
 		"-no-reboot",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("args lack %q:\n%s", want, got)
 		}
 	}
-	if strings.Contains(got, "pflash") {
-		t.Errorf("agent boot uses firmware: %s", got)
+	if strings.Contains(got, "-kernel") {
+		t.Errorf("netboot loads a kernel itself: %s", got)
 	}
 }
 
@@ -37,7 +37,8 @@ func TestDiskArgs(t *testing.T) {
 	for _, want := range []string{
 		"-drive if=pflash,format=raw,readonly=on,file=/fw/AAVMF_CODE.fd -drive if=pflash,format=raw,file=/c/vm1.vars",
 		"-smbios type=1,serial=ds=nocloud;s=http://10.0.9.1/nocloud/vm1/",
-		"-drive file=/c/vm1.raw,if=virtio,format=raw",
+		"-drive file=/c/vm1.raw,if=none,id=disk,format=raw -device virtio-blk-pci,drive=disk,bootindex=0",
+		"-device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56 ",
 	} {
 		if !strings.Contains(got, want) {
 			t.Errorf("args lack %q:\n%s", want, got)

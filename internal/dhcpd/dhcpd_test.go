@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/insomniacslk/dhcp/dhcpv4"
+	"github.com/insomniacslk/dhcp/iana"
 )
 
 // piClass is what a Raspberry Pi's bootloader sends as its vendor class.
@@ -318,5 +319,29 @@ func TestNTP(t *testing.T) {
 	// None configured: none sent.
 	if r := testServer(t, "10.0.3.199").Reply(discover(t, "d8:3a:dd:c5:c1:f3", AgentClass)); r == nil || r.NTPServers() != nil {
 		t.Errorf("NTP servers sent unasked: %v", r)
+	}
+}
+
+func TestOfferToUEFI(t *testing.T) {
+	// QEMU's aarch64 UEFI firmware (edk2): PXE class and client
+	// architecture 11.
+	s := testServer(t, "10.0.3.199")
+	d := discover(t, "52:54:00:12:34:56", "PXEClient:Arch:00011:UNDI:003000")
+	d.UpdateOption(dhcpv4.OptClientArch(iana.EFI_ARM64))
+	r := s.Reply(d)
+	if r == nil {
+		t.Fatal("no reply to UEFI's discover")
+	}
+	if r.BootFileName != UEFIBootFile || r.ServerIPAddr.String() != "10.0.3.1" {
+		t.Errorf("boot file %q from %v", r.BootFileName, r.ServerIPAddr)
+	}
+	// No PXEClient class without option 43: edk2 would take the offer as
+	// pointing at a boot server (BINL) and drop it ("No valid offer").
+	if r.GetOneOption(dhcpv4.OptionVendorSpecificInformation) != nil || r.ClassIdentifier() != "" {
+		t.Errorf("Pi PXE options sent to UEFI: class %q", r.ClassIdentifier())
+	}
+	// A Pi gets no boot file.
+	if r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", piClass)); r == nil || r.BootFileName != "" {
+		t.Errorf("Pi boot file %q", r.BootFileName)
 	}
 }

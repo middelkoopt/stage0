@@ -309,7 +309,7 @@ nodes:
 	}
 	n, _ := s.Node("vm1")
 	if n.VM == nil || n.VM.Memory != 2048 || n.VM.CPUs != 2 || n.VM.DiskGB != 16 ||
-		n.VM.Firmware != "/usr/share/AAVMF/AAVMF_CODE.fd" || n.VM.MAC != "52:54:00:12:34:56" {
+		n.VM.Firmware != "" || n.VM.MAC != "52:54:00:12:34:56" {
 		t.Errorf("vm %+v", n.VM)
 	}
 	for name, body := range map[string]string{

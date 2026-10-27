@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/base64"
@@ -30,6 +31,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/initrd"
 	"github.com/middelkoopt/stage0/internal/oci"
 	"github.com/middelkoopt/stage0/internal/reach"
+	"github.com/middelkoopt/stage0/internal/uki"
 )
 
 // Time limits for the waits, unless --timeout is given for the whole.
@@ -197,9 +199,11 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}
 	say("image %s: %s", img.Name, imgPath)
 	run := filepath.Join(o.cache, "run", node.Name)
-	var kernel, initrdPath string
 	if img.VM() {
-		kernel, initrdPath, err = a.stageVM(ctx, run, img, imgPath, node, site.SSHKeys, filepath.Join(o.cache, "agent", img.Name), progress)
+		base := "http://" + n.Server.String()
+		cmdline := fmt.Sprintf("console=ttyAMA0 stage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.report=%s/stage0/report",
+			disk, img.SHA256, base, img.File(), base)
+		err = a.stageVM(ctx, run, img, imgPath, node, site.SSHKeys, cmdline, o.cache, progress)
 	} else {
 		server := n.Server.String()
 		if o.ipv6 {
@@ -282,14 +286,20 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		if err := a.runSwitch(cctx, sock, n.Interface, slog); err != nil {
 			return err
 		}
-		vm, err := newVMMachine(a, node, vmDir, sock, serveLog)
+		firmware := node.VM.Firmware
+		if firmware == "" {
+			if firmware, err = image.FetchDebFile(ctx, uefiFirmware, uefiFirmwareCode, filepath.Join(o.cache, "firmware"), progress); err != nil {
+				return err
+			}
+			if _, err = image.FetchDebFile(ctx, uefiFirmware, uefiFirmwareVars, filepath.Join(o.cache, "firmware"), progress); err != nil {
+				return err
+			}
+		}
+		vm, err := newVMMachine(a, node, firmware, vmDir, sock, serveLog)
 		if err != nil {
 			return err
 		}
 		base := "http://" + n.Server.String()
-		vm.kernel, vm.initrd = kernel, initrdPath
-		vm.cmdline = fmt.Sprintf("console=ttyAMA0 stage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.report=%s/stage0/report",
-			disk, img.SHA256, base, img.File(), base)
 		if img.NoCloud {
 			vm.serial = "ds=nocloud;s=" + base + "/nocloud/" + node.Name + "/"
 		}
@@ -584,55 +594,81 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 // image's kernel, and its initrd with stage0's initramfs appended (the
 // kernel unpacks both; stage0's /init wins).
 func (a *App) stageVM(ctx context.Context, run string, img image.Config, imgPath string, node config.Node, keys []string,
-	agentCache string, progress io.Writer) (kernel, agentInitrd string, err error) {
-	if kernel, err = image.FetchFile(ctx, *img.Kernel, agentCache, progress); err != nil {
-		return "", "", err
+	cmdline, cache string, progress io.Writer) error {
+	agentCache := filepath.Join(cache, "agent", img.Name)
+	kernel, err := image.FetchFile(ctx, *img.Kernel, agentCache, progress)
+	if err != nil {
+		return err
 	}
 	distroInitrd, err := image.FetchFile(ctx, *img.Initrd, agentCache, progress)
 	if err != nil {
-		return "", "", err
+		return err
+	}
+	stub, err := image.FetchDebFile(ctx, ukiStub, ukiStubPath, filepath.Join(cache, "uki"), progress)
+	if err != nil {
+		return err
 	}
 	if err := os.RemoveAll(run); err != nil {
-		return "", "", err
+		return err
 	}
 	images := filepath.Join(run, "images")
 	if err := os.MkdirAll(images, 0o755); err != nil {
-		return "", "", err
+		return err
 	}
 	if err := linkOrCopy(imgPath, filepath.Join(images, img.File())); err != nil {
-		return "", "", err
+		return err
 	}
 	nc := filepath.Join(run, "nocloud", node.Name)
 	if err := os.MkdirAll(nc, 0o755); err != nil {
-		return "", "", err
+		return err
 	}
 	meta := fmt.Sprintf("instance-id: %s-%d\nlocal-hostname: %s\n", node.Name, time.Now().Unix(), node.Hostname)
 	if err := errors.Join(os.WriteFile(filepath.Join(nc, "meta-data"), []byte(meta), 0o644),
 		os.WriteFile(filepath.Join(nc, "user-data"), []byte(nocloudUserData(node.Hostname, keys)), 0o644)); err != nil {
-		return "", "", err
+		return err
 	}
 
 	exe, err := a.Executable()
 	if err != nil {
-		return "", "", err
+		return err
 	}
 	if err := a.CheckStatic(exe); err != nil {
-		return "", "", err
-	}
-	agentInitrd = filepath.Join(run, "initrd")
-	err = writeFile(agentInitrd, func(w io.Writer) error {
-		f, err := os.Open(distroInitrd)
-		if err != nil {
-			return err
-		}
-		defer f.Close()
-		if _, err := io.Copy(w, f); err != nil {
-			return err
-		}
-		_, err = initrd.Build(w, exe, "")
 		return err
-	})
-	return kernel, agentInitrd, err
+	}
+	// The UKI the firmware netboots: the distro's kernel, its initrd with
+	// the agent appended (padded: the kernel takes an appended archive at
+	// a 4-byte boundary), and the agent's command line.
+	var rd bytes.Buffer
+	f, err := os.Open(distroInitrd)
+	if err != nil {
+		return err
+	}
+	n, err := io.Copy(&rd, f)
+	f.Close()
+	if err != nil {
+		return err
+	}
+	rd.Write(make([]byte, (4-n%4)%4))
+	if _, err := initrd.Build(&rd, exe, ""); err != nil {
+		return err
+	}
+	k, err := os.ReadFile(kernel)
+	if err != nil {
+		return err
+	}
+	if k, err = uki.Kernel(k); err != nil {
+		return fmt.Errorf("image %s: kernel: %w", img.Name, err)
+	}
+	s, err := os.ReadFile(stub)
+	if err != nil {
+		return err
+	}
+	b, err := uki.Build(s, uki.Parts{Linux: k, Initrd: rd.Bytes(), Cmdline: cmdline,
+		OSRel: "NAME=\"stage0 agent\"\nID=stage0\n"})
+	if err != nil {
+		return err
+	}
+	return os.WriteFile(filepath.Join(run, dhcpd.UEFIBootFile), b, 0o644)
 }
 
 // nocloudUserData is cloud-init user-data giving the node its hostname and

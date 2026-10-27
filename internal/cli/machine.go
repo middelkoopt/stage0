@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/middelkoopt/stage0/internal/config"
+	"github.com/middelkoopt/stage0/internal/image"
 	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/qemu"
 	"github.com/middelkoopt/stage0/internal/vswitch"
@@ -105,22 +106,19 @@ type VMProcess interface{ Stop() error }
 
 // vmMachine is a QEMU VM on the test bed.
 type vmMachine struct {
-	a       *App
-	node    string
-	vm      qemu.VM
-	kernel  string // the agent boot's kernel, initrd and command line
-	initrd  string
-	cmdline string
-	serial  string // SMBIOS serial for the disk boot (NoCloud pointer)
-	log     io.Writer
-	proc    VMProcess
+	a      *App
+	node   string
+	vm     qemu.VM
+	serial string // SMBIOS serial for the disk boot (NoCloud pointer)
+	log    io.Writer
+	proc   VMProcess
 }
 
 func (m *vmMachine) name() string { return m.node + " (VM)" }
 func (m *vmMachine) port() int    { return 0 }
 
 func (m *vmMachine) bootAgent(ctx context.Context, follow func(io.ReadWriteCloser)) error {
-	return m.start(ctx, m.vm.AgentArgs(m.kernel, m.initrd, m.cmdline), follow)
+	return m.start(ctx, m.vm.NetArgs(), follow)
 }
 
 func (m *vmMachine) bootDisk(ctx context.Context, follow func(io.ReadWriteCloser)) error {
@@ -162,10 +160,32 @@ func (m *vmMachine) off(context.Context) error {
 	return err
 }
 
+// The VMs' UEFI firmware, unless a node names its own: Ubuntu's, as
+// Debian's has no network stack and can't netboot (docs/netboot.md).
+var uefiFirmware = image.File{
+	URL:    "https://archive.ubuntu.com/ubuntu/pool/main/e/edk2/qemu-efi-aarch64_2025.11-3ubuntu7.3_all.deb",
+	SHA256: "54c19251290402c23418ec0ed644dfa228c6b5653dbef22ab3e394eeaf740b2b",
+}
+
+const (
+	uefiFirmwareCode = "/usr/share/AAVMF/AAVMF_CODE.no-secboot.fd"
+	uefiFirmwareVars = "/usr/share/AAVMF/AAVMF_VARS.fd" // next to the code, where newVMMachine looks
+)
+
+// The EFI stub the agent's UKI is built on: systemd's, from Debian (whose
+// pool keeps only the current version: a new point release means a new
+// pin).
+var ukiStub = image.File{
+	URL:    "https://deb.debian.org/debian/pool/main/s/systemd/systemd-boot-efi_257.13-1%7edeb13u1_arm64.deb",
+	SHA256: "0e4529d9a72b35c31f34151ef8a0df20f322cfef679f4f5439394e60505b91a2",
+}
+
+const ukiStubPath = "/usr/lib/systemd/boot/efi/linuxaa64.efi.stub"
+
 // newVMMachine prepares a VM's files: a fresh, empty disk of the node's
-// size, a copy of the firmware's variable store, the console socket's
-// place.
-func newVMMachine(a *App, node config.Node, dir, switchSock string, log io.Writer) (*vmMachine, error) {
+// size, a copy of the firmware's variable store (AAVMF_VARS.fd next to
+// firmware), the console socket's place.
+func newVMMachine(a *App, node config.Node, firmware, dir, switchSock string, log io.Writer) (*vmMachine, error) {
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
@@ -179,7 +199,7 @@ func newVMMachine(a *App, node config.Node, dir, switchSock string, log io.Write
 		return nil, err
 	}
 	vars := filepath.Join(dir, node.Name+".vars")
-	b, err := os.ReadFile(filepath.Join(filepath.Dir(v.Firmware), "AAVMF_VARS.fd"))
+	b, err := os.ReadFile(filepath.Join(filepath.Dir(firmware), "AAVMF_VARS.fd"))
 	if err != nil {
 		return nil, fmt.Errorf("%s: the firmware's variable store: %w", node.Name, err)
 	}
@@ -188,7 +208,7 @@ func newVMMachine(a *App, node config.Node, dir, switchSock string, log io.Write
 	}
 	return &vmMachine{a: a, node: node.Name, log: log, vm: qemu.VM{
 		Memory: v.Memory, CPUs: v.CPUs, Disk: disk, MAC: v.MAC, Switch: switchSock,
-		Console: filepath.Join(dir, node.Name+".console"), Firmware: v.Firmware, Vars: vars,
+		Console: filepath.Join(dir, node.Name+".console"), Firmware: firmware, Vars: vars,
 	}}, nil
 }
 

@@ -12,12 +12,14 @@ import (
 	"log/slog"
 	"net"
 	"net/netip"
+	"slices"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
 	"github.com/insomniacslk/dhcp/dhcpv4"
+	"github.com/insomniacslk/dhcp/iana"
 )
 
 // Config describes the network served.
@@ -34,6 +36,10 @@ type Config struct {
 	Installed          map[string]netip.Addr
 	InstalledLeaseTime time.Duration
 }
+
+// UEFIBootFile is the file UEFI clients (aarch64) are told to netboot:
+// the UKI of stage0's agent, at the top of what serve offers.
+const UEFIBootFile = "uki.efi"
 
 // AgentClass is the vendor class stage0's agent sends when it asks for an
 // address itself.
@@ -299,10 +305,19 @@ func (s *Server) reply(req *dhcpv4.DHCPv4, typ dhcpv4.MessageType, ip netip.Addr
 	if typ != dhcpv4.MessageTypeNak && pxe {
 		mods = append(mods,
 			dhcpv4.WithServerIP(server),
-			dhcpv4.WithOption(dhcpv4.OptClassIdentifier("PXEClient")),
 			dhcpv4.WithOption(dhcpv4.OptTFTPServerName(s.cfg.Server.String())),
-			dhcpv4.WithGeneric(dhcpv4.OptionVendorSpecificInformation, piBoot),
 		)
+		if slices.Contains(req.ClientArch(), iana.EFI_ARM64) {
+			// UEFI loads the named file, stage0's UKI, over TFTP; named in
+			// the header's file field and option 67, as firmware reads
+			// either. A plain DHCP offer: with the PXEClient class but no
+			// option 43, edk2 expects a boot server (BINL) and drops it.
+			mods = append(mods, dhcpv4.WithOption(dhcpv4.OptBootFileName(UEFIBootFile)),
+				func(d *dhcpv4.DHCPv4) { d.BootFileName = UEFIBootFile })
+		} else {
+			mods = append(mods, dhcpv4.WithOption(dhcpv4.OptClassIdentifier("PXEClient")),
+				dhcpv4.WithGeneric(dhcpv4.OptionVendorSpecificInformation, piBoot))
+		}
 	}
 	r, err := dhcpv4.NewReplyFromRequest(req, mods...)
 	if err != nil { // only fails generating a transaction id, which a reply copies

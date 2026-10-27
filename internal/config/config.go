@@ -72,7 +72,7 @@ type VM struct {
 	Memory   int    `yaml:"memory,omitempty"`   // MB, default 2048
 	CPUs     int    `yaml:"cpus,omitempty"`     // default 2
 	DiskGB   int    `yaml:"diskGB,omitempty"`   // default 16
-	Firmware string `yaml:"firmware,omitempty"` // UEFI code, default Debian's AAVMF_CODE.fd
+	Firmware string `yaml:"firmware,omitempty"` // UEFI code (AAVMF_VARS.fd beside it); default Ubuntu's, fetched by stage0
 }
 
 // Console is a node's local serial console.
@@ -173,7 +173,6 @@ func (s *Site) normalize() error {
 			v.Memory = cmp.Or(v.Memory, 2048)
 			v.CPUs = cmp.Or(v.CPUs, 2)
 			v.DiskGB = cmp.Or(v.DiskGB, 16)
-			v.Firmware = cmp.Or(v.Firmware, "/usr/share/AAVMF/AAVMF_CODE.fd")
 		}
 		if len(n.Partitions) > 0 {
 			if err := container.CheckPartitions(n.Partitions); err != nil {
