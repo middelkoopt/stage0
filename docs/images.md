@@ -2,7 +2,7 @@
 
 Facts about the distro images stage0 installs, as seen installing them.
 
-> Last verified: 2026-10-26
+> Last verified: 2026-10-27
 
 ## Rocky Linux 10.2 SBC Raspberry Pi
 
@@ -120,3 +120,31 @@ SHA-256 in `CHECKSUM` there). Raw size 3,040,870,400 bytes.
   with the site's keys (the kernel-command-line credential), sshd
   `OpenSSH_10.0p2 Debian-7+deb13u4`, root filesystem grown to the disk
   (116.9 GB).
+
+## Ubuntu Server 26.04.1 LTS for Raspberry Pi
+
+`ubuntu-26.04.1-preinstalled-server-arm64+raspi.img.xz` from
+`https://cdimage.ubuntu.com/releases/26.04/release/` (1.53 GB; `SHA256SUMS`
+there). Raw size about 4.9 GB.
+
+- **Installs and boots on a Pi 5** (k52, 2026-10-27, netbooted over IPv6):
+  written in 165 s, at a login prompt 372 s after power-on, hostname `k52`,
+  root logs in with the site's keys (the credential, written by systemd's
+  `provision.conf`), root filesystem grown to the card (117 GB).
+- **Layout:** MBR. Partition 1 (from 1 MiB, FAT, label `system-boot`) is the
+  boot partition; ext4 root on partition 2, label `writable`.
+- **Boot files live in `current/`:** `config.txt` sets
+  `os_prefix=current/` (`new/` under `[tryboot]`; `autoboot.txt` has
+  `tryboot_a_b=1`) and `kernel=vmlinuz`, `initramfs initrd.img
+  followkernel`. So `cmdline.txt` and stage0's initramfs go in `current/`
+  (`bootDir`). `cmdline.txt` names the root by `LABEL=writable`.
+- **Its kernel builds drivers as modules**, including `mmc_block` and the
+  Pi 5's Ethernet (`macb`, behind RP1). The agent boots on Ubuntu's
+  `initrd.img` with stage0's appended (`initramfs`) and loads drivers
+  itself, pass after pass, since RP1's devices appear only once its driver
+  is in. An SD card's alias (`mmc:block`) is only in its `uevent`, not in a
+  `modalias` file.
+- **cloud-init NoCloud** from the boot partition (`user-data`,
+  `meta-data`, `network-config`): the shipped `user-data` makes user
+  `ubuntu` with password `ubuntu`, to be changed at first login, and turns
+  SSH password login off; `network-config` asks DHCPv4 on eth0.

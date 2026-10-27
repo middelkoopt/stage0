@@ -62,6 +62,17 @@ type Config struct {
 	Kernel *File `yaml:"kernel,omitempty"`
 	Initrd *File `yaml:"initrd,omitempty"`
 
+	// BootDir is the directory of the boot partition the firmware reads
+	// the kernel, initramfs and cmdline.txt from (Ubuntu's os_prefix,
+	// "current"); default the partition's top.
+	BootDir string `yaml:"bootDir,omitempty"`
+
+	// Initramfs is the image's own initramfs (path in the boot partition):
+	// stage0's agent is appended to it, so the agent has the image's
+	// kernel modules. Without it the agent boots alone (Pi kernels with
+	// their drivers built in).
+	Initramfs string `yaml:"initramfs,omitempty"`
+
 	// NoCloud: the image's cloud-init takes its hostname and keys from
 	// NoCloud data that stage0 serves.
 	NoCloud bool `yaml:"nocloud,omitempty"`
@@ -129,6 +140,11 @@ func Load(dir, name string) (Config, error) {
 			return c, fmt.Errorf("%s: kernel/initrd need an http(s) url and a 64-hex-digit sha256", p)
 		}
 	}
+	for _, p2 := range []string{c.BootDir, c.Initramfs} {
+		if p2 != "" && !filepath.IsLocal(p2) {
+			return c, fmt.Errorf("%s: %q is not a path inside the boot partition", p, p2)
+		}
+	}
 	for name := range c.BootFiles {
 		if !filepath.IsLocal(name) || strings.ContainsAny(name, "\\") {
 			return c, fmt.Errorf("%s: bootFiles: %q is not a path inside the boot partition", p, name)
@@ -186,22 +202,33 @@ func EnsureConfig(cfg []byte, lines []string) []byte {
 }
 
 // SetCloudInitHostname returns cloud-init user-data with its top-level
-// hostname set, editing only that line (or appending it), so the rest of
-// the file, comments included, stays as shipped.
+// hostname set and disable_root false (a precaution, unverified: with its
+// default true, cloud-init can rewrite root's authorized_keys to refuse
+// logins; Ubuntu's root login worked with it false), editing only those lines (or
+// appending them), so the rest of the file, comments included, stays as
+// shipped.
 func SetCloudInitHostname(userData []byte, hostname string) []byte {
+	set := []struct{ key, line string }{
+		{"hostname:", "hostname: " + hostname + "\n"},
+		{"disable_root:", "disable_root: false\n"},
+	}
+	found := make([]bool, len(set))
 	var out []byte
-	found := false
 	for l := range strings.Lines(string(userData)) {
-		if strings.HasPrefix(l, "hostname:") {
-			l, found = "hostname: "+hostname+"\n", true
+		for i, kv := range set {
+			if strings.HasPrefix(l, kv.key) {
+				l, found[i] = kv.line, true
+			}
 		}
 		out = append(out, l...)
 	}
-	if !found {
-		if len(out) > 0 && out[len(out)-1] != '\n' {
-			out = append(out, '\n')
+	for i, kv := range set {
+		if !found[i] {
+			if len(out) > 0 && out[len(out)-1] != '\n' {
+				out = append(out, '\n')
+			}
+			out = append(out, kv.line...)
 		}
-		out = append(out, "hostname: "+hostname+"\n"...)
 	}
 	return out
 }

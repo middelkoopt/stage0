@@ -117,6 +117,10 @@ func install(e emitter, cmdline string) {
 			return
 		}
 	}
+	// A card can be found after the first driver pass (a Pi 5's SD card
+	// on Ubuntu's kernel, whose mmc_block is a module): load drivers again
+	// until the disk is there.
+	waitFor("/dev/"+plan.Disk, 15*time.Second, func() { loadModules(io.Discard) })
 	fmt.Fprintf(out, "stage0 agent: installing the payload on /dev/%s\n", plan.Disk)
 	res, err := Install("/"+PayloadPath, "/dev/"+plan.Disk, plan.SHA256, out)
 	if err != nil {
@@ -259,4 +263,14 @@ func payload(path string) (*Payload, error) {
 		return nil, fmt.Errorf("payload: %w", err)
 	}
 	return &Payload{Bytes: n, SHA256: hex.EncodeToString(h.Sum(nil))}, nil
+}
+
+// waitFor calls try until path exists or d has passed.
+func waitFor(path string, d time.Duration, try func()) {
+	for deadline := time.Now().Add(d); ; time.Sleep(250 * time.Millisecond) {
+		if _, err := os.Stat(path); err == nil || time.Now().After(deadline) {
+			return
+		}
+		try()
+	}
 }

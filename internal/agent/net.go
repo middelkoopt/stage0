@@ -10,6 +10,7 @@ import (
 	"net/netip"
 	"os"
 	"os/exec"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -30,9 +31,17 @@ func bringUpNetwork(out io.Writer, ipv6 bool) error {
 	if ipv6 {
 		return bringUpIPv6(out)
 	}
-	ifs, err := net.Interfaces()
-	if err != nil {
-		return err
+	// A driver loaded by coldplug may still be probing: wait a little for
+	// an interface to appear.
+	var ifs []net.Interface
+	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(250 * time.Millisecond) {
+		var err error
+		if ifs, err = net.Interfaces(); err != nil {
+			return err
+		}
+		if slices.ContainsFunc(ifs, func(i net.Interface) bool { return len(i.HardwareAddr) == 6 }) || time.Now().After(deadline) {
+			break
+		}
 	}
 	var candidates []net.Interface
 	for _, ifc := range ifs {

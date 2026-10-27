@@ -1,0 +1,14 @@
+# Ubuntu Server 26.04.1 LTS for Raspberry Pi, arm64 (preinstalled). MBR;
+# config.txt sets os_prefix=current/, so the kernel, initrd and cmdline.txt
+# live in current/; the boot partition carries cloud-init NoCloud files.
+# Facts: docs/images.md.
+url: https://cdimage.ubuntu.com/releases/26.04/release/ubuntu-26.04.1-preinstalled-server-arm64+raspi.img.xz
+sha256: d59ef9c6e85b906995501f166d00726ab80b59be7b65cdeac0fa31b996053e13
+
+# As shipped (current/cmdline.txt).
+cmdline: console=serial0,115200 multipath=off dwc_otg.lpm_enable=0 console=tty1 root=LABEL=writable rootfstype=ext4 panic=10 rootwait fixrtc
+
+bootDir: current
+
+# The agent boots Ubuntu's kernel with its initrd (modules) and stage0's.
+initramfs: current/initrd.img

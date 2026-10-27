@@ -27,6 +27,7 @@ import (
 
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/cpio"
+	"github.com/middelkoopt/stage0/internal/image"
 	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/reach"
 	"github.com/middelkoopt/stage0/internal/vswitch"
@@ -648,5 +649,34 @@ func TestInstallIPv6Staging(t *testing.T) {
 		!strings.Contains(string(cmdline), "stage0.report=http://[fd00:10:3::1]/stage0/report") ||
 		strings.Contains(string(cmdline), "ip=dhcp") {
 		t.Errorf("cmdline.txt: %s", cmdline)
+	}
+}
+
+func TestStageBootDir(t *testing.T) {
+	// Ubuntu: config.txt at the top sets os_prefix=current/, so the
+	// firmware reads cmdline.txt and initramfs from current/.
+	dir := t.TempDir()
+	boot := filepath.Join(dir, "boot")
+	os.MkdirAll(filepath.Join(boot, "current"), 0o755)
+	os.WriteFile(filepath.Join(boot, "config.txt"), []byte("[all]\nos_prefix=current/\n"), 0o644)
+	os.WriteFile(filepath.Join(boot, "current", "initrd.img"), []byte("DISTRO"), 0o644)
+	os.WriteFile(filepath.Join(boot, "user-data"), []byte("#cloud-config\n"), 0o644)
+	agent := filepath.Join(dir, "stage0")
+	os.WriteFile(agent, []byte("AGENT"), 0o755)
+	a := &App{Executable: func() (string, error) { return agent, nil }, CheckStatic: func(string) error { return nil }}
+	img := image.Config{Name: "u", URL: "https://e.org/u.img.xz", SHA256: "ab", BootDir: "current", Initramfs: "current/initrd.img"}
+	os.WriteFile(filepath.Join(dir, "u.img.xz"), []byte("IMG"), 0o644)
+	run := filepath.Join(dir, "run")
+	if err := a.stage(run, filepath.Join(dir, "u.img.xz"), img, "root=LABEL=writable", "k52", "mmcblk0", "10.0.3.1", boot); err != nil {
+		t.Fatal(err)
+	}
+	if b, err := os.ReadFile(filepath.Join(run, "current", "cmdline.txt")); err != nil || !strings.Contains(string(b), "stage0.disk=mmcblk0") {
+		t.Errorf("current/cmdline.txt: %q %v", b, err)
+	}
+	if b, err := os.ReadFile(filepath.Join(run, "current", initrdName)); err != nil || !bytes.HasPrefix(b, []byte("DISTRO")) || len(b) <= 6 {
+		t.Errorf("current/%s: %d bytes %v", initrdName, len(b), err)
+	}
+	if _, err := os.Stat(filepath.Join(run, "cmdline.txt")); err == nil {
+		t.Error("cmdline.txt at the top too")
 	}
 }

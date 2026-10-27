@@ -9,6 +9,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"time"
 )
 
 // When the agent is packed on top of a distro's initramfs (a VM's EL
@@ -28,9 +29,12 @@ func findModprobe(root string) string {
 	return ""
 }
 
-// modaliases returns the modalias of every device under dir (/sys/devices).
+// modaliases returns the modalias of every device under dir (/sys/devices),
+// once each: from its modalias file or, for buses without one (an SD
+// card's mmc), the MODALIAS line of its uevent.
 func modaliases(dir string) ([]string, error) {
 	var out []string
+	seen := map[string]bool{}
 	err := filepath.WalkDir(dir, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return nil // devices come and go; skip what can't be read
@@ -38,14 +42,24 @@ func modaliases(dir string) ([]string, error) {
 		if d.Type()&fs.ModeSymlink != 0 && d.IsDir() {
 			return filepath.SkipDir
 		}
-		if d.Name() != "modalias" || d.IsDir() {
+		if d.IsDir() || (d.Name() != "modalias" && d.Name() != "uevent") {
 			return nil
 		}
 		b, err := os.ReadFile(p)
 		if err != nil {
 			return nil
 		}
-		if a := strings.TrimSpace(string(b)); a != "" {
+		a := strings.TrimSpace(string(b))
+		if d.Name() == "uevent" {
+			a = ""
+			for l := range strings.Lines(string(b)) {
+				if v, ok := strings.CutPrefix(l, "MODALIAS="); ok {
+					a = strings.TrimSpace(v)
+				}
+			}
+		}
+		if a != "" && !seen[a] {
+			seen[a] = true
 			out = append(out, a)
 		}
 		return nil
@@ -60,18 +74,43 @@ func loadModules(out io.Writer) {
 	if mp == "" {
 		return
 	}
-	aliases, err := modaliases("/sys/devices")
-	if err != nil || len(aliases) == 0 {
-		return
+	scan := func() []string {
+		a, _ := modaliases("/sys/devices")
+		return a
 	}
-	// -b: honour blacklists; -q: aliases with no module are normal.
-	cmd := exec.Command(mp, append([]string{"-a", "-b", "-q"}, aliases...)...)
-	cmd.Stdout, cmd.Stderr = out, out
-	err = cmd.Run()
-	var ee *exec.ExitError
-	if err != nil && !errors.As(err, &ee) {
-		fmt.Fprintf(out, "stage0 agent: modprobe: %v\n", err)
-		return
+	load := func(aliases []string) {
+		// -b: honour blacklists; -q: aliases with no module are normal.
+		cmd := exec.Command(mp, append([]string{"-a", "-b", "-q"}, aliases...)...)
+		cmd.Stdout, cmd.Stderr = out, out
+		var ee *exec.ExitError
+		if err := cmd.Run(); err != nil && !errors.As(err, &ee) {
+			fmt.Fprintf(out, "stage0 agent: modprobe: %v\n", err)
+		}
 	}
-	fmt.Fprintf(out, "stage0 agent: loaded drivers for %d devices\n", len(aliases))
+	if n := coldplug(scan, load, func() { time.Sleep(500 * time.Millisecond) }); n > 0 {
+		fmt.Fprintf(out, "stage0 agent: loaded drivers for %d devices\n", n)
+	}
+}
+
+// coldplug loads drivers for the devices scan finds, again for those that
+// appear as drivers load (a Pi 5's Ethernet and SD card sit behind RP1, a
+// PCIe device with its own driver), until no new ones turn up. It returns
+// how many devices it asked for.
+func coldplug(scan func() []string, load func([]string), settle func()) int {
+	seen := map[string]bool{}
+	for range 8 {
+		var add []string
+		for _, a := range scan() {
+			if !seen[a] {
+				seen[a] = true
+				add = append(add, a)
+			}
+		}
+		if len(add) == 0 {
+			break
+		}
+		load(add)
+		settle()
+	}
+	return len(seen)
 }

@@ -12,7 +12,7 @@ also the agent. It runs from the repo root (`site.yaml`, `images/`, `logs/`).
 Platform facts are in [`netboot.md`](netboot.md), image facts in
 [`images.md`](images.md), code layout in [`development.md`](development.md).
 
-> Last verified: 2026-10-26
+> Last verified: 2026-10-27
 
 ## What it needs
 
@@ -20,7 +20,9 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
   image), the `cmdline.txt` the installed system needs, optionally
   `config.txt` lines to ensure (`config:`), files to add to the boot
   partition (`bootFiles:`, e.g. Raspberry Pi OS's `ssh`), its boot
-  partition (default 1)
+  partition (default 1), the directory in it the firmware boots from
+  (`bootDir:`, Ubuntu's `current`), the image's own initramfs for the
+  agent to boot on (`initramfs:`, for kernels with drivers as modules),
   and the console pattern that means it is up (default `login: `).
 - **`site.yaml`:** the node with a `disk` (optionally a serial `console`
   and a `hostname`, default its name), `sshKeys` (public keys for root on

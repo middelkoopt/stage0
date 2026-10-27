@@ -486,11 +486,13 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 	// (enable_uart: a Pi 4's GPIO serial port is off without it). Over
 	// IPv6 it needs the kernel's ipv6 module, so it boots kernel8.img
 	// with the image's own initramfs8 (modules included) and stage0's
-	// appended to it.
+	// appended to it; an image's initramfs setting does the same always.
 	ipv6 := strings.HasPrefix(server, "[")
 	agentLines := append(slices.Clone(img.Config), "initramfs "+initrdName+" followkernel", "enable_uart=1")
-	if ipv6 {
+	distroInitrd := img.Initramfs
+	if ipv6 && distroInitrd == "" {
 		agentLines = append(agentLines, "kernel=kernel8.img")
+		distroInitrd = "initramfs8"
 	}
 	agentCfg := image.EnsureConfig(cfg, agentLines)
 	if err := os.WriteFile(filepath.Join(run, "config.txt"), agentCfg, 0o644); err != nil {
@@ -504,7 +506,9 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 	// serial0 is the Pi's console UART.
 	cmdline := fmt.Sprintf("console=serial0,115200 %sstage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
 		netcfg, disk, img.SHA256, base, img.File(), base, base)
-	if err := os.WriteFile(filepath.Join(run, "cmdline.txt"), []byte(cmdline), 0o644); err != nil {
+	// The firmware reads cmdline.txt and initramfs under the image's boot
+	// directory (os_prefix).
+	if err := os.WriteFile(filepath.Join(run, img.BootDir, "cmdline.txt"), []byte(cmdline), 0o644); err != nil {
 		return err
 	}
 
@@ -515,11 +519,11 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 	if err := a.CheckStatic(exe); err != nil {
 		return err
 	}
-	if err := writeFile(filepath.Join(run, initrdName), func(w io.Writer) error {
-		if ipv6 {
-			distro, err := os.Open(filepath.Join(run, "initramfs8"))
+	if err := writeFile(filepath.Join(run, img.BootDir, initrdName), func(w io.Writer) error {
+		if distroInitrd != "" {
+			distro, err := os.Open(filepath.Join(run, distroInitrd))
 			if err != nil {
-				return fmt.Errorf("image %s: --ipv6 needs its initramfs8: %w", img.Name, err)
+				return fmt.Errorf("image %s: the agent needs its %s: %w", img.Name, distroInitrd, err)
 			}
 			defer distro.Close()
 			if _, err := io.Copy(w, distro); err != nil {
@@ -536,7 +540,10 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 	if err := os.MkdirAll(seed, 0o755); err != nil {
 		return err
 	}
-	if err := os.WriteFile(filepath.Join(seed, "cmdline.txt"), []byte(installed+"\n"), 0o644); err != nil {
+	if err := os.MkdirAll(filepath.Join(seed, img.BootDir), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(seed, img.BootDir, "cmdline.txt"), []byte(installed+"\n"), 0o644); err != nil {
 		return err
 	}
 	if len(img.Config) > 0 {

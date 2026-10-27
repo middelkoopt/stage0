@@ -194,11 +194,11 @@ func TestEnsureConfig(t *testing.T) {
 
 func TestSetCloudInitHostname(t *testing.T) {
 	in := "#cloud-config\n# comment\nhostname: almalinux.local\nssh_pwauth: false\nusers:\n  - name: almalinux\n    hostname: nested-stays\n"
-	want := "#cloud-config\n# comment\nhostname: k400\nssh_pwauth: false\nusers:\n  - name: almalinux\n    hostname: nested-stays\n"
+	want := "#cloud-config\n# comment\nhostname: k400\nssh_pwauth: false\nusers:\n  - name: almalinux\n    hostname: nested-stays\ndisable_root: false\n"
 	if got := string(SetCloudInitHostname([]byte(in), "k400")); got != want {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
-	if got := string(SetCloudInitHostname([]byte("#cloud-config\nssh_pwauth: false"), "k400")); got != "#cloud-config\nssh_pwauth: false\nhostname: k400\n" {
+	if got := string(SetCloudInitHostname([]byte("#cloud-config\nssh_pwauth: false\ndisable_root: true\n"), "k400")); got != "#cloud-config\nssh_pwauth: false\ndisable_root: false\nhostname: k400\n" {
 		t.Errorf("no hostname key: got %q", got)
 	}
 }
@@ -252,5 +252,22 @@ func TestFetchFile(t *testing.T) {
 	}
 	if b, _ := os.ReadFile(p); string(b) != "kernel bytes" || filepath.Base(p) != "vmlinuz" {
 		t.Errorf("%s: %q", p, b)
+	}
+}
+
+func TestLoadBootDir(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, "ubuntu", "url: https://e.org/u.img.xz\nsha256: "+strings.Repeat("ab", 32)+
+		"\ncmdline: x\nbootDir: current\ninitramfs: current/initrd.img\n")
+	c, err := Load(dir, "ubuntu")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.BootDir != "current" || c.Initramfs != "current/initrd.img" {
+		t.Errorf("config %+v", c)
+	}
+	writeConfig(t, dir, "bad", "url: https://e.org/u.img.xz\nsha256: "+strings.Repeat("ab", 32)+"\ncmdline: x\nbootDir: ../x\n")
+	if _, err := Load(dir, "bad"); err == nil {
+		t.Error("bootDir outside the partition: want error")
 	}
 }

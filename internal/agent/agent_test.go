@@ -106,3 +106,16 @@ func TestSettle(t *testing.T) {
 		t.Errorf("disks = %+v, want both after settling", r.Disks)
 	}
 }
+
+func TestWaitFor(t *testing.T) {
+	p := filepath.Join(t.TempDir(), "mmcblk0")
+	tries := 0
+	waitFor(p, 5*time.Second, func() {
+		if tries++; tries == 2 {
+			os.WriteFile(p, nil, 0o644)
+		}
+	})
+	if tries != 2 {
+		t.Errorf("tries = %d", tries)
+	}
+}
