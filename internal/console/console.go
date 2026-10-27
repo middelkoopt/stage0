@@ -7,7 +7,9 @@ import (
 	"context"
 	"fmt"
 	"io"
+	"net"
 	"regexp"
+	"strings"
 	"time"
 
 	"go.bug.st/serial"
@@ -20,8 +22,17 @@ const tail = 64 << 10
 // context without the port having to close.
 const readTimeout = 200 * time.Millisecond
 
-// Open opens a serial console at baud, 8N1, with the read timeout Capture expects.
+// Open opens a serial console at baud, 8N1, with the read timeout Capture
+// expects. A device "unix:PATH" is a Unix socket instead, as QEMU serves a
+// VM's serial with -chardev socket.
 func Open(device string, baud int) (io.ReadWriteCloser, error) {
+	if path, ok := strings.CutPrefix(device, "unix:"); ok {
+		c, err := net.Dial("unix", path)
+		if err != nil {
+			return nil, fmt.Errorf("console %s: %w", device, err)
+		}
+		return c, nil
+	}
 	p, err := serial.Open(device, &serial.Mode{BaudRate: baud})
 	if err != nil {
 		return nil, fmt.Errorf("console %s: %w", device, err)

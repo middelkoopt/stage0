@@ -4,6 +4,8 @@ import (
 	"bytes"
 	"context"
 	"io"
+	"net"
+	"path/filepath"
 	"regexp"
 	"testing"
 	"time"
@@ -105,5 +107,36 @@ func TestCaptureWaitsForTheRestOfAMatch(t *testing.T) {
 	src = &chunks{[]string{"k52 login: ", "", "never read"}}
 	if m, err := Capture(context.Background(), src, io.Discard, regexp.MustCompile(`login: `)); err != nil || m != "login: " {
 		t.Errorf("prompt match = %q, %v", m, err)
+	}
+}
+
+func TestOpenUnixSocket(t *testing.T) {
+	// A VM's serial console, as QEMU serves it with -chardev socket.
+	sock := filepath.Join(t.TempDir(), "console.sock")
+	ln, err := net.Listen("unix", sock)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer ln.Close()
+	go func() {
+		c, err := ln.Accept()
+		if err != nil {
+			return
+		}
+		c.Write([]byte("vm1 login: "))
+		buf := make([]byte, 16)
+		n, _ := c.Read(buf)
+		c.Write(buf[:n])
+		c.Close()
+	}()
+	p, err := Open("unix:"+sock, 115200)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	io.WriteString(p, "root\r")
+	b, _ := io.ReadAll(p)
+	if string(b) != "vm1 login: root\r" {
+		t.Errorf("read %q", b)
 	}
 }
