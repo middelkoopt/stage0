@@ -18,6 +18,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/middelkoopt/stage0/internal/container"
 )
 
 // Default file names, relative to the working directory.
@@ -58,6 +60,10 @@ type Node struct {
 	// VM makes the node a QEMU VM on the test bed instead of a machine on
 	// a switch port; its console is QEMU's serial.
 	VM *VM `yaml:"vm,omitempty"`
+
+	// Partitions, for installing a container, override the image config's
+	// and the container's (docs/containers.md): this node's disk may differ.
+	Partitions []container.Partition `yaml:"partitions,omitempty"`
 }
 
 // VM is a test bed VM's hardware.
@@ -168,6 +174,11 @@ func (s *Site) normalize() error {
 			v.CPUs = cmp.Or(v.CPUs, 2)
 			v.DiskGB = cmp.Or(v.DiskGB, 16)
 			v.Firmware = cmp.Or(v.Firmware, "/usr/share/AAVMF/AAVMF_CODE.fd")
+		}
+		if len(n.Partitions) > 0 {
+			if err := container.CheckPartitions(n.Partitions); err != nil {
+				return fmt.Errorf("node %q: %w", n.Name, err)
+			}
 		}
 		if n.Disk != "" && !diskName.MatchString(n.Disk) {
 			return fmt.Errorf("node %q: disk %q is not a name under /dev like mmcblk0", n.Name, n.Disk)

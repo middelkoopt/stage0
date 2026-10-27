@@ -90,3 +90,34 @@ func TestServerTime(t *testing.T) {
 		t.Errorf("serverTime = %v, %v", got, err)
 	}
 }
+
+func TestFetchLayout(t *testing.T) {
+	good := `{"partitions":[{"name":"b","size":"256MiB","type":"vfat","path":"/boot/efi"},{"name":"r","type":"ext4","path":"/"}],"installer":{"kernel":"/k","initramfs":"/i"}}`
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/bad.json" {
+			w.Write([]byte(`{"partitions":[{"name":"r","type":"ext4","path":"/"}],"installer":{"kernel":"/k","initramfs":"/i"}}`))
+			return
+		}
+		w.Write([]byte(good))
+	}))
+	defer srv.Close()
+	s, err := fetchLayout(srv.URL + "/layout.json")
+	if err != nil || s.Partitions[0].Bytes != 256<<20 {
+		t.Errorf("layout %+v, %v", s, err)
+	}
+	if _, err := fetchLayout(srv.URL + "/bad.json"); err == nil {
+		t.Error("a root-only layout: want error")
+	}
+}
+
+func TestMountOrder(t *testing.T) {
+	spec := container.Spec{Partitions: []container.Partition{
+		{Name: "boot", Type: "vfat", Path: "/boot/efi"},
+		{Name: "log", Type: "ext4", Path: "/var/log"},
+		{Name: "var", Type: "ext4", Path: "/var"},
+		{Name: "root", Type: "ext4", Path: "/"},
+	}}
+	if got := mountOrder(spec); !slices.Equal(got, []int{2, 1}) {
+		t.Errorf("mount order %v, want /var then /var/log", got)
+	}
+}

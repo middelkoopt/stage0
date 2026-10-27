@@ -206,7 +206,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 			server = "[" + n.Server6.String() + "]"
 		}
 		if img.Container != "" {
-			err = a.stageContainer(run, imgPath, img, installed, node.Hostname, disk, server, filepath.Join(o.cache, "boot"))
+			err = a.stageContainer(run, imgPath, img, node, installed, disk, server, filepath.Join(o.cache, "boot"))
 		} else {
 			err = a.stage(run, imgPath, img, installed, node.Hostname, disk, server, filepath.Join(o.cache, "boot", img.SHA256))
 		}
@@ -697,15 +697,17 @@ func writeSeed(run string, img image.Config, cfg []byte, installed, hostname, bo
 // kernel and its installer initramfs (stage0's agent and dracut hook
 // appended) in config.txt, a cmdline.txt carrying the agent's plan, the
 // seed, and the OCI layout under oci/ for the agent to pull.
-func (a *App) stageContainer(run, layout string, img image.Config, installed, hostname, disk, server, bootCaches string) error {
+func (a *App) stageContainer(run, layout string, img image.Config, node config.Node, installed, disk, server, bootCaches string) error {
 	ci, err := oci.Open(layout)
 	if err != nil {
 		return err
 	}
-	spec, err := container.Parse(ci.Labels)
+	// The layout: the node's, else the image config's, else the labels'.
+	spec, err := container.Resolve(ci.Labels, img.Partitions, img.Installer, node.Partitions)
 	if err != nil {
-		return fmt.Errorf("container %s: %w", img.Container, err)
+		return fmt.Errorf("container %s for %s: %w", img.Container, node.Name, err)
 	}
+	hostname := node.Hostname
 	digest := strings.TrimPrefix(ci.Digest, "sha256:")
 	bootCache := filepath.Join(bootCaches, digest)
 	if _, err := os.Stat(bootCache); err != nil {
@@ -743,8 +745,8 @@ func (a *App) stageContainer(run, layout string, img image.Config, installed, ho
 	// client built in would take it first, without the agent's class, and
 	// retry for minutes (k52, Rocky).
 	base := "http://" + server
-	cmdline := fmt.Sprintf("console=serial0,115200 rd.neednet=1 rd.net.dhcp.vendor-class=%s stage0.disk=%s stage0.sha256=%s stage0.oci=%s/oci stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
-		dhcpd.AgentClass, disk, digest, base, base, base)
+	cmdline := fmt.Sprintf("console=serial0,115200 rd.neednet=1 rd.net.dhcp.vendor-class=%s stage0.disk=%s stage0.sha256=%s stage0.oci=%s/oci stage0.layout=%s/layout.json stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
+		dhcpd.AgentClass, disk, digest, base, base, base, base)
 	if err := os.WriteFile(filepath.Join(run, "cmdline.txt"), []byte(cmdline), 0o644); err != nil {
 		return err
 	}
@@ -774,7 +776,15 @@ func (a *App) stageContainer(run, layout string, img image.Config, installed, ho
 	if err := writeSeed(run, img, cfg, installed, hostname, bootCache); err != nil {
 		return err
 	}
-	// The layout, linked file by file (serve won't follow a link out).
+	// The resolved layout, which the agent partitions by.
+	b, err := json.Marshal(spec)
+	if err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(run, "layout.json"), b, 0o644); err != nil {
+		return err
+	}
+	// The OCI layout, linked file by file (serve won't follow a link out).
 	return filepath.WalkDir(layout, func(p string, d fs.DirEntry, err error) error {
 		if err != nil {
 			return err

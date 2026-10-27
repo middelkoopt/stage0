@@ -24,6 +24,7 @@ import (
 	"github.com/ulikunitz/xz"
 	"go.yaml.in/yaml/v3"
 
+	"github.com/middelkoopt/stage0/internal/container"
 	"github.com/middelkoopt/stage0/internal/fat"
 	"github.com/middelkoopt/stage0/internal/ptable"
 )
@@ -39,6 +40,12 @@ type Config struct {
 	// layout directory <cache>/oci/<Container> (podman save --format
 	// oci-dir). Its labels say how (docs/containers.md).
 	Container string `yaml:"container,omitempty"`
+
+	// Partitions and Installer, for a container, override its labels
+	// (pi.provision.partition, pi.provision.installer); a node's
+	// partitions override these in turn.
+	Partitions []container.Partition `yaml:"partitions,omitempty"`
+	Installer  *container.Installer  `yaml:"installer,omitempty"`
 
 	// BootPartition holds the firmware's boot files (Pi: config.txt,
 	// kernels, device trees); default 1.
@@ -134,8 +141,18 @@ func Load(dir, name string) (Config, error) {
 			return c, fmt.Errorf("%s: container goes without url, sha256, kernel and initrd", p)
 		case c.Cmdline == "":
 			return c, fmt.Errorf("%s: no cmdline", p)
+		case c.Installer != nil && (c.Installer.Kernel == "" || c.Installer.Initramfs == ""):
+			return c, fmt.Errorf("%s: installer needs kernel and initramfs", p)
+		}
+		if len(c.Partitions) > 0 {
+			if err := container.CheckPartitions(c.Partitions); err != nil {
+				return c, fmt.Errorf("%s: %w", p, err)
+			}
 		}
 		return c, nil
+	}
+	if len(c.Partitions) > 0 || c.Installer != nil {
+		return c, fmt.Errorf("%s: partitions and installer are for containers", p)
 	}
 	switch {
 	case !strings.HasPrefix(c.URL, "https://") && !strings.HasPrefix(c.URL, "http://"):

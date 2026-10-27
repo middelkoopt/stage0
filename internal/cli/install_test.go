@@ -26,6 +26,7 @@ import (
 	"github.com/ulikunitz/xz"
 
 	"github.com/middelkoopt/stage0/internal/config"
+	"github.com/middelkoopt/stage0/internal/container"
 	"github.com/middelkoopt/stage0/internal/cpio"
 	"github.com/middelkoopt/stage0/internal/image"
 	"github.com/middelkoopt/stage0/internal/netswitch"
@@ -698,8 +699,16 @@ func TestStageContainer(t *testing.T) {
 	a := &App{Executable: func() (string, error) { return agent, nil }, CheckStatic: func(string) error { return nil }}
 	img := image.Config{Name: "rocky-ct", Container: "rocky", Config: []string{"dtoverlay=disable-bt"}}
 	run := filepath.Join(dir, "run")
-	if err := a.stageContainer(run, layout, img, "root=PARTLABEL=piroot", "k52", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err != nil {
+	// k52's own layout wins over the labels'.
+	node := config.Node{Name: "k52", Hostname: "k52", Partitions: []container.Partition{
+		{Name: "fw", Size: "256MiB", Type: "vfat", Path: "/boot/efi"}, {Name: "root", Type: "ext4", Path: "/"}}}
+	if err := a.stageContainer(run, layout, img, node, "root=PARTLABEL=root", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err != nil {
 		t.Fatal(err)
+	}
+	var spec container.Spec
+	if b, err := os.ReadFile(filepath.Join(run, "layout.json")); err != nil || json.Unmarshal(b, &spec) != nil ||
+		len(spec.Partitions) != 2 || spec.Partitions[0].Name != "fw" || spec.Installer.Kernel != "/boot/efi/kernel8.img" {
+		t.Errorf("layout.json: %+v, %v", spec, err)
 	}
 	cfg, _ := os.ReadFile(filepath.Join(run, "config.txt"))
 	for _, l := range []string{"kernel=kernel8.img", "initramfs " + initrdName + " followkernel", "dtoverlay=disable-bt"} {
@@ -709,7 +718,7 @@ func TestStageContainer(t *testing.T) {
 	}
 	cmdline, _ := os.ReadFile(filepath.Join(run, "cmdline.txt"))
 	for _, f := range []string{"rd.neednet=1", "rd.net.dhcp.vendor-class=stage0-agent", "stage0.disk=mmcblk0",
-		"stage0.sha256=" + strings.TrimPrefix(digest, "sha256:"), "stage0.oci=http://10.0.3.1/oci"} {
+		"stage0.sha256=" + strings.TrimPrefix(digest, "sha256:"), "stage0.oci=http://10.0.3.1/oci", "stage0.layout=http://10.0.3.1/layout.json"} {
 		if !strings.Contains(string(cmdline), f) {
 			t.Errorf("cmdline.txt lacks %q: %s", f, cmdline)
 		}

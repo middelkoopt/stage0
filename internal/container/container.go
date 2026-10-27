@@ -1,10 +1,12 @@
-// Package container reads how to install a container image from its
-// labels (the lab's pi.provision.* convention, docs/containers.md): its
-// partitions, and the kernel and installer initramfs that boot the agent.
+// Package container says how to install a container image: its partitions,
+// and the kernel and installer initramfs that boot the agent. A container
+// can carry them as labels (the lab's pi.provision.* convention); an image
+// config and a node can say otherwise (docs/containers.md).
 package container
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"path"
 	"strconv"
@@ -13,72 +15,98 @@ import (
 
 // Partition is one partition to make, in order on the disk.
 type Partition struct {
-	Name  string `json:"name"` // its GPT partition name (root=PARTLABEL=…)
-	Size  string `json:"size,omitempty"`
-	Type  string `json:"type"` // vfat or ext4
-	Path  string `json:"path"` // where it is mounted in the installed system
-	Bytes int64  `json:"-"`    // Size; 0 for the rest of the disk
+	Name  string `json:"name" yaml:"name"`                     // its GPT partition name (root=PARTLABEL=…)
+	Size  string `json:"size,omitempty" yaml:"size,omitempty"` // e.g. 512MiB; none for the root, which fills the disk
+	Type  string `json:"type" yaml:"type"`                     // vfat or ext4
+	Path  string `json:"path" yaml:"path"`                     // where it is mounted in the installed system
+	Bytes int64  `json:"-" yaml:"-"`                           // Size, set by CheckPartitions; 0 for the root
 }
 
 // Installer is what boots the agent: paths in the image.
 type Installer struct {
-	Kernel    string `json:"kernel"`
-	Initramfs string `json:"initramfs"`
+	Kernel    string `json:"kernel" yaml:"kernel"`
+	Initramfs string `json:"initramfs" yaml:"initramfs"`
 }
 
-// Spec is a container's install instructions.
+// Spec is how to install a container.
 type Spec struct {
-	Partitions []Partition
-	Installer  Installer
+	Partitions []Partition `json:"partitions"`
+	Installer  Installer   `json:"installer"`
 }
 
-// Parse reads the labels. The first partition is the Pi's boot partition
-// (vfat, a size); the last is the root (ext4, at /), filling the disk.
-func Parse(labels map[string]string) (Spec, error) {
+// Resolve settles the spec: the container's labels, overridden by the
+// image config's partitions and installer, the partitions overridden in
+// turn by the node's. Any of them may be missing; the result is checked.
+func Resolve(labels map[string]string, imageParts []Partition, imageInstaller *Installer, nodeParts []Partition) (Spec, error) {
 	var s Spec
-	pl, ok := labels["pi.provision.partition"]
-	if !ok {
-		return s, fmt.Errorf("no pi.provision.partition label")
+	if v, ok := labels["pi.provision.partition"]; ok {
+		if err := json.Unmarshal([]byte(v), &s.Partitions); err != nil {
+			return s, fmt.Errorf("label pi.provision.partition: %w", err)
+		}
 	}
-	if err := json.Unmarshal([]byte(pl), &s.Partitions); err != nil {
-		return s, fmt.Errorf("pi.provision.partition: %w", err)
+	if v, ok := labels["pi.provision.installer"]; ok {
+		if err := json.Unmarshal([]byte(v), &s.Installer); err != nil {
+			return s, fmt.Errorf("label pi.provision.installer: %w", err)
+		}
 	}
-	il, ok := labels["pi.provision.installer"]
-	if !ok {
-		return s, fmt.Errorf("no pi.provision.installer label: the container needs an installer initramfs")
+	if len(imageParts) > 0 {
+		s.Partitions = imageParts
 	}
-	if err := json.Unmarshal([]byte(il), &s.Installer); err != nil {
-		return s, fmt.Errorf("pi.provision.installer: %w", err)
+	if imageInstaller != nil {
+		s.Installer = *imageInstaller
 	}
+	if len(nodeParts) > 0 {
+		s.Partitions = nodeParts
+	}
+	s.Partitions = append([]Partition(nil), s.Partitions...) // Validate sets Bytes; leave the callers' alone
+	return s, s.Validate()
+}
+
+// Validate checks the spec and sets each partition's Bytes.
+func (s *Spec) Validate() error {
 	if s.Installer.Kernel == "" || s.Installer.Initramfs == "" {
-		return s, fmt.Errorf("pi.provision.installer: needs kernel and initramfs")
+		return errors.New("no installer kernel and initramfs: give the container a pi.provision.installer label or the image config an installer")
 	}
-	if len(s.Partitions) < 2 {
-		return s, fmt.Errorf("pi.provision.partition: want a boot and a root partition, have %d", len(s.Partitions))
+	if len(s.Partitions) == 0 {
+		return errors.New("no partitions: give the container a pi.provision.partition label, or the image config or node partitions")
 	}
-	for i := range s.Partitions {
-		p := &s.Partitions[i]
-		last := i == len(s.Partitions)-1
+	return CheckPartitions(s.Partitions)
+}
+
+// CheckPartitions checks a layout and sets each partition's Bytes. The
+// first is the Pi's boot partition (vfat, a size); the last is the root
+// (ext4 at /, no size: it fills the disk).
+func CheckPartitions(ps []Partition) error {
+	if len(ps) < 2 {
+		return fmt.Errorf("partitions: want a boot and a root partition, have %d", len(ps))
+	}
+	names := map[string]bool{}
+	for i := range ps {
+		p := &ps[i]
+		last := i == len(ps)-1
 		switch {
 		case p.Type != "vfat" && p.Type != "ext4":
-			return s, fmt.Errorf("partition %s: type %q: vfat or ext4", p.Name, p.Type)
+			return fmt.Errorf("partition %s: type %q: vfat or ext4", p.Name, p.Type)
 		case p.Name == "" || !path.IsAbs(p.Path):
-			return s, fmt.Errorf("partition %q: needs a name and an absolute path", p.Name)
+			return fmt.Errorf("partition %q: needs a name and an absolute path", p.Name)
+		case names[p.Name]:
+			return fmt.Errorf("partition %s: named twice", p.Name)
 		case i == 0 && p.Type != "vfat":
-			return s, fmt.Errorf("partition %s: the first is the Pi's boot partition, so vfat", p.Name)
+			return fmt.Errorf("partition %s: the first is the Pi's boot partition, so vfat", p.Name)
 		case last && (p.Path != "/" || p.Type != "ext4"):
-			return s, fmt.Errorf("partition %s: the last is the root, ext4 at /", p.Name)
+			return fmt.Errorf("partition %s: the last is the root, ext4 at /", p.Name)
 		case last && p.Size != "":
-			return s, fmt.Errorf("partition %s: the root fills the disk, so no size", p.Name)
+			return fmt.Errorf("partition %s: the root fills the disk, so no size", p.Name)
 		case !last:
 			n, err := parseSize(p.Size)
 			if err != nil {
-				return s, fmt.Errorf("partition %s: size: %w", p.Name, err)
+				return fmt.Errorf("partition %s: size: %w", p.Name, err)
 			}
 			p.Bytes = n
 		}
+		names[p.Name] = true
 	}
-	return s, nil
+	return nil
 }
 
 // Boot is the boot partition.

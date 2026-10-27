@@ -339,3 +339,25 @@ func TestLoadSiteNTP(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadSiteNodePartitions(t *testing.T) {
+	body := `
+nodes:
+  - name: k52
+    partitions:
+      - {name: piboot, size: 512MiB, type: vfat, path: /boot/efi}
+      - {name: var, size: 8GiB, type: ext4, path: /var}
+      - {name: piroot, type: ext4, path: /}
+`
+	s, err := LoadSite(write(t, "site.yaml", body, 0o644))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.Node("k52"); len(n.Partitions) != 3 || n.Partitions[1].Bytes != 8<<30 {
+		t.Errorf("partitions %+v", n.Partitions)
+	}
+	bad := "nodes:\n  - name: k52\n    partitions: [{name: r, type: ext4, path: /}]\n"
+	if _, err := LoadSite(write(t, "site.yaml", bad, 0o644)); err == nil {
+		t.Error("a root-only layout: want error")
+	}
+}

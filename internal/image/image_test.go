@@ -296,3 +296,29 @@ func TestLoadContainer(t *testing.T) {
 		t.Errorf("Fetch = %q, %v", p, err)
 	}
 }
+
+func TestLoadContainerLayout(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, "ct", `container: rocky10-rpi
+cmdline: root=PARTLABEL=root
+installer: {kernel: /boot/efi/kernel8.img, initramfs: /boot/installer.img}
+partitions:
+  - {name: boot, size: 1GiB, type: vfat, path: /boot/efi}
+  - {name: root, type: ext4, path: /}
+`)
+	c, err := Load(dir, "ct")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Partitions) != 2 || c.Partitions[0].Bytes != 1<<30 || c.Installer.Kernel != "/boot/efi/kernel8.img" {
+		t.Errorf("config %+v", c)
+	}
+	writeConfig(t, dir, "bad", "container: x\ncmdline: x\npartitions: [{name: r, type: ext4, path: /}]\n")
+	if _, err := Load(dir, "bad"); err == nil {
+		t.Error("a root-only layout: want error")
+	}
+	writeConfig(t, dir, "img", "url: https://e.org/u.img.xz\nsha256: "+strings.Repeat("ab", 32)+"\ncmdline: x\npartitions: [{name: r, type: ext4, path: /}]\n")
+	if _, err := Load(dir, "img"); err == nil || !strings.Contains(err.Error(), "for containers") {
+		t.Errorf("partitions on a disk image: err = %v", err)
+	}
+}

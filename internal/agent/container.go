@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"syscall"
 	"time"
@@ -18,7 +19,8 @@ import (
 )
 
 // installContainer installs the container image served at plan.OCI
-// (docs/containers.md): partitions the disk as its labels say with the
+// (docs/containers.md): partitions the disk as plan.Layout says (stage0
+// resolves it from the node, image config and labels) with the
 // installer's own tools (sgdisk, mkfs), unpacks its layers onto the root,
 // copies what belongs on the other partitions (the Pi's boot files) onto
 // them, and writes fstab, hosts and resolv.conf. Every blob is checked
@@ -32,7 +34,7 @@ func installContainer(out io.Writer, plan *Plan) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	spec, err := container.Parse(img.Labels)
+	spec, err := fetchLayout(plan.Layout)
 	if err != nil {
 		return res, err
 	}
@@ -58,12 +60,36 @@ func installContainer(out io.Writer, plan *Plan) (Result, error) {
 		return res, err
 	}
 	defer syscall.Unmount(mnt, 0)
+	// ext4 partitions (a separate /var) are mounted in the tree, so the
+	// layers land on them with owners, links and modes; FAT ones (the
+	// boot partition), which can't keep those, are filled afterwards.
+	mounted := []string{}
+	unmountAll := func() error {
+		var errs []error
+		for _, d := range slices.Backward(mounted) {
+			if err := syscall.Unmount(d, 0); err != nil {
+				errs = append(errs, fmt.Errorf("unmounting %s: %w", d, err))
+			}
+		}
+		mounted = nil
+		return errors.Join(errs...)
+	}
+	defer unmountAll()
+	for _, i := range mountOrder(spec) {
+		d := filepath.Join(mnt, spec.Partitions[i].Path)
+		if err := mount(parts[i], d, "ext4"); err != nil {
+			return res, err
+		}
+		mounted = append(mounted, d)
+	}
 	fmt.Fprintf(out, "stage0 agent: unpacking %s onto %s\n", plan.OCI, parts[last])
 	if res.Bytes, err = img.Unpack(mnt); err != nil {
 		return res, err
 	}
-	// The other partitions' files are in the root's tree; move them.
 	for i, p := range spec.Partitions[:last] {
+		if p.Type != "vfat" {
+			continue
+		}
 		if err := movePartition(filepath.Join(mnt, p.Path), parts[i], p.Type); err != nil {
 			return res, fmt.Errorf("partition %s: %w", p.Name, err)
 		}
@@ -78,12 +104,30 @@ func installContainer(out io.Writer, plan *Plan) (Result, error) {
 		return res, err
 	}
 	syscall.Sync()
+	if err := unmountAll(); err != nil {
+		return res, err
+	}
 	if err := syscall.Unmount(mnt, 0); err != nil {
 		return res, fmt.Errorf("unmounting %s: %w", mnt, err)
 	}
 	res.Seconds = time.Since(start).Seconds()
 	fmt.Fprintf(out, "stage0 agent: container installed in %.0f s\n", res.Seconds)
 	return res, nil
+}
+
+// mountOrder lists the partitions to mount in the root's tree before
+// unpacking (ext4, not the root), parents before children.
+func mountOrder(spec container.Spec) []int {
+	var idx []int
+	for i, p := range spec.Partitions[:len(spec.Partitions)-1] {
+		if p.Type == "ext4" {
+			idx = append(idx, i)
+		}
+	}
+	slices.SortStableFunc(idx, func(a, b int) int {
+		return strings.Count(spec.Partitions[a].Path, "/") - strings.Count(spec.Partitions[b].Path, "/")
+	})
+	return idx
 }
 
 // sgdiskArgs makes a fresh GPT with the spec's partitions, in order, the
@@ -263,4 +307,24 @@ func setClock(out io.Writer, url string) {
 		return
 	}
 	fmt.Fprintf(out, "stage0 agent: clock set to %s from %s\n", t.UTC().Format(time.RFC3339), url)
+}
+
+// fetchLayout gets the resolved layout stage0 serves.
+func fetchLayout(url string) (container.Spec, error) {
+	var s container.Spec
+	resp, err := http.Get(url)
+	if err != nil {
+		return s, err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return s, fmt.Errorf("%s: %s", url, resp.Status)
+	}
+	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&s); err != nil {
+		return s, fmt.Errorf("%s: %w", url, err)
+	}
+	if err := s.Validate(); err != nil {
+		return s, fmt.Errorf("%s: %w", url, err)
+	}
+	return s, nil
 }
