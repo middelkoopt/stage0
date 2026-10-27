@@ -21,8 +21,11 @@ network, and the disk boots with UEFI to a login prompt with SSH
    QEMU process, the agent kernel and initrd from an image config (the
    pxeboot files and their checksums from `.treeinfo`), the console from
    QEMU's serial.
-2. cloud-init NoCloud served by stage0 for cloud images (hostname, SSH
-   keys): QEMU `-smbios type=1,serial=ds=nocloud;s=http://10.0.9.1/…/`.
+2. cloud-init NoCloud for cloud images works by hand
+   ([`docs/testbed.md`](docs/testbed.md)): `install` for VMs writes the
+   node's `meta-data`/`user-data` into the served root and passes the
+   SMBIOS pointer. (A hand-written record for `vm1` is in
+   `~/.local/state/stage0/nodes/`; its disk is `~/.cache/stage0/vm`.)
 3. k53 is powered off (it may run DHCP on piwulf); it may be powered and
    used as root, stopping (not disabling) its services. Its `sudo` needs a
    password stage0 doesn't have.

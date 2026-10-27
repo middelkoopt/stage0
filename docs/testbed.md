@@ -62,5 +62,23 @@ The same VM with UEFI firmware instead of `-kernel` (`-drive
 if=pflash,…,file=/usr/share/AAVMF/AAVMF_CODE.fd` and a writable copy of
 `AAVMF_VARS.fd`) boots the disk to `localhost login:`, takes its address
 from stage0 (the same lease) and its SSH server greets
-(`SSH-2.0-OpenSSH_9.9`). No hostname or SSH key is set: the cloud image
-expects cloud-init data, which nothing provides yet.
+(`SSH-2.0-OpenSSH_9.9`).
+
+## Hostname and keys: cloud-init NoCloud from `serve`
+
+The cloud image's cloud-init takes NoCloud data over HTTP when QEMU's
+SMBIOS serial points at it, and `serve` serves plain files, so no code is
+involved:
+
+- `root/nocloud/vm1/meta-data`: `instance-id: vm1-1`, `local-hostname: vm1`
+- `root/nocloud/vm1/user-data`: `#cloud-config`, `hostname: vm1`,
+  `disable_root: false`, and root's `ssh_authorized_keys` (the site's)
+- QEMU: `-smbios "type=1,serial=ds=nocloud;s=http://10.0.9.1/nocloud/vm1/"`
+
+On a later boot of the already-installed disk, cloud-init fetched both
+files (and asked for the optional `network-config` and `vendor-data`), the
+console showed `vm1 login:`, and root logged in over SSH with the site's
+keys. The VM needs its address from stage0 first: `serve` answers an
+installed node's plain DHCP only if an install record names its MAC
+(`~/.local/state/stage0/nodes/`; written by hand for this run, as
+`install` doesn't drive VMs yet).
