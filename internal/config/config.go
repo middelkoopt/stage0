@@ -64,6 +64,16 @@ type Node struct {
 	// Partitions, for installing a container, override the image config's
 	// and the container's (docs/containers.md): this node's disk may differ.
 	Partitions []container.Partition `yaml:"partitions,omitempty"`
+
+	// BMC makes `stage0 bmc` answer IPMI for the node (docs/bmc.md).
+	BMC *BMC `yaml:"bmc,omitempty"`
+}
+
+// BMC is a node's virtual BMC: an IPMI 2.0 endpoint on its own UDP port,
+// power backed by its PoE port, SOL by its serial console. The user and
+// password are in .secrets (bmc:).
+type BMC struct {
+	Port int `yaml:"port"`
 }
 
 // VM is a test bed VM's hardware.
@@ -146,6 +156,7 @@ func (s *Site) normalize() error {
 	}
 
 	seen = map[string]bool{}
+	bmcPorts := map[int]string{}
 	for i := range s.Nodes {
 		n := &s.Nodes[i]
 		switch {
@@ -173,6 +184,15 @@ func (s *Site) normalize() error {
 			v.Memory = cmp.Or(v.Memory, 2048)
 			v.CPUs = cmp.Or(v.CPUs, 2)
 			v.DiskGB = cmp.Or(v.DiskGB, 16)
+		}
+		if b := n.BMC; b != nil {
+			switch {
+			case b.Port < 1 || b.Port > 65535:
+				return fmt.Errorf("node %q: bmc port %d", n.Name, b.Port)
+			case bmcPorts[b.Port] != "":
+				return fmt.Errorf("node %q: bmc port %d is %s's too", n.Name, b.Port, bmcPorts[b.Port])
+			}
+			bmcPorts[b.Port] = n.Name
 		}
 		if len(n.Partitions) > 0 {
 			if err := container.CheckPartitions(n.Partitions); err != nil {
@@ -329,6 +349,14 @@ func (s *Site) Switch(name string) (Switch, error) {
 // Secrets is .secrets.
 type Secrets struct {
 	Switches map[string]SwitchSecret `yaml:"switches"`
+	// BMC is the login of the nodes' virtual BMCs (stage0 bmc).
+	BMC *BMCSecret `yaml:"bmc,omitempty"`
+}
+
+// BMCSecret is an IPMI user; the password at most 20 bytes (IPMI 2.0).
+type BMCSecret struct {
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
 }
 
 // SwitchSecret holds one switch's credentials: Password, or LoginHash, a

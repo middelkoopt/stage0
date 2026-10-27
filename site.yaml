@@ -15,11 +15,13 @@ switches:
 # paths, which stay put across reboots and replugging.
 nodes:
   - name: k52
+    bmc: {port: 6231}   # virtual BMC: 623 + switch port
     network: pinet
     disk: mmcblk0
     console:
       device: /dev/serial/by-id/usb-Raspberry_Pi_Debug_Probe__CMSIS-DAP__E661640843924C33-if01
   - name: k400
+    bmc: {port: 6238}   # virtual BMC: 623 + switch port
     network: pinet
     disk: mmcblk0
     console:

@@ -361,3 +361,21 @@ nodes:
 		t.Error("a root-only layout: want error")
 	}
 }
+
+func TestLoadSiteBMC(t *testing.T) {
+	s, err := LoadSite(write(t, "site.yaml", "nodes:\n  - {name: k52, bmc: {port: 6231}}\n  - {name: k400, bmc: {port: 6232}}\n", 0o644))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.Node("k52"); n.BMC == nil || n.BMC.Port != 6231 {
+		t.Errorf("bmc %+v", n.BMC)
+	}
+	for _, bad := range []string{
+		"nodes:\n  - {name: k52, bmc: {port: 0}}\n",
+		"nodes:\n  - {name: k52, bmc: {port: 6231}}\n  - {name: k400, bmc: {port: 6231}}\n",
+	} {
+		if _, err := LoadSite(write(t, "site.yaml", bad, 0o644)); err == nil {
+			t.Errorf("%q: want error", bad)
+		}
+	}
+}

@@ -181,3 +181,30 @@ func TestUnknownOutputFormat(t *testing.T) {
 		t.Error("want error for -o xml")
 	}
 }
+
+func TestBMCNode(t *testing.T) {
+	sw := &fakeSwitch{st: testStatus()}
+	b := &bmcNode{node: config.Node{Name: "k53"}, sw: &poeSwitch{sw: sw}}
+	if on, err := b.PowerOn(context.Background()); err != nil || !on {
+		t.Errorf("k53 power %v, %v; want on", on, err)
+	}
+	if err := b.SetPower(context.Background(), false); err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(sw.writes, ",") != "poe 2 false" {
+		t.Errorf("writes %v", sw.writes)
+	}
+	if _, err := (&bmcNode{node: config.Node{Name: "k41"}, sw: &poeSwitch{sw: sw}}).PowerOn(context.Background()); err == nil {
+		t.Error("a node with no switch port: want error")
+	}
+	if _, err := b.Console(); err == nil {
+		t.Error("a node with no console: want error")
+	}
+}
+
+func TestBMCRefuses(t *testing.T) {
+	// testSite has no bmc: nodes, and no .secrets.
+	if _, err := run(t, &fakeSwitch{st: testStatus()}, "bmc"); err == nil || !strings.Contains(err.Error(), "bmc:") {
+		t.Errorf("err = %v", err)
+	}
+}
