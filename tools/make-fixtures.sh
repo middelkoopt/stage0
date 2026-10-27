@@ -35,3 +35,16 @@ for label in gpt dos; do
 	fi
 	gzip -9n < "$img" > "$pout/$label.img.gz"
 done
+
+# internal/qcow2/testdata: a 4 MiB disk with a pattern and a hole, as raw
+# (the expected contents) and as qcow2, plain and zlib-compressed.
+qout=$(cd "$(dirname "$0")/../internal/qcow2/testdata" && pwd)
+raw="$tmp/disk.raw"
+truncate -s 4M "$raw"
+awk 'BEGIN { for (i = 0; i < 20000; i++) printf "stage0 block %06d\n", i }' | dd of="$raw" conv=notrunc status=none
+printf 'tail' | dd of="$raw" bs=1 seek=$((4*1024*1024-4)) conv=notrunc status=none
+qemu-img convert -q -f raw -O qcow2 -o cluster_size=65536 "$raw" "$tmp/plain.qcow2"
+qemu-img convert -q -c -f raw -O qcow2 -o cluster_size=65536,compression_type=zlib "$raw" "$tmp/zlib.qcow2"
+gzip -9n < "$raw" > "$qout/disk.raw.gz"
+gzip -9n < "$tmp/plain.qcow2" > "$qout/plain.qcow2.gz"
+gzip -9n < "$tmp/zlib.qcow2" > "$qout/zlib.qcow2.gz"

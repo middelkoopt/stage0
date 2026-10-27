@@ -18,8 +18,10 @@ Alma (`10.0.3.100`), k400 Raspberry Pi OS (`10.0.3.101`); both on.
 ## Next session
 1. Milestone 2, booting a VM's agent (XX1, decided): `stage0 vswitch` and
    the `vnet` network (tap `stage0tap0`, 10.0.9.1/24) are built. Next:
-   - a qcow2 reader in Go: EL publishes aarch64 cloud images only as
-     qcow2 (Rocky, Alma); convert to raw in the cache;
+   - qcow2 images in image configs: the reader is built
+     (`internal/qcow2`; Rocky 10.2 GenericCloud aarch64 converts to the
+     same bytes as `qemu-img`); next, convert into the cache and serve the
+     raw (or recompressed) image;
    - the agent on Rocky's pxeboot `vmlinuz` + `initrd.img`
      (`/BaseOS/aarch64/os/images/pxeboot/`): stage0's cpio appended after
      the initrd, and the agent loads the modules the hardware asks for with

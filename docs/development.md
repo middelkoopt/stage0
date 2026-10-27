@@ -34,6 +34,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/fat` | Read-only FAT12/16/32 as an `io/fs.FS`, long names included |
 | `internal/neigh` | Finds a MAC's IPv6 addresses on an interface: echo to `ff02::1`, then the netlink neighbour table |
 | `internal/vswitch` | Virtual Ethernet switch for the QEMU test bed (`stage0 vswitch`): QEMU joins over a Unix socket (`-netdev stream`, 4-byte big-endian length per frame), the host through a tap port (`/dev/net/tun`, attached before Go's poller sees it); learns MACs, floods the rest |
+| `internal/qcow2` | Read-only qcow2 (plain and zlib clusters) as a raw disk; refuses backing files, encryption, external data, extended L2, zstd |
 | `internal/cpio` | newc cpio reader and writer (the initramfs format), no root or host tools |
 | `internal/console` | Serial console capture: copy to screen and log, stop on a pattern (`--until`) |
 | `internal/netswitch` | Switch model (ports, PoE, VLANs), port and VLAN lookup, change planning, the `Reader` and `Controller` interfaces |
@@ -45,8 +46,9 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
   (redact serials, MACs and session tokens) and replayed by fakes, so
   `go test ./...` never touches the lab. Disk and FAT fixtures come from
   `tools/make-fixtures.sh`. Checks against real images run only when
-  `STAGE0_TEST_IMAGE` (raw), `STAGE0_TEST_IMAGE_XZ` or
-  `STAGE0_TEST_INITRAMFS` names one.
+  `STAGE0_TEST_IMAGE` (raw), `STAGE0_TEST_IMAGE_XZ`, `STAGE0_TEST_QCOW2`
+  or `STAGE0_TEST_INITRAMFS` names one; `STAGE0_TEST_TAP` and
+  `STAGE0_TEST_QEMU` enable the tap and QEMU checks.
 - **Strict parsing.** Drivers fail on text they don't recognize rather than
   guessing; a firmware change should show up as a test failure.
 - **Nodes are named by their switch-port label** (a port number also works).
