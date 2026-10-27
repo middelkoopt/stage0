@@ -301,3 +301,22 @@ func TestReserveAndIsInstalled(t *testing.T) {
 		t.Errorf("installed system's request: %v", r)
 	}
 }
+
+func TestNTP(t *testing.T) {
+	s := New(Config{
+		Server: netip.MustParseAddr("10.0.3.1"), Subnet: netip.MustParsePrefix("10.0.3.0/24"),
+		PoolFirst: netip.MustParseAddr("10.0.3.100"), PoolLast: netip.MustParseAddr("10.0.3.199"),
+		LeaseTime: time.Hour, NTP: []netip.Addr{netip.MustParseAddr("10.0.3.1")},
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", AgentClass))
+	if r == nil {
+		t.Fatal("no offer")
+	}
+	if got := r.NTPServers(); len(got) != 1 || !got[0].Equal(net.ParseIP("10.0.3.1")) {
+		t.Errorf("NTP servers %v", got)
+	}
+	// None configured: none sent.
+	if r := testServer(t, "10.0.3.199").Reply(discover(t, "d8:3a:dd:c5:c1:f3", AgentClass)); r == nil || r.NTPServers() != nil {
+		t.Errorf("NTP servers sent unasked: %v", r)
+	}
+}

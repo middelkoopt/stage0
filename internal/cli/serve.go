@@ -82,7 +82,7 @@ const installedLeaseTime = 24 * time.Hour
 func (a *App) newLeases(n config.Network, installed map[string]netip.Addr, log *slog.Logger) *dhcpd.Server {
 	return dhcpd.New(dhcpd.Config{
 		Server: n.Server, Subnet: n.Subnet,
-		PoolFirst: n.PoolFirst, PoolLast: n.PoolLast, LeaseTime: leaseTime,
+		PoolFirst: n.PoolFirst, PoolLast: n.PoolLast, LeaseTime: leaseTime, NTP: n.NTPServers,
 		Installed: installed, InstalledLeaseTime: installedLeaseTime,
 	}, log)
 }

@@ -26,6 +26,7 @@ type Config struct {
 	Subnet              netip.Prefix // the network
 	PoolFirst, PoolLast netip.Addr   // addresses to lease
 	LeaseTime           time.Duration
+	NTP                 []netip.Addr // NTP servers to hand out (option 42), if any
 
 	// Installed nodes (MAC -> address) boot from their disks: their PXE
 	// requests get no answer, their systems' plain requests get their
@@ -287,6 +288,13 @@ func (s *Server) reply(req *dhcpv4.DHCPv4, typ dhcpv4.MessageType, ip netip.Addr
 			dhcpv4.WithNetmask(net.CIDRMask(s.cfg.Subnet.Bits(), 32)),
 			dhcpv4.WithLeaseTime(uint32(s.leaseTime(req.ClientHWAddr.String())/time.Second)),
 		)
+		if len(s.cfg.NTP) > 0 {
+			ntp := make([]net.IP, len(s.cfg.NTP))
+			for i, a := range s.cfg.NTP {
+				ntp[i] = net.IP(a.AsSlice())
+			}
+			mods = append(mods, dhcpv4.WithOption(dhcpv4.OptNTPServers(ntp...)))
+		}
 	}
 	if typ != dhcpv4.MessageTypeNak && pxe {
 		mods = append(mods,

@@ -40,6 +40,8 @@ networks:
     pool: 10.0.3.100-10.0.3.199
     vlan: pinet
     prefix6: fd00:10:3::/64
+    # chrony on pilab serves time here (/etc/chrony/conf.d/stage0-pinet.conf).
+    ntp: [10.0.3.1]
   # The QEMU test bed's network: the host's side of the tap stage0tap0
   # (systemd-networkd .netdev), joined by VMs through `stage0 vswitch`.
   - name: vnet

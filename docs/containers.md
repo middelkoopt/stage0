@@ -91,5 +91,7 @@ Not yet: `--ipv6`, VMs, layouts other than the labels'.
   `/usr/lib/clock-epoch` on the installed root to the install time:
   systemd (PID 1) advances a clock that is behind that file's mtime. With
   it, k52 booted about a minute behind pilab, and no signature was BAD
-  (2026-10-27). The container runs chrony, which finds no NTP server on
-  pinet ("Not synchronised"), so the clock drifts from there.
+  (2026-10-27). From there chrony keeps it: stage0's DHCP hands out
+  pinet's NTP server (chrony on pilab, `ntp:` in `site.yaml`), and Rocky's
+  NetworkManager script `20-chrony-dhcp` gives it to chrony
+  (`/run/chrony-dhcp/`); k52 synced to `10.0.3.1` after renewing its lease.

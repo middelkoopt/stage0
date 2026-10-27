@@ -1,6 +1,7 @@
 package config
 
 import (
+	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -319,6 +320,22 @@ nodes:
 	} {
 		if _, err := LoadSite(write(t, "site.yaml", body, 0o644)); err == nil {
 			t.Errorf("%s: want error", name)
+		}
+	}
+}
+
+func TestLoadSiteNTP(t *testing.T) {
+	net := "networks:\n  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199, ntp: [%s]}\n"
+	s, err := LoadSite(write(t, "site.yaml", fmt.Sprintf(net, "10.0.3.1"), 0o644))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.Network("pinet"); len(n.NTPServers) != 1 || n.NTPServers[0].String() != "10.0.3.1" {
+		t.Errorf("ntp %v", n.NTPServers)
+	}
+	for _, bad := range []string{"'fd00::1'", "ntp.example.org"} {
+		if _, err := LoadSite(write(t, "site.yaml", fmt.Sprintf(net, bad), 0o644)); err == nil {
+			t.Errorf("ntp %s: want error", bad)
 		}
 	}
 }

@@ -13,9 +13,7 @@ k52 runs it now (`10.0.3.100` while serve runs). **VMs:** `stage0 install
 vm1 --image rocky-10.2-vm` ([`docs/testbed.md`](docs/testbed.md)).
 
 ## Open decisions
-- BC1: an NTP server for pinet (the installed Pis' chrony has none) —
-  recommended: chrony on pilab serving pinet, handed out by stage0's
-  DHCP (option 42); turns on whether pilab may run it.
+(none)
 
 ## Next session
 1. BB1 (agreed): partition layouts from the node (site.yaml), then the

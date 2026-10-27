@@ -84,6 +84,9 @@ type Network struct {
 	Pool      string `yaml:"pool"`              // addresses to lease: first-last
 	VLAN      string `yaml:"vlan,omitempty"`    // the switch VLAN (name or ID) nodes must be on to install
 	Prefix6   string `yaml:"prefix6,omitempty"` // IPv6 /64 to advertise for SLAAC, e.g. fd00:10:3::/64
+	// NTP servers (IPv4 addresses) DHCP hands out: installed Pis have no
+	// clock battery. stage0 doesn't serve NTP; e.g. chrony on its host.
+	NTP []string `yaml:"ntp,omitempty"`
 
 	// Parsed from the fields above.
 	Server              netip.Addr   `yaml:"-"`
@@ -91,6 +94,7 @@ type Network struct {
 	PoolFirst, PoolLast netip.Addr   `yaml:"-"`
 	IPv6Prefix          netip.Prefix `yaml:"-"` // from Prefix6; invalid if none
 	Server6             netip.Addr   `yaml:"-"` // <prefix>::1, stage0's IPv6 address on it
+	NTPServers          []netip.Addr `yaml:"-"` // from NTP
 }
 
 var (
@@ -223,6 +227,13 @@ func (n *Network) parse() error {
 	}
 	n.Server, n.Subnet = p.Addr(), p.Masked()
 
+	for _, a := range n.NTP {
+		ip, err := netip.ParseAddr(a)
+		if err != nil || !ip.Is4() {
+			return fmt.Errorf("ntp %q: want an IPv4 address", a)
+		}
+		n.NTPServers = append(n.NTPServers, ip)
+	}
 	if n.Prefix6 != "" {
 		p6, err := netip.ParsePrefix(n.Prefix6)
 		if err != nil || !p6.Addr().Is6() || p6.Bits() != 64 {
