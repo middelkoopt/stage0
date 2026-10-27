@@ -68,8 +68,8 @@ to partition, format, copy and install the bootloader (LL1).
 
 **Container route (A, decided BA1–BA3): built** for Pis over IPv4
 ([containers](docs/containers.md)). Layouts come from the node, the image
-config or the labels (BB1). A container comes from a registry or a
-saved layout. Works over IPv6 too. Next for it: private registries. Partitioning could come from an **Ignition** config's
+config or the labels (BB1). A container comes from a registry, podman's
+local store (`podman:<image>`) or a saved layout. Works over IPv6 too. Next for it: private registries. Partitioning could come from an **Ignition** config's
 `storage` section (disks, partitions, filesystems) instead of the
 `pi.provision.partition` label, with dracut's ignition module or the agent
 reading it (unexplored). Later, bootc (E) for UEFI machines, testable in
@@ -127,16 +127,20 @@ HTTP), the agent, initramfs and seed builders (see
    which needs Go 1.27.3 or later (stage0 is on 1.26). The raw-socket
    port waits for it, as stage0 must serve through a netstack port there.
 3. Pi 5 over IPv6. Done (`install --ipv6`, k52).
-4. Network modes beyond *own*: none, boot-only, proxy.
-5. UEFI and x86_64: aarch64 VMs netboot the agent as a UKI by UEFI HTTP
+4. **Pis' virtual BMC** (next, BE1): stage0 as the BMC for the Pis, power
+   backed by PoE and the console by the serial line, so stage-1 tools
+   drive Pis like servers; `stage0 get nodes` (all installed nodes, `-o
+   json`) with it. Protocol to decide (BG1: IPMI 2.0 with SOL, or
+   Redfish). Tested with `ipmitool` on pilab.
+5. Ignition for container partitioning.
+6. UEFI and x86_64: aarch64 VMs netboot the agent as a UKI by UEFI HTTP
    boot, or PXE (done, [test bed](docs/testbed.md)); next x86_64, the
-   installer ISO route, IPMI client with SOL against a virtual BMC.
-6. Install-once state, workflow plans, optional state export for stage 1.
+   installer ISO route, an IPMI client against real BMCs (in another lab).
+7. Network modes beyond *own*: none, boot-only, proxy; when a network
+   with its own DHCP server needs them.
 
-## Later goals
-
-- The switch as a virtual BMC: IPMI (power, SOL) backed by PoE and the
-  serial console, so stage-1 tools can use one interface everywhere.
+Dropped (BE1): install-once state and workflow plans (nothing needs
+them); state export is `stage0 get nodes -o json`, above.
 
 ## Out of scope
 

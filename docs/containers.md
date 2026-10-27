@@ -31,6 +31,12 @@ without `enable_uart=1`, now in the image config.
      container was pushed to (`podman push --tls-verify=false … 
      localhost:5000/stage0/rocky10-rpi:latest`). Nodes never reach the
      registry: stage0 serves what it pulled.
+   - **An image in podman's local store**, `podman:<image>`, e.g.
+     `podman:localhost/stage0/rocky10-rpi`: stage0 runs `podman image save
+     --format oci-dir` into `~/.cache/stage0/oci/podman/<image ID>/`, so
+     each rebuild is picked up and the same image saved once (k52,
+     2026-10-27). For images built here; a registry suits images built
+     elsewhere (CI).
    - **A layout name**, e.g. `rocky10-rpi`: `podman build -t
      stage0/rocky10-rpi containers/rocky10-rpi`, then `podman save
      --format oci-dir -o ~/.cache/stage0/oci/rocky10-rpi
