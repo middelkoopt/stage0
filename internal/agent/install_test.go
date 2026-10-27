@@ -2,6 +2,7 @@ package agent
 
 import (
 	"bytes"
+	"compress/gzip"
 	"crypto/sha256"
 	"encoding/hex"
 	"io"
@@ -132,5 +133,35 @@ func TestFetch(t *testing.T) {
 	}
 	if _, err := Fetch(srv.URL+"/missing", dst, io.Discard); err == nil || !strings.Contains(err.Error(), "404") {
 		t.Errorf("missing: err = %v", err)
+	}
+}
+
+func TestInstallQcow2(t *testing.T) {
+	gunzip := func(name string) []byte {
+		f, err := os.Open(filepath.Join("..", "qcow2", "testdata", name))
+		if err != nil {
+			t.Fatal(err)
+		}
+		defer f.Close()
+		z, err := gzip.NewReader(f)
+		if err != nil {
+			t.Fatal(err)
+		}
+		b, _ := io.ReadAll(z)
+		return b
+	}
+	img, want := gunzip("zlib.qcow2.gz"), gunzip("disk.raw.gz")
+	payload := filepath.Join(t.TempDir(), "image.qcow2")
+	os.WriteFile(payload, img, 0o644)
+	sum := sha256.Sum256(img)
+	disk := filepath.Join(t.TempDir(), "vda")
+	os.WriteFile(disk, make([]byte, 8<<20), 0o600)
+	res, err := Install(payload, disk, hex.EncodeToString(sum[:]), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, _ := os.ReadFile(disk)
+	if !bytes.Equal(got[:len(want)], want) || res.Bytes != int64(len(want)) {
+		t.Errorf("disk differs from the image (result %+v)", res)
 	}
 }

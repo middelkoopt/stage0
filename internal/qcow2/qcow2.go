@@ -77,20 +77,27 @@ const offsetMask = 0x00fffffffffffe00 // bits 9-55: a host offset
 
 // cluster returns the virtual cluster that holds offset off.
 func (img *Image) cluster(off int64) ([]byte, error) {
+	c, _, err := img.clusterData(off)
+	return c, err
+}
+
+// clusterData returns the cluster that holds off, and whether it holds
+// data (false: unallocated or zero, the returned cluster all zeros).
+func (img *Image) clusterData(off int64) ([]byte, bool, error) {
 	cs := int64(1) << img.clusterBits
 	idx := off >> img.clusterBits
 	l2n := cs / 8
 	l1i, l2i := idx/l2n, idx%l2n
 	if l1i >= int64(len(img.l1)) {
-		return make([]byte, cs), nil
+		return make([]byte, cs), false, nil
 	}
 	l2off := int64(img.l1[l1i] & offsetMask)
 	if l2off == 0 {
-		return make([]byte, cs), nil // unallocated: zeros
+		return make([]byte, cs), false, nil // unallocated: zeros
 	}
 	var e [8]byte
 	if _, err := img.r.ReadAt(e[:], l2off+8*l2i); err != nil {
-		return nil, fmt.Errorf("qcow2: L2 entry: %w", err)
+		return nil, false, fmt.Errorf("qcow2: L2 entry: %w", err)
 	}
 	entry := binary.BigEndian.Uint64(e[:])
 	buf := make([]byte, cs)
@@ -101,18 +108,19 @@ func (img *Image) cluster(off int64) ([]byte, error) {
 		sectors := int64((entry>>x)&(1<<(img.clusterBits-8)-1)) + 1
 		comp := make([]byte, sectors*512-host%512)
 		if _, err := img.r.ReadAt(comp, host); err != nil && !errors.Is(err, io.EOF) {
-			return nil, fmt.Errorf("qcow2: compressed cluster: %w", err)
+			return nil, false, fmt.Errorf("qcow2: compressed cluster: %w", err)
 		}
 		if _, err := io.ReadFull(flate.NewReader(bytes.NewReader(comp)), buf); err != nil {
-			return nil, fmt.Errorf("qcow2: inflating a cluster: %w", err)
+			return nil, false, fmt.Errorf("qcow2: inflating a cluster: %w", err)
 		}
 	case entry&1 != 0, entry&offsetMask == 0: // reads as zeros
+		return buf, false, nil
 	default:
 		if _, err := img.r.ReadAt(buf, int64(entry&offsetMask)); err != nil {
-			return nil, fmt.Errorf("qcow2: cluster: %w", err)
+			return nil, false, fmt.Errorf("qcow2: cluster: %w", err)
 		}
 	}
-	return buf, nil
+	return buf, true, nil
 }
 
 // ReadAt reads the virtual disk.
@@ -144,6 +152,29 @@ func (img *Image) WriteTo(w io.Writer) (int64, error) {
 			return n, err
 		}
 		m, err := w.Write(c[:min(cs, img.size-off)])
+		n += int64(m)
+		if err != nil {
+			return n, err
+		}
+	}
+	return n, nil
+}
+
+// WriteSparse writes the clusters that hold data to w at their offsets,
+// skipping unallocated and zero clusters (a fresh or don't-care disk), and
+// returns the bytes written.
+func (img *Image) WriteSparse(w io.WriterAt) (int64, error) {
+	cs := int64(1) << img.clusterBits
+	var n int64
+	for off := int64(0); off < img.size; off += cs {
+		c, data, err := img.clusterData(off)
+		if err != nil {
+			return n, err
+		}
+		if !data {
+			continue
+		}
+		m, err := w.WriteAt(c[:min(cs, img.size-off)], off)
 		n += int64(m)
 		if err != nil {
 			return n, err

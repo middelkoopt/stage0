@@ -70,6 +70,13 @@ func TestServe(t *testing.T) {
 		t.Errorf("config.txt = %q, %v", got.String(), err)
 	}
 
+	pr, err := http.Post("http://"+hln.Addr().String()+"/stage0/report/installed", "application/octet-stream", strings.NewReader(`{"bytes":1}`))
+	if err != nil || pr.StatusCode != http.StatusNoContent {
+		t.Errorf("agent report: %v %v", pr, err)
+	}
+	if pr != nil {
+		pr.Body.Close()
+	}
 	resp, err := http.Get("http://" + hln.Addr().String() + "/config.txt")
 	if err != nil {
 		t.Fatal(err)
@@ -95,7 +102,7 @@ func TestServe(t *testing.T) {
 		if r.err != nil {
 			t.Fatalf("serve: %v\n%s", r.err, r.out)
 		}
-		for _, want := range []string{"msg=serving", "tftp: sent", "file=/config.txt", "dhcp: offer", "ip=10.0.3.100", "http: sent", "msg=stopped"} {
+		for _, want := range []string{"msg=serving", "tftp: sent", "file=/config.txt", "dhcp: offer", "ip=10.0.3.100", "http: sent", "agent: installed", "msg=stopped"} {
 			if !strings.Contains(r.out, want) {
 				t.Errorf("log lacks %q:\n%s", want, r.out)
 			}

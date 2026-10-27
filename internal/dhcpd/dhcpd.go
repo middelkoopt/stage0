@@ -34,6 +34,10 @@ type Config struct {
 	InstalledLeaseTime time.Duration
 }
 
+// AgentClass is the vendor class stage0's agent sends when it asks for an
+// address itself.
+const AgentClass = "stage0-agent"
+
 // piBoot is option 43 for a Raspberry Pi: PXE discovery control 3, menu
 // prompt "PXE" with timeout 0, and one boot menu item "Raspberry Pi Boot".
 // The bootloader looks for that item; these are the bytes dnsmasq's
@@ -166,6 +170,9 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 	mac := req.ClientHWAddr.String()
 	log := s.log.With("mac", mac, "class", req.ClassIdentifier())
 	pxe := strings.HasPrefix(req.ClassIdentifier(), "PXEClient")
+	// stage0's agent when it booted without PXE (a VM given -kernel):
+	// a node to lease to, but one that needs no boot options.
+	agent := req.ClassIdentifier() == AgentClass
 	s.mu.Lock()
 	installed := s.installed[mac]
 	s.mu.Unlock()
@@ -173,7 +180,7 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 		log.Debug("dhcp: ignored, installed node (it boots from its disk)", "type", req.MessageType())
 		return nil
 	}
-	if !pxe {
+	if !pxe && !agent {
 		s.mu.Lock()
 		_, booted := s.leases[mac]
 		s.mu.Unlock()

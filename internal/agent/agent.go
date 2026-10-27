@@ -76,7 +76,13 @@ func Main() {
 			fmt.Fprintf(out, "STAGE0-ERROR mount %s: %v\n", m.dir, err)
 		}
 	}
+	loadModules(out)
 	cmdline, _ := os.ReadFile("/proc/cmdline")
+	if needsNetwork(string(cmdline)) {
+		if err := bringUpNetwork(out); err != nil {
+			fmt.Fprintf(out, "stage0 agent: network: %v\n", err)
+		}
+	}
 	e := emitter{out: out, url: reportURL(string(cmdline))}
 	r, err := settle("/", 500*time.Millisecond, 3*time.Second, 30*time.Second)
 	if err != nil {
@@ -131,6 +137,19 @@ func install(e emitter, cmdline string) {
 	}
 	b, _ := json.Marshal(res)
 	e.emit(kindInstalled, b)
+}
+
+// needsNetwork reports whether the command line asks for anything over
+// the network.
+func needsNetwork(cmdline string) bool {
+	for _, f := range strings.Fields(cmdline) {
+		for _, p := range []string{"stage0.url=", "stage0.seed=", "stage0.report="} {
+			if strings.HasPrefix(f, p) {
+				return true
+			}
+		}
+	}
+	return false
 }
 
 // settle gathers until the disk list has stayed the same for quiet (disks

@@ -271,3 +271,16 @@ func TestInstalledNodes(t *testing.T) {
 		t.Errorf("Acked = %v, %v", ip, ok)
 	}
 }
+
+func TestAnswersStage0Agent(t *testing.T) {
+	// stage0's agent booted without PXE (a VM given -kernel) asks with its
+	// own vendor class: answered like a PXE client, without boot options.
+	s := testServer(t, "10.0.3.199")
+	r := s.Reply(discover(t, "52:54:00:12:34:56", "stage0-agent"))
+	if r == nil || r.YourIPAddr.String() != "10.0.3.100" {
+		t.Fatalf("agent's discover: %v", r)
+	}
+	if r.GetOneOption(dhcpv4.OptionVendorSpecificInformation) != nil || r.TFTPServerName() != "" {
+		t.Error("boot options sent to the agent")
+	}
+}

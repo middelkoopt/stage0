@@ -5,33 +5,24 @@ for how an install works and [`docs/development.md`](docs/development.md)
 for code.
 
 ## Status (2026-10-26)
-**Three images install and come up with SSH,** on the Pi 5 (k52) and the
-Pi 400 (k400): AlmaLinux 10.1 and Raspberry Pi OS Lite trixie on both,
-Rocky 10.2 on the Pi 5 only (it doesn't boot a Pi 4; see
-[`docs/images.md`](docs/images.md)). Each ends at its stage0 lease with the
-site's keys and its hostname, with or without a serial console. k52 runs
-Alma (`10.0.3.100`), k400 Raspberry Pi OS (`10.0.3.101`); both on.
+**Pis:** three images install and come up with SSH on the Pi 5 (k52) and
+the Pi 400 (k400) (Rocky 10.2: Pi 5 only); k52 runs Alma (`10.0.3.100`),
+k400 Raspberry Pi OS (`10.0.3.101`), both on. **VMs:** run by hand, stage0
+installed Rocky's aarch64 cloud image in a QEMU VM on the private test
+network, and the disk boots with UEFI to a login prompt with SSH
+([`docs/testbed.md`](docs/testbed.md)).
 
 ## Open decisions
 (none)
 
 ## Next session
-1. Milestone 2, booting a VM's agent (XX1, decided): `stage0 vswitch` and
-   the `vnet` network (tap `stage0tap0`, 10.0.9.1/24) are built. Next:
-   - qcow2 images in image configs: the reader is built
-     (`internal/qcow2`; Rocky 10.2 GenericCloud aarch64 converts to the
-     same bytes as `qemu-img`); next, convert into the cache and serve the
-     raw (or recompressed) image;
-   - the agent on Rocky's pxeboot `vmlinuz` + `initrd.img`
-     (`/BaseOS/aarch64/os/images/pxeboot/`): stage0's cpio appended after
-     the initrd. If EL builds virtio as modules (likely; unverified), the
-     agent must load them (the initrd's `modprobe`, for each `modalias`
-     under `/sys`) and then bring up the network itself, since the
-     kernel's `ip=dhcp` runs before modules load: a DHCP client (the
-     insomniacslk library has one) and address setup over netlink;
-   - QEMU boots it with `-kernel`/`-initrd`, NIC on the vswitch; installs a
-     cloud image to a virtual disk, which then boots with UEFI (AAVMF; no
-     netboot needed for a disk).
-2. k53 is powered off (it may run DHCP on piwulf); it may be powered and
+1. `stage0 install` for VM nodes: site config for a VM (QEMU: memory,
+   disk file, MAC, the vswitch socket), power = starting and stopping the
+   QEMU process, the agent kernel and initrd from an image config (the
+   pxeboot files and their checksums from `.treeinfo`), the console from
+   QEMU's serial.
+2. cloud-init NoCloud served by stage0 for cloud images (hostname, SSH
+   keys): QEMU `-smbios type=1,serial=ds=nocloud;s=http://10.0.9.1/…/`.
+3. k53 is powered off (it may run DHCP on piwulf); it may be powered and
    used as root, stopping (not disabling) its services. Its `sudo` needs a
    password stage0 doesn't have.

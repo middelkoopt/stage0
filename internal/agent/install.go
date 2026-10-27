@@ -12,6 +12,8 @@ import (
 	"time"
 
 	"github.com/ulikunitz/xz"
+
+	"github.com/middelkoopt/stage0/internal/qcow2"
 )
 
 // InstalledPrefix starts the line the agent prints after writing the disk.
@@ -131,9 +133,16 @@ func Install(payloadPath, device, wantSHA string, progress io.Writer) (Result, e
 		return res, err
 	}
 	defer src.Close()
+	var magic [6]byte
+	if _, err := src.ReadAt(magic[:], 0); err != nil {
+		return res, fmt.Errorf("payload: %w", err)
+	}
+	if string(magic[:4]) == "QFI\xfb" {
+		return installQcow2(src, device, res, progress)
+	}
 	img, err := xz.NewReader(bufio.NewReaderSize(src, 1<<20))
 	if err != nil {
-		return res, fmt.Errorf("payload is not xz: %w", err)
+		return res, fmt.Errorf("payload is neither xz nor qcow2: %w", err)
 	}
 
 	dst, err := os.OpenFile(device, os.O_WRONLY, 0)
@@ -163,6 +172,42 @@ func Install(payloadPath, device, wantSHA string, progress io.Writer) (Result, e
 	res.Seconds = time.Since(start).Seconds()
 	if res.Seconds > 0 {
 		res.MBps = float64(int(float64(n)/res.Seconds/1e5)) / 10
+	}
+	return res, err
+}
+
+// installQcow2 writes a qcow2 payload's data clusters to device (the
+// payload's checksum is already checked).
+func installQcow2(src *os.File, device string, res Result, progress io.Writer) (Result, error) {
+	img, err := qcow2.Open(src)
+	if err != nil {
+		return res, err
+	}
+	dst, err := os.OpenFile(device, os.O_WRONLY, 0)
+	if err != nil {
+		return res, err
+	}
+	size, err := dst.Seek(0, io.SeekEnd)
+	if err == nil && img.Size() > size {
+		err = fmt.Errorf("image (%d bytes) is larger than the disk (%d bytes)", img.Size(), size)
+	}
+	if err != nil {
+		dst.Close()
+		return res, err
+	}
+	start := time.Now()
+	fmt.Fprintf(progress, "stage0 agent: writing a %d MB qcow2 image (data clusters only)\n", img.Size()>>20)
+	written, err := img.WriteSparse(dst)
+	if err == nil {
+		err = dst.Sync()
+	}
+	if cerr := dst.Close(); err == nil {
+		err = cerr
+	}
+	res.Bytes = img.Size()
+	res.Seconds = time.Since(start).Seconds()
+	if res.Seconds > 0 {
+		res.MBps = float64(int(float64(written)/res.Seconds/1e5)) / 10
 	}
 	return res, err
 }

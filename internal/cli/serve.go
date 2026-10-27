@@ -62,7 +62,11 @@ func (a *App) serveCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			return a.serve(ctx, n, root, a.newLeases(n, installed, log), nil, log)
+			// Agents booted by hand report here too; serve just logs them.
+			report := func(from, kind string, body []byte) {
+				log.Info("agent: "+kind, "from", from, "body", string(body))
+			}
+			return a.serve(ctx, n, root, a.newLeases(n, installed, log), report, log)
 		},
 	}
 	cmd.Flags().StringVar(&root, "root", "", "directory of boot files to serve over TFTP and HTTP (none: DHCP only)")

@@ -2,8 +2,8 @@ package qcow2
 
 import (
 	"bytes"
-	"crypto/sha256"
 	"compress/gzip"
+	"crypto/sha256"
 	"io"
 	"os"
 	"path/filepath"
@@ -99,4 +99,36 @@ func TestRealImage(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Logf("%d bytes, sha256 %x", n, h.Sum(nil))
+}
+
+// zeroWriterAt is a disk of zeros that records what is written.
+type zeroWriterAt struct {
+	b      []byte
+	writes int
+}
+
+func (z *zeroWriterAt) WriteAt(p []byte, off int64) (int, error) {
+	z.writes++
+	return copy(z.b[off:], p), nil
+}
+
+func TestWriteSparse(t *testing.T) {
+	want := fixture(t, "disk.raw.gz")
+	img, err := Open(bytes.NewReader(fixture(t, "zlib.qcow2.gz")))
+	if err != nil {
+		t.Fatal(err)
+	}
+	disk := &zeroWriterAt{b: make([]byte, len(want))}
+	n, err := img.WriteSparse(disk)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !bytes.Equal(disk.b, want) {
+		t.Error("sparse write differs from the raw image")
+	}
+	// 4 MiB in 64 KiB clusters is 64; the pattern fills about 6 and the
+	// tail one more: the hole is skipped.
+	if disk.writes > 10 || n > 10*65536 {
+		t.Errorf("%d writes, %d bytes: the hole was written", disk.writes, n)
+	}
 }
