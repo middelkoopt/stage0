@@ -20,7 +20,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | Path | What |
 | --- | --- |
 | `cmd/stage0` | `main`: signal handling, exit code; runs the agent instead when it is PID 1 |
-| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`, `build initrd`, `build seed`, `install`, `get address`, `check`, `vswitch`, `bmc`); every command supports `-o json`, write commands `--dry-run` |
+| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`, `build initrd`, `build seed`, `install`, `get address`, `get nodes`, `check`, `vswitch`, `bmc`); every command supports `-o json`, write commands `--dry-run` |
 | `internal/config` | `site.yaml` (committed: switches; nodes with console, install disk, network, or `vm:` for test bed VMs; networks with their VLAN, IPv6 prefix and NTP servers; a node may give a container layout) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
 | `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients, then the same MACs' kernels (`ip=dhcp`, no vendor class) with the same address; stage0's agent asking itself (vendor class `stage0-agent`, a VM booted with `-kernel`); installed nodes get plain leases (24 h) and no answer to PXE; in-memory leases; the Pi's option 43, or `uki.efi` (TFTP) or its URL (UEFI HTTP boot) for aarch64 UEFI clients; the network's NTP servers (option 42) |
 | `internal/httpd` | HTTP (port 80) from the same root, every request logged; for images too big or slow for TFTP. Read-only except agents' `POST /stage0/report/<kind>`, when a listener is set |

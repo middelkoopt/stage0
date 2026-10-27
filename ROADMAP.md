@@ -127,12 +127,10 @@ HTTP), the agent, initramfs and seed builders (see
    which needs Go 1.27.3 or later (stage0 is on 1.26). The raw-socket
    port waits for it, as stage0 must serve through a netstack port there.
 3. Pi 5 over IPv6. Done (`install --ipv6`, k52).
-4. **Pis' virtual BMC** (next, BE1): stage0 as the BMC for the Pis, power
-   backed by PoE and the console by the serial line, so stage-1 tools
-   drive Pis like servers; `stage0 get nodes` (all installed nodes, `-o
-   json`) with it. Protocol to decide (BG1: IPMI 2.0 with SOL, or
-   Redfish). Tested with `ipmitool` on pilab.
-5. Ignition for container partitioning.
+4. **Pis' virtual BMC:** done (`stage0 bmc`: IPMI 2.0 with power by PoE and
+   SOL by the serial console, [bmc](docs/bmc.md); `stage0 get nodes -o
+   json` for stage 1).
+5. Ignition for container partitioning (next).
 6. UEFI and x86_64: aarch64 VMs netboot the agent as a UKI by UEFI HTTP
    boot, or PXE (done, [test bed](docs/testbed.md)); next x86_64, the
    installer ISO route, an IPMI client against real BMCs (in another lab).

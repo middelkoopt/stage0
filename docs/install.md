@@ -157,6 +157,11 @@ class, so stage0's DHCPv4 leaves it alone: [containers](containers.md))
 and for VMs (UEFI HTTP boot over IPv6: [test bed](testbed.md)). The
 installed system then gets its IPv4 lease too.
 
+`stage0 get nodes` lists the nodes with what was installed (image, when,
+MAC, IPv4 lease, the IPv6 address found after boot) from the install
+records, and each node's virtual BMC; `-o json` is for stage 1. It looks
+nothing up on the network.
+
 With `--keep`, `install` keeps serving after the install (renewing the
 node's lease) until interrupted or `--timeout`.
 
