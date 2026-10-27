@@ -66,14 +66,15 @@ builds a root filesystem in RAM (from a container built here, or the
 image's partitions mounted) and runs the target's own tools from a chroot
 to partition, format, copy and install the bootloader (LL1).
 
-**Container route (A, decided BA1–BA3): built** for Pis over IPv4
-([containers](docs/containers.md)). Layouts come from the node, the image
-config or the labels (BB1). A container comes from a registry, podman's
-local store (`podman:<image>`) or a saved layout. Works over IPv6 too. Next for it: private registries. Partitioning can come from an **Ignition** config's
-`storage` section (disks, partitions, filesystems) instead of the
-`pi.provision.partition` label, with dracut's ignition module or the agent
-reading it (unexplored). Later, bootc (E) for UEFI machines, testable in
-QEMU with Ubuntu's firmware ([netboot](docs/netboot.md#qemu-aarch64)).
+**Container route (A, decided BA1–BA3): built** for Pis, over IPv4 or
+IPv6 ([containers](docs/containers.md)). A container comes from a
+registry, podman's local store (`podman:<image>`) or a saved layout; its
+layout from the node, the image config or the labels (BB1), as a
+partition list or an Ignition config that the installer's Ignition
+applies. Next for it: private registries; Ignition's files, users and
+units on the installed system. Later, bootc (E) for UEFI machines,
+testable in QEMU with Ubuntu's firmware
+([netboot](docs/netboot.md#qemu-aarch64)).
 
 ## Components (one static Go binary)
 
