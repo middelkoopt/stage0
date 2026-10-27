@@ -14,7 +14,18 @@ the private test network and sees it up with SSH, hostname `vm1` and the
 site's keys from NoCloud, in 96 s ([`docs/testbed.md`](docs/testbed.md)).
 
 ## Open decisions
-(none)
+- **AB1** Fewer approval prompts. They come from refreshing the
+  `CAP_NET_RAW` copy (`sudo install` + `sudo setcap`) after every rebuild,
+  needed only for router advertisements. Options: (a) let systemd-networkd
+  send the RAs (`IPv6SendRA=yes`, `[IPv6Prefix]`, router lifetime 0 in
+  `eth0.3.network`), so stage0 needs no capability; (b) a small privileged
+  helper with a narrow interface, rebuilt rarely, for RAs and the neighbour
+  entries IPv6 netboot needs; (c) narrow the global `ask` rule on `sudo`.
+  Recommendation: (a) now; (b) only if IPv6 netboot is pursued.
+- **AB2** IPv6 netboot on the Pi 5: the bootloader doesn't answer neighbour
+  solicitations for its DHCPv6 address, so the host can't reply without a
+  static neighbour entry (CAP_NET_ADMIN, see AB1 (b)). Keep going, or park
+  it? Recommendation: park; IPv4 works.
 
 ## Next session
 1. Milestone 3 and on ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)):

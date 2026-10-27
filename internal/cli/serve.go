@@ -12,6 +12,7 @@ import (
 	"golang.org/x/sync/errgroup"
 
 	"github.com/middelkoopt/stage0/internal/config"
+	"github.com/middelkoopt/stage0/internal/dhcp6d"
 	"github.com/middelkoopt/stage0/internal/dhcpd"
 	"github.com/middelkoopt/stage0/internal/httpd"
 	"github.com/middelkoopt/stage0/internal/radv"
@@ -119,6 +120,23 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 			return nil
 		})
 	}
+	if socks.DHCP6 != nil {
+		ifc, _ := net.InterfaceByName(n.Interface)
+		var mac net.HardwareAddr
+		if ifc != nil {
+			mac = ifc.HardwareAddr
+		}
+		// The Bootfile-URL names the global address: with the link-local
+		// one the Pi took the reply but didn't go on to TFTP (docs/netboot.md).
+		leases6 := dhcp6d.New(dhcp6d.Config{Server: n.Server6, Prefix: n.IPv6Prefix, MAC: mac}, log)
+		log.Info("serving IPv6 netboot (experimental)", "address", n.Server6)
+		g.Go(func() error { return leases6.Serve(ctx, socks.DHCP6) })
+		if root != "" {
+			g.Go(func() error { return files.Serve(ctx, socks.TFTP6) })
+		} else {
+			socks.TFTP6.Close()
+		}
+	}
 	if root != "" {
 		g.Go(func() error { return files.Serve(ctx, socks.TFTP) })
 		g.Go(func() error { return web.Serve(ctx, socks.HTTP) })
@@ -131,10 +149,12 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 	return err
 }
 
-// Sockets are serve's listening sockets.
+// Sockets are serve's listening sockets. DHCP6 and TFTP6 are nil when
+// the network has no IPv6 prefix, or the interface lacks <prefix>::1.
 type Sockets struct {
-	DHCP, TFTP net.PacketConn
-	HTTP       net.Listener
+	DHCP, TFTP   net.PacketConn
+	HTTP         net.Listener
+	DHCP6, TFTP6 net.PacketConn
 }
 
 // openNetwork checks the network's interface and opens serve's sockets
@@ -157,7 +177,34 @@ func openNetwork(ctx context.Context, n config.Network) (Sockets, error) {
 		s.TFTP.Close()
 		return s, err
 	}
+	// IPv6 netboot, if the interface carries <prefix>::1.
+	if n.Server6.IsValid() && checkInterfaceAddr(n.Interface, n.Server6) {
+		if s.DHCP6, err = dhcp6d.Listen(ctx, n.Interface); err == nil {
+			// [::], pinned to the interface: the library can't listen on an
+			// address with a zone (fe80::…%eth0.3).
+			if s.TFTP6, err = tftpd.Listen(ctx, n.Interface, netip.IPv6Unspecified()); err != nil {
+				s.DHCP6.Close()
+				s.DHCP6 = nil
+			}
+		}
+		err = nil // IPv6 netboot is optional; serve says what runs
+	}
 	return s, nil
+}
+
+// checkInterfaceAddr reports whether ifname carries addr.
+func checkInterfaceAddr(ifname string, addr netip.Addr) bool {
+	ifc, err := net.InterfaceByName(ifname)
+	if err != nil {
+		return false
+	}
+	addrs, _ := ifc.Addrs()
+	for _, a := range addrs {
+		if p, err := netip.ParsePrefix(a.String()); err == nil && p.Addr() == addr {
+			return true
+		}
+	}
+	return false
 }
 
 // checkInterface makes sure ifname is up and is the only interface carrying

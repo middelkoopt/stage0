@@ -90,6 +90,7 @@ type Network struct {
 	Subnet              netip.Prefix `yaml:"-"`
 	PoolFirst, PoolLast netip.Addr   `yaml:"-"`
 	IPv6Prefix          netip.Prefix `yaml:"-"` // from Prefix6; invalid if none
+	Server6             netip.Addr   `yaml:"-"` // <prefix>::1, stage0's IPv6 address on it
 }
 
 var (
@@ -228,6 +229,9 @@ func (n *Network) parse() error {
 			return fmt.Errorf("prefix6 %q: want an IPv6 /64, e.g. fd00:10:3::/64 (SLAAC needs a /64)", n.Prefix6)
 		}
 		n.IPv6Prefix = p6.Masked()
+		a := n.IPv6Prefix.Addr().As16()
+		a[15] = 1
+		n.Server6 = netip.AddrFrom16(a)
 	}
 	first, last, ok := strings.Cut(n.Pool, "-")
 	if !ok {

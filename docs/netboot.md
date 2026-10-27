@@ -76,6 +76,28 @@ Source unless noted: Raspberry Pi documentation
   EEPROM; the lab set 60000 on Pi 5s) is the knob, and that the ~92 MB
   ceiling in `../lab` is the same limit at 30 s, are inferences, unverified.
 
+## IPv6 netboot on a Pi 5 (experimental, not working yet)
+
+Seen on k52 (bootloader 2026-09-25, `USE_IPV6=1`, 2026-10-26), with
+`stage0 serve` advertising `fd00:10:3::/64` and answering DHCPv6:
+
+- The bootloader sends router solicitations, then DHCPv6 Solicits from its
+  link-local address with an IA_NA, a request for the Bootfile-URL, and
+  option 61 (client architecture). Without a router advertisement in reply
+  it didn't solicit at all in one run.
+- Given `fd00:10:3::100` and `tftp://[fd00:10:3::1]/`, it logged
+  `NET fd00:10:3::100 tftp fd00:10:3::1` and asked for `config.txt` over
+  TFTP, but **never answered the host's neighbour solicitations** for
+  `fd00:10:3::100` (94 unanswered), so the host could not send it a single
+  reply; it retried until it gave up. (The lab notes: "Pi 5 IPv6 netboot
+  failed without manual neighbour-table entries on the server".) A static
+  neighbour entry needs `CAP_NET_ADMIN`.
+- With the Bootfile-URL naming the host's link-local address instead, the
+  bootloader took the DHCPv6 reply but didn't go on to TFTP.
+- The TFTP library can't listen on an address with a zone; IPv6 TFTP is
+  served on `[::]:69` pinned to the interface, one socket for all
+  transfers, blocks capped at 1428 bytes.
+
 ## Bootloader (EEPROM) updates
 
 Done on the free nodes (2026-10-26) with Raspberry Pi's own tools, from

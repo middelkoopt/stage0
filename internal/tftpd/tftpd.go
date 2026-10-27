@@ -48,7 +48,11 @@ func Listen(ctx context.Context, ifname string, addr netip.Addr) (net.PacketConn
 		})
 		return errors.Join(err, serr)
 	}}
-	pc, err := lc.ListenPacket(ctx, "udp4", netip.AddrPortFrom(addr, 69).String())
+	network := "udp4"
+	if addr.Is6() {
+		network = "udp6"
+	}
+	pc, err := lc.ListenPacket(ctx, network, netip.AddrPortFrom(addr, 69).String())
 	if err != nil {
 		return nil, fmt.Errorf("tftp on %s: %w", ifname, err)
 	}
@@ -58,6 +62,14 @@ func Listen(ctx context.Context, ifname string, addr netip.Addr) (net.PacketConn
 // Serve answers read requests on conn until ctx is done; writes are refused.
 func (s *Server) Serve(ctx context.Context, conn net.PacketConn) error {
 	srv := tftp.NewServer(s.read, nil)
+	if u, ok := conn.LocalAddr().(*net.UDPAddr); ok && u.IP.To4() == nil {
+		// Over IPv6, blocks of 1428 bytes fit a 1500-byte frame; a Pi
+		// asks for 1468 (fine over IPv4) and needs this cap (lab notes).
+		// One socket for all transfers: per-transfer sockets would bind the
+		// request's link-local address without its zone, which fails.
+		srv.SetBlockSize(1428)
+		srv.EnableSinglePort()
+	}
 	stop := context.AfterFunc(ctx, srv.Shutdown)
 	defer stop()
 	err := srv.Serve(conn)
