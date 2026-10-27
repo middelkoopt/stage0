@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
@@ -109,6 +110,18 @@ func (a *App) installedOn(n config.Network, except string) (map[string]netip.Add
 	return out, nil
 }
 
+// nodeNetwork is the network a node is on: the flag, else its install
+// record's, else its site entry's, else the site's only one.
+func nodeNetwork(site *config.Site, flag string, r installResult) (config.Network, error) {
+	name := cmp.Or(flag, r.Network)
+	if name == "" {
+		if n, err := site.Node(r.Node); err == nil {
+			name = n.Network
+		}
+	}
+	return oneNetwork(site, name)
+}
+
 // macs are the node's MAC addresses, from the agent's report.
 func (r installResult) macs() ([]net.HardwareAddr, error) {
 	var rep agent.Report
@@ -164,11 +177,11 @@ func (a *App) addressCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := oneNetwork(site, network)
+			r, err := a.loadRecord(args[0])
 			if err != nil {
 				return err
 			}
-			r, err := a.loadRecord(args[0])
+			n, err := nodeNetwork(site, network, r)
 			if err != nil {
 				return err
 			}
@@ -206,11 +219,11 @@ func (a *App) checkCommand() *cobra.Command {
 			if err != nil {
 				return err
 			}
-			n, err := oneNetwork(site, network)
+			rec, err := a.loadRecord(args[0])
 			if err != nil {
 				return err
 			}
-			rec, err := a.loadRecord(args[0])
+			n, err := nodeNetwork(site, network, rec)
 			if err != nil {
 				return err
 			}

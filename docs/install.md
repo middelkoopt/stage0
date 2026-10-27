@@ -1,7 +1,7 @@
 # How an install works
 
-How stage0 installs a node, as built and run on k52 (Raspberry Pi 5,
-Rocky 10.2):
+How stage0 installs a node on a switch port, as built and run on k52
+(Raspberry Pi 5, Rocky 10.2); VMs on the test bed: [`testbed.md`](testbed.md).
 
 ```
 $ ./stage0 install k52 --image rocky-10.2-rpi     # 4 minutes on k52

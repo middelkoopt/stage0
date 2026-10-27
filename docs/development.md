@@ -21,7 +21,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | --- | --- |
 | `cmd/stage0` | `main`: signal handling, exit code; runs the agent instead when it is PID 1 |
 | `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`, `build initrd`, `build seed`, `install`, `get address`, `check`, `vswitch`); every command supports `-o json`, write commands `--dry-run` |
-| `internal/config` | `site.yaml` (committed: switches, nodes with console and install disk, networks with their VLAN) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
+| `internal/config` | `site.yaml` (committed: switches; nodes with console, install disk, network, or `vm:` for test bed VMs; networks with their VLAN and IPv6 prefix) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
 | `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients, then the same MACs' kernels (`ip=dhcp`, no vendor class) with the same address; stage0's agent asking itself (vendor class `stage0-agent`, a VM booted with `-kernel`); installed nodes get plain leases (24 h) and no answer to PXE; in-memory leases; the Pi's option 43 |
 | `internal/httpd` | HTTP (port 80) from the same root, every request logged; for images too big or slow for TFTP. Read-only except agents' `POST /stage0/report/<kind>`, when a listener is set |
 | `internal/radv` | IPv6 router advertisements of one prefix (lifetime 0, no default route), for SLAAC; needs `CAP_NET_RAW` |
@@ -33,6 +33,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/ptable` | GPT and MBR partition tables of a disk image |
 | `internal/fat` | Read-only FAT12/16/32 as an `io/fs.FS`, long names included |
 | `internal/neigh` | Finds a MAC's IPv6 addresses on an interface: echo to `ff02::1`, then the netlink neighbour table |
+| `internal/qemu` | The test bed's VMs: QEMU arguments for the agent boot (`-kernel`/`-initrd`) and the disk boot (UEFI, SMBIOS serial), start and stop |
 | `internal/vswitch` | Virtual Ethernet switch for the QEMU test bed (`stage0 vswitch`): QEMU joins over a Unix socket (`-netdev stream`, 4-byte big-endian length per frame), the host through a tap port (`/dev/net/tun`, attached before Go's poller sees it); learns MACs, floods the rest |
 | `internal/qcow2` | Read-only qcow2 (plain and zlib clusters) as a raw disk; refuses backing files, encryption, external data, extended L2, zstd |
 | `internal/cpio` | newc cpio reader and writer (the initramfs format), no root or host tools |

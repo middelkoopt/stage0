@@ -80,11 +80,13 @@ sshKeys:
 switches:
   - {name: lab, address: switch.example}
 nodes:
-  - {name: k53, console: {device: /dev/serial/by-id/probe}, disk: mmcblk0}
+  - {name: k53, console: {device: /dev/serial/by-id/probe}, disk: mmcblk0, network: pinet}
   - {name: k41}
-  - {name: k52, disk: mmcblk0}
+  - {name: k52, disk: mmcblk0, network: pinet}
+  - {name: vm1, disk: vda, network: vnet, vm: {mac: "52:54:00:12:34:56"}}
 networks:
   - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199, vlan: pinet}
+  - {name: vnet, interface: stage0tap0, address: 10.0.9.1/24, pool: 10.0.9.100-10.0.9.199}
 `
 
 // run executes the CLI against testSite, with the switch served by sw.

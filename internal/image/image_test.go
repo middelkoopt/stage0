@@ -215,3 +215,42 @@ func TestLoadBootFiles(t *testing.T) {
 		t.Errorf("config %+v", c)
 	}
 }
+
+func TestLoadVMImage(t *testing.T) {
+	dir := t.TempDir()
+	sum := strings.Repeat("ab", 32)
+	writeConfig(t, dir, "rocky-vm", "url: https://e.org/Rocky.aarch64.qcow2\nsha256: "+sum+
+		"\nnocloud: true\nkernel: {url: https://e.org/vmlinuz, sha256: "+sum+"}\ninitrd: {url: https://e.org/initrd.img, sha256: "+sum+"}\n")
+	c, err := Load(dir, "rocky-vm")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !c.NoCloud || c.Kernel == nil || c.Kernel.File() != "vmlinuz" || c.Initrd.SHA256 != sum || !c.VM() {
+		t.Errorf("config %+v", c)
+	}
+	for name, body := range map[string]string{
+		"kernel without initrd": "url: https://e.org/a.qcow2\nsha256: " + sum + "\nkernel: {url: https://e.org/k, sha256: " + sum + "}\n",
+		"bad kernel sha":        "url: https://e.org/a.qcow2\nsha256: " + sum + "\nkernel: {url: https://e.org/k, sha256: x}\ninitrd: {url: https://e.org/i, sha256: " + sum + "}\n",
+		"no cmdline, no kernel": "url: https://e.org/a.raw.xz\nsha256: " + sum + "\n",
+	} {
+		writeConfig(t, dir, "bad", body)
+		if _, err := Load(dir, "bad"); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}
+
+func TestFetchFile(t *testing.T) {
+	body := []byte("kernel bytes")
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(body) }))
+	defer srv.Close()
+	sum := sha256.Sum256(body)
+	f := File{URL: srv.URL + "/vmlinuz", SHA256: hex.EncodeToString(sum[:])}
+	p, err := FetchFile(context.Background(), f, t.TempDir(), io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if b, _ := os.ReadFile(p); string(b) != "kernel bytes" || filepath.Base(p) != "vmlinuz" {
+		t.Errorf("%s: %q", p, b)
+	}
+}

@@ -1,6 +1,7 @@
 package cli
 
 import (
+	"cmp"
 	"context"
 	"encoding/base64"
 	"encoding/json"
@@ -25,7 +26,6 @@ import (
 	"github.com/middelkoopt/stage0/internal/dhcpd"
 	"github.com/middelkoopt/stage0/internal/image"
 	"github.com/middelkoopt/stage0/internal/initrd"
-	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/reach"
 )
 
@@ -142,7 +142,8 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	if disk == "" {
 		return fmt.Errorf("no disk for %s: give --disk or set disk: in %s", node.Name, a.sitePath)
 	}
-	n, err := oneNetwork(site, o.network)
+	network := cmp.Or(o.network, node.Network)
+	n, err := oneNetwork(site, network)
 	if err != nil {
 		return err
 	}
@@ -150,45 +151,23 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	if err != nil {
 		return err
 	}
+	switch {
+	case node.VM != nil && !img.VM():
+		return fmt.Errorf("%s is a VM, but image %s has no agent kernel for VMs", node.Name, img.Name)
+	case node.VM == nil && img.VM():
+		return fmt.Errorf("image %s is for VMs, but %s is not one", img.Name, node.Name)
+	}
 	ready, _ := regexp.Compile(img.Ready) // checked by Load
-	installed, err := installedCmdline(img.Cmdline, node.Hostname, site.SSHKeys)
-	if err != nil {
-		return err
-	}
-
-	sw, err := a.openSite()
-	if err != nil {
-		return err
-	}
-	st, err := sw.Status(ctx)
-	if err != nil {
-		return err
-	}
-	port, err := st.Find(node.Name)
-	if err != nil {
-		return err
-	}
-	if port.PoE == nil {
-		return fmt.Errorf("%s has no PoE, so stage0 can't power it", label(port))
-	}
-	if n.VLAN != "" {
-		v, err := st.FindVLAN(n.VLAN)
-		if err != nil {
-			return fmt.Errorf("network %q: %w", n.Name, err)
+	var installed string
+	if !img.VM() {
+		if installed, err = installedCmdline(img.Cmdline, node.Hostname, site.SSHKeys); err != nil {
+			return err
 		}
-		if port.PVID != v.ID && !o.setPort {
-			return fmt.Errorf("%s has PVID %d, not %s(%d); move it with --set-port or: stage0 set port %s --pvid %s",
-				label(port), port.PVID, v.Name, v.ID, node.Name, v.Name)
-		}
-		if port.PVID != v.ID {
-			// The old PVID stays, tagged, so nothing the port carried is lost.
-			tagged := slices.DeleteFunc(append(slices.Clone(port.Tagged), port.PVID), func(id int) bool { return id == v.ID })
-			slices.Sort(tagged)
-			ch, err := sw.SetVLANs(ctx, port.ID, v.ID, tagged)
-			if err != nil {
-				return err
-			}
-			say("%s: %s -> %s", label(port), showVLANs(st, ch.Before), showVLANs(st, ch.After))
+	}
+	var poe *poeMachine
+	if node.VM == nil {
+		if poe, err = a.newPoEMachine(ctx, node, n, o.setPort, say); err != nil {
+			return err
 		}
 	}
 
@@ -203,7 +182,13 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}
 	say("image %s: %s", img.Name, imgPath)
 	run := filepath.Join(o.cache, "run", node.Name)
-	if err := a.stage(run, imgPath, img, installed, node.Hostname, disk, n.Server.String(), filepath.Join(o.cache, "boot", img.SHA256)); err != nil {
+	var kernel, initrdPath string
+	if img.VM() {
+		kernel, initrdPath, err = a.stageVM(ctx, run, img, imgPath, node, site.SSHKeys, filepath.Join(o.cache, "agent", img.Name), progress)
+	} else {
+		err = a.stage(run, imgPath, img, installed, node.Hostname, disk, n.Server.String(), filepath.Join(o.cache, "boot", img.SHA256))
+	}
+	if err != nil {
 		return err
 	}
 	say("staged boot files in %s", run)
@@ -212,7 +197,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	if err := os.MkdirAll("logs", 0o755); err != nil {
 		return err
 	}
-	res := installResult{Node: node.Name, Port: port.ID, Image: img.Name, Disk: disk, Network: n.Name,
+	res := installResult{Node: node.Name, Image: img.Name, Disk: disk, Network: n.Name,
 		Log: filepath.Join("logs", node.Name+".log"), ServeLog: filepath.Join("logs", node.Name+"-serve.log")}
 	consoleLog, err := os.OpenFile(res.Log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -230,14 +215,24 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	cctx, stopConsole := context.WithCancel(ctx)
 	defer stopConsole()
 	w := newWatcher(cctx, ready)
+	var consoles []io.Closer
+	defer func() {
+		for _, c := range consoles {
+			c.Close()
+		}
+	}()
+	follow := func(c io.ReadWriteCloser) {
+		consoles = append(consoles, c)
+		fmt.Fprintf(consoleLog, "\n=== stage0 install %s %s %s ===\n", node.Name, img.Name, time.Now().Format(time.RFC3339))
+		go console.Capture(cctx, c, io.MultiWriter(consoleLog, w), nil)
+	}
+	hasConsole := node.Console != nil || node.VM != nil
 	if node.Console != nil {
 		portIO, err := a.OpenConsole(node.Console.Device, node.Console.Baud)
 		if err != nil {
 			return err
 		}
-		defer portIO.Close()
-		fmt.Fprintf(consoleLog, "\n=== stage0 install %s %s %s ===\n", node.Name, img.Name, time.Now().Format(time.RFC3339))
-		go console.Capture(cctx, portIO, io.MultiWriter(consoleLog, w), nil)
+		follow(portIO)
 	}
 	report := func(from, kind string, body []byte) {
 		w.send(event{map[string]string{"report": agent.ReportPrefix, "installed": agent.InstalledPrefix, "error": errorPrefix}[kind], string(body)})
@@ -251,6 +246,34 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}
 	slog := slog.New(slog.NewTextHandler(serveLog, nil)).With("network", n.Name)
 	leases := a.newLeases(n, others, slog)
+
+	// The machine: a Pi on its port, or a VM on the test bed's switch,
+	// which install runs while it works.
+	var m machine = poe
+	if node.VM != nil {
+		vmDir := filepath.Join(o.cache, "vm")
+		sock := filepath.Join(vmDir, n.Name+".sock")
+		if err := os.MkdirAll(vmDir, 0o755); err != nil {
+			return err
+		}
+		if err := a.runSwitch(cctx, sock, n.Interface, slog); err != nil {
+			return err
+		}
+		vm, err := newVMMachine(a, node, vmDir, sock, serveLog)
+		if err != nil {
+			return err
+		}
+		base := "http://" + n.Server.String()
+		vm.kernel, vm.initrd = kernel, initrdPath
+		vm.cmdline = fmt.Sprintf("console=ttyAMA0 stage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.report=%s/stage0/report",
+			disk, img.SHA256, base, img.File(), base)
+		if img.NoCloud {
+			vm.serial = "ds=nocloud;s=" + base + "/nocloud/" + node.Name + "/"
+		}
+		m = vm
+		defer vm.off(ctx)
+	}
+	res.Port = m.port()
 	sctx, stopServe := context.WithCancel(ctx)
 	serveDone := make(chan struct{})
 	var serveErr error
@@ -260,10 +283,10 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}()
 	defer func() { stopServe(); <-serveDone }()
 
-	if err := a.powerCycle(ctx, sw, port.ID); err != nil {
+	if err := m.bootAgent(ctx, follow); err != nil {
 		return err
 	}
-	say("%s: powered on, netbooting stage0's agent", label(port))
+	say("%s: powered on, booting stage0's agent", m.name())
 
 	actx, cancel := context.WithTimeout(ctx, agentWait)
 	defer cancel()
@@ -287,7 +310,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 				say("%s: wrote %.1f GB to %s in %.0f s", node.Name, float64(r.Bytes)/1e9, r.Disk, r.Seconds)
 				done = true
 			case errorPrefix:
-				if _, err := sw.SetPoE(ctx, port.ID, false); err != nil {
+				if err := m.off(ctx); err != nil {
 					say("%s: powering off: %v", node.Name, err)
 				}
 				return fmt.Errorf("%s: agent: %s (node powered off; logs: %s, %s)", node.Name, e.text, res.Log, res.ServeLog)
@@ -306,14 +329,14 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		}
 	}
 	w.armReady()
-	if err := a.powerCycle(ctx, sw, port.ID); err != nil {
+	if err := m.bootDisk(ctx, follow); err != nil {
 		return err
 	}
 	say("%s: rebooting from %s", node.Name, disk)
 	rctx, cancel := context.WithTimeout(ctx, readyWait)
 	defer cancel()
 waitReady:
-	for node.Console != nil && res.Ready == "" {
+	for hasConsole && res.Ready == "" {
 		select {
 		case <-rctx.Done():
 			if ctx.Err() != nil {
@@ -329,7 +352,7 @@ waitReady:
 			}
 		}
 	}
-	quiet := node.Console == nil || res.Ready == "" // up only if the network says so
+	quiet := !hasConsole || res.Ready == "" // up only if the network says so
 	res.Seconds = time.Since(start).Round(time.Second).Seconds()
 	if !quiet {
 		say("%s: up (%q on the console) after %.0f s", node.Name, res.Ready, res.Seconds)
@@ -406,15 +429,6 @@ func oneNetwork(site *config.Site, name string) (config.Network, error) {
 		return config.Network{}, fmt.Errorf("site config has %d networks; name one with --network", len(site.Networks))
 	}
 	return site.Networks[0], nil
-}
-
-// powerCycle powers a port off (if it isn't already) and on.
-func (a *App) powerCycle(ctx context.Context, sw netswitch.Controller, port int) error {
-	if _, err := sw.SetPoE(ctx, port, false); err != nil {
-		return err
-	}
-	_, err := sw.SetPoE(ctx, port, true)
-	return err
 }
 
 // stage builds the directory serve offers the node: the image's boot files
@@ -524,6 +538,90 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 	defer src.Close()
 	return writeFile(dst, func(w io.Writer) error {
 		_, err := io.Copy(w, src)
+		return err
+	})
+}
+
+// stageVM builds a VM's boot root (the image under images/, the node's
+// cloud-init NoCloud files under nocloud/<node>/) and the agent's boot: the
+// image's kernel, and its initrd with stage0's initramfs appended (the
+// kernel unpacks both; stage0's /init wins).
+func (a *App) stageVM(ctx context.Context, run string, img image.Config, imgPath string, node config.Node, keys []string,
+	agentCache string, progress io.Writer) (kernel, agentInitrd string, err error) {
+	if kernel, err = image.FetchFile(ctx, *img.Kernel, agentCache, progress); err != nil {
+		return "", "", err
+	}
+	distroInitrd, err := image.FetchFile(ctx, *img.Initrd, agentCache, progress)
+	if err != nil {
+		return "", "", err
+	}
+	if err := os.RemoveAll(run); err != nil {
+		return "", "", err
+	}
+	images := filepath.Join(run, "images")
+	if err := os.MkdirAll(images, 0o755); err != nil {
+		return "", "", err
+	}
+	if err := linkOrCopy(imgPath, filepath.Join(images, img.File())); err != nil {
+		return "", "", err
+	}
+	nc := filepath.Join(run, "nocloud", node.Name)
+	if err := os.MkdirAll(nc, 0o755); err != nil {
+		return "", "", err
+	}
+	meta := fmt.Sprintf("instance-id: %s-%d\nlocal-hostname: %s\n", node.Name, time.Now().Unix(), node.Hostname)
+	if err := errors.Join(os.WriteFile(filepath.Join(nc, "meta-data"), []byte(meta), 0o644),
+		os.WriteFile(filepath.Join(nc, "user-data"), []byte(nocloudUserData(node.Hostname, keys)), 0o644)); err != nil {
+		return "", "", err
+	}
+
+	exe, err := a.Executable()
+	if err != nil {
+		return "", "", err
+	}
+	if err := a.CheckStatic(exe); err != nil {
+		return "", "", err
+	}
+	agentInitrd = filepath.Join(run, "initrd")
+	err = writeFile(agentInitrd, func(w io.Writer) error {
+		f, err := os.Open(distroInitrd)
+		if err != nil {
+			return err
+		}
+		defer f.Close()
+		if _, err := io.Copy(w, f); err != nil {
+			return err
+		}
+		_, err = initrd.Build(w, exe, "")
+		return err
+	})
+	return kernel, agentInitrd, err
+}
+
+// nocloudUserData is cloud-init user-data giving the node its hostname and
+// root the site's SSH keys.
+func nocloudUserData(hostname string, keys []string) string {
+	var b strings.Builder
+	fmt.Fprintf(&b, "#cloud-config\nhostname: %s\ndisable_root: false\nusers:\n  - name: root\n    ssh_authorized_keys:\n", hostname)
+	for _, k := range keys {
+		fmt.Fprintf(&b, "      - %s\n", k)
+	}
+	return b.String()
+}
+
+// linkOrCopy hard-links src to dst, copying when they're on different
+// filesystems (serve won't follow a link out of its root).
+func linkOrCopy(src, dst string) error {
+	if err := os.Link(src, dst); err == nil {
+		return nil
+	}
+	in, err := os.Open(src)
+	if err != nil {
+		return err
+	}
+	defer in.Close()
+	return writeFile(dst, func(w io.Writer) error {
+		_, err := io.Copy(w, in)
 		return err
 	})
 }

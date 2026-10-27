@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net"
 	"net/http"
@@ -28,6 +29,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/cpio"
 	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/reach"
+	"github.com/middelkoopt/stage0/internal/vswitch"
 )
 
 func gunzipFile(t *testing.T, path string) []byte {
@@ -99,6 +101,7 @@ func (s *scripted) Close() error                { return nil }
 type installEnv struct {
 	http   net.Listener
 	ask    func(pxe bool)
+	askAs  func(mac, class, addr string)
 	httpAt func() net.Addr
 	state  string
 	app    *App
@@ -126,8 +129,18 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 	env := &installEnv{sw: sw, cache: filepath.Join(dir, "cache"), images: images, sum: sum}
 	var dhcpAddr, httpAddr net.Addr
 	var dhcpMu sync.Mutex
+	// askAs sends a DHCP discover and request for addr from mac, with a
+	// vendor class (or none).
+	var askAs func(mac, class, addr string)
 	// ask sends a DHCP discover and request for 10.0.3.100 from k53's MAC.
 	ask := func(pxe bool) {
+		class := ""
+		if pxe {
+			class = "PXEClient:Arch:00000:UNDI:002001"
+		}
+		askAs("d8:3a:dd:c5:c1:f3", class, "10.0.3.100")
+	}
+	askAs = func(macStr, class, addr string) {
 		var to net.Addr
 		for deadline := time.Now().Add(5 * time.Second); to == nil && time.Now().Before(deadline); {
 			dhcpMu.Lock()
@@ -141,15 +154,15 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 			return
 		}
 		defer c.Close()
-		hw, _ := net.ParseMAC("d8:3a:dd:c5:c1:f3")
+		hw, _ := net.ParseMAC(macStr)
 		var mods []dhcpv4.Modifier
-		if pxe {
-			mods = append(mods, dhcpv4.WithOption(dhcpv4.OptClassIdentifier("PXEClient:Arch:00000:UNDI:002001")))
+		if class != "" {
+			mods = append(mods, dhcpv4.WithOption(dhcpv4.OptClassIdentifier(class)))
 		}
 		d, _ := dhcpv4.NewDiscovery(hw, mods...)
 		c.WriteTo(d.ToBytes(), to)
 		r, _ := dhcpv4.New(append(mods, dhcpv4.WithHwAddr(hw), dhcpv4.WithMessageType(dhcpv4.MessageTypeRequest),
-			dhcpv4.WithOption(dhcpv4.OptRequestedIPAddress(net.ParseIP("10.0.3.100"))))...)
+			dhcpv4.WithOption(dhcpv4.OptRequestedIPAddress(net.ParseIP(addr))))...)
 		c.WriteTo(r.ToBytes(), to)
 		time.Sleep(50 * time.Millisecond) // let serve handle them
 	}
@@ -187,6 +200,7 @@ func newInstallEnv(t *testing.T, console []string) *installEnv {
 	}
 	env.state = filepath.Join(dir, "state")
 	env.ask = ask
+	env.askAs = askAs
 	env.httpAt = func() net.Addr {
 		dhcpMu.Lock()
 		defer dhcpMu.Unlock()
@@ -490,5 +504,108 @@ func TestInstallSilentConsole(t *testing.T) {
 	}
 	if !strings.Contains(out, "no \"login: \" on the console") || !strings.Contains(out, "answers ping and ssh") {
 		t.Errorf("output:\n%s", out)
+	}
+}
+
+// fakeQEMU is a VM: it serves the console socket QEMU would and, booted
+// with -kernel, plays the agent; booted from disk, the installed system.
+type fakeQEMU struct{ ln net.Listener }
+
+func (q *fakeQEMU) Stop() error { return q.ln.Close() }
+
+func TestInstallVM(t *testing.T) {
+	env := newInstallEnv(t, nil)
+	sum := func(b []byte) string { h := sha256.Sum256(b); return hex.EncodeToString(h[:]) }
+	files := map[string][]byte{"/vmlinuz": []byte("KERNEL"), "/initrd.img": []byte("INITRD")}
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) { w.Write(files[r.URL.Path]) }))
+	defer srv.Close()
+	os.WriteFile(filepath.Join(env.images, "vm.yaml"), []byte(fmt.Sprintf(
+		"url: %s/disk.qcow2\nsha256: %s\nnocloud: true\nkernel: {url: %s/vmlinuz, sha256: %s}\ninitrd: {url: %s/initrd.img, sha256: %s}\n",
+		srv.URL, strings.Repeat("ab", 32), srv.URL, sum(files["/vmlinuz"]), srv.URL, sum(files["/initrd.img"]))), 0o644)
+	// The disk image itself is never fetched by stage0 here: pre-place it.
+	os.MkdirAll(env.cache, 0o755)
+	img := []byte("QCOW")
+	os.WriteFile(filepath.Join(env.images, "vm.yaml"), []byte(fmt.Sprintf(
+		"url: %s/disk.qcow2\nsha256: %s\nnocloud: true\nkernel: {url: %s/vmlinuz, sha256: %s}\ninitrd: {url: %s/initrd.img, sha256: %s}\n",
+		srv.URL, sum(img), srv.URL, sum(files["/vmlinuz"]), srv.URL, sum(files["/initrd.img"]))), 0o644)
+	os.WriteFile(filepath.Join(env.cache, "disk.qcow2"), img, 0o644)
+
+	fw := filepath.Join(t.TempDir(), "AAVMF_CODE.fd")
+	os.WriteFile(fw, []byte("CODE"), 0o644)
+	os.WriteFile(filepath.Join(filepath.Dir(fw), "AAVMF_VARS.fd"), []byte("VARS"), 0o644)
+	env.app.OpenTap = func(name string) (vswitch.Port, error) {
+		if name != "stage0tap0" {
+			t.Errorf("tap %q", name)
+		}
+		return &pipePort{in: make(chan []byte), out: make(chan []byte, 64)}, nil
+	}
+	env.app.OpenConsole = func(device string, baud int) (io.ReadWriteCloser, error) {
+		return net.Dial("unix", strings.TrimPrefix(device, "unix:"))
+	}
+	env.app.FindAddress = func(_ context.Context, ifname string, macs []net.HardwareAddr) ([]netip.Addr, error) {
+		if ifname != "stage0tap0" || len(macs) != 1 || macs[0].String() != "52:54:00:12:34:56" {
+			t.Errorf("looked up %v on %s", macs, ifname)
+		}
+		return []netip.Addr{netip.MustParseAddr("fe80::5054:ff:fe12:3456")}, nil
+	}
+	var boots []string
+	env.app.StartVM = func(args []string, _ io.Writer) (VMProcess, error) {
+		joined := strings.Join(args, " ")
+		agentBoot := strings.Contains(joined, "-kernel")
+		boots = append(boots, map[bool]string{true: "agent", false: "disk"}[agentBoot])
+		var sock string
+		for _, f := range strings.Split(joined, ",") {
+			if p, ok := strings.CutPrefix(f, "path="); ok && strings.HasSuffix(p, ".console") {
+				sock = p
+			}
+		}
+		if agentBoot && (!strings.Contains(joined, "stage0.disk=vda") || !strings.Contains(joined, "/initrd ")) {
+			t.Errorf("agent boot args: %s", joined)
+		}
+		if !agentBoot && !strings.Contains(joined, "serial=ds=nocloud;s=http://10.0.9.1/nocloud/vm1/") {
+			t.Errorf("disk boot args: %s", joined)
+		}
+		ln, err := net.Listen("unix", sock)
+		if err != nil {
+			return nil, err
+		}
+		go func() {
+			c, err := ln.Accept()
+			if err != nil {
+				return
+			}
+			defer c.Close()
+			if agentBoot {
+				env.askAs("52:54:00:12:34:56", "stage0-agent", "10.0.9.100")
+				io.WriteString(c, `STAGE0-REPORT {"interfaces":[{"name":"eth0","mac":"52:54:00:12:34:56"}]}`+"\r\n")
+				io.WriteString(c, `STAGE0-INSTALLED {"disk":"/dev/vda","bytes":10737418240,"seconds":24}`+"\r\nmore\r\n")
+			} else {
+				io.WriteString(c, "Rocky Linux 10.2\r\nvm1 login: ")
+				env.askAs("52:54:00:12:34:56", "", "10.0.9.100")
+			}
+			time.Sleep(time.Hour) // until Stop closes the listener (the test ends)
+		}()
+		return &fakeQEMU{ln: ln}, nil
+	}
+	t.Chdir(t.TempDir())
+	out, err := runApp(t, env.app, "--state", env.state, "install", "vm1", "--image", "vm",
+		"--images", env.images, "--cache", env.cache, "--timeout", "20s")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if strings.Join(boots, ",") != "agent,disk" {
+		t.Errorf("boots %v", boots)
+	}
+	for _, want := range []string{"vm1 (VM): powered on", "wrote 10.7 GB", "up (\"login: \"", "10.0.9.100 answers ping and ssh"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	ud, _ := os.ReadFile(filepath.Join(env.cache, "run", "vm1", "nocloud", "vm1", "user-data"))
+	if !strings.Contains(string(ud), "hostname: vm1") || !strings.Contains(string(ud), "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIExample stage0@test") {
+		t.Errorf("user-data:\n%s", ud)
+	}
+	if len(env.sw.writes) != 0 {
+		t.Errorf("a VM install touched the switch: %v", env.sw.writes)
 	}
 }

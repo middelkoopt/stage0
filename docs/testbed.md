@@ -1,8 +1,25 @@
 # QEMU test bed
 
-How a QEMU VM is installed by stage0 on the host's private test network,
-as run by hand on pilab (aarch64, KVM). `stage0 install` doesn't drive VMs
-yet (see [`ROADMAP.md`](../ROADMAP.md)).
+How a QEMU VM is installed by stage0 on the host's private test network
+(pilab: aarch64, KVM). One command does it:
+
+```
+$ ./stage0 install vm1 --image rocky-10.2-vm     # 96 s on pilab
+```
+
+`site.yaml` names the VM (`vm: {mac: …}`, optional `memory`, `cpus`,
+`diskGB`, `firmware`) and its network (`vnet`); the image config
+(`images/rocky-10.2-vm.yaml`) gives the cloud image (qcow2), the agent's
+`kernel` and `initrd`, and `nocloud: true`. `install` runs the switch with
+the tap as a port, serves, starts QEMU to boot the agent (`-kernel`,
+`-initrd`, console on a Unix socket QEMU waits for), follows its console,
+stops it after `STAGE0-INSTALLED`, starts it again from the disk with UEFI
+and the NoCloud pointer, and waits for the login prompt, the lease and
+ping and SSH. The VM's files (disk, UEFI variables, console socket) are in
+`~/.cache/stage0/vm/`. The VM is stopped when `install` exits: its network
+lives in the `install` process.
+
+The sections below are the pieces, and how they were first run by hand.
 
 > Last verified: 2026-10-26
 

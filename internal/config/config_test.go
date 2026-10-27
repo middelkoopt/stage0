@@ -289,3 +289,36 @@ func TestLoadSitePrefix6(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadSiteVMNodes(t *testing.T) {
+	p := write(t, "site.yaml", `
+networks:
+  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199}
+  - {name: vnet, interface: stage0tap0, address: 10.0.9.1/24, pool: 10.0.9.100-10.0.9.199}
+nodes:
+  - {name: k52, network: pinet}
+  - name: vm1
+    network: vnet
+    disk: vda
+    vm: {mac: "52:54:00:12:34:56"}
+`, 0o644)
+	s, err := LoadSite(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	n, _ := s.Node("vm1")
+	if n.VM == nil || n.VM.Memory != 2048 || n.VM.CPUs != 2 || n.VM.DiskGB != 16 ||
+		n.VM.Firmware != "/usr/share/AAVMF/AAVMF_CODE.fd" || n.VM.MAC != "52:54:00:12:34:56" {
+		t.Errorf("vm %+v", n.VM)
+	}
+	for name, body := range map[string]string{
+		"unknown network": "networks:\n  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199}\nnodes:\n  - {name: a, network: nope}\n",
+		"vm without mac":  "nodes:\n  - {name: a, vm: {memory: 1024}}\n",
+		"bad mac":         "nodes:\n  - {name: a, vm: {mac: zz}}\n",
+		"vm and console":  "nodes:\n  - {name: a, console: {device: /dev/x}, vm: {mac: '52:54:00:00:00:01'}}\n",
+	} {
+		if _, err := LoadSite(write(t, "site.yaml", body, 0o644)); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}

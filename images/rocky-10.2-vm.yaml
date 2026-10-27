@@ -1,0 +1,16 @@
+# Rocky Linux 10.2 GenericCloud for aarch64 VMs on the test bed (qcow2),
+# installed by stage0's agent on Rocky's stock pxeboot kernel and initrd
+# (checksums from the repository's .treeinfo). Facts: docs/testbed.md.
+url: https://dl.rockylinux.org/pub/rocky/10/images/aarch64/Rocky-10-GenericCloud-Base-10.2-20260525.0.aarch64.qcow2
+sha256: 457c8375e19496f43a25c4a6169fa11237536c53cef6f85a20ea3c5a751aa0f5
+
+kernel:
+  url: https://dl.rockylinux.org/pub/rocky/10/BaseOS/aarch64/os/images/pxeboot/vmlinuz
+  sha256: bae297441b97f92bc471fac49dc8388b1f48dece8385a26ba8ae62dbf8d029b9
+initrd:
+  url: https://dl.rockylinux.org/pub/rocky/10/BaseOS/aarch64/os/images/pxeboot/initrd.img
+  sha256: 2755f004b0936722f5b0ab2b6a29b1864601896f80312b757b249f802ca20933
+
+# cloud-init takes its hostname and root's keys from NoCloud data stage0
+# serves (QEMU's SMBIOS serial points at it).
+nocloud: true

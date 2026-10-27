@@ -7,25 +7,21 @@ for code.
 ## Status (2026-10-26)
 **Pis:** three images install and come up with SSH on the Pi 5 (k52) and
 the Pi 400 (k400) (Rocky 10.2: Pi 5 only); k52 runs Alma (`10.0.3.100`),
-k400 Raspberry Pi OS (`10.0.3.101`), both on. **VMs:** run by hand, stage0
-installed Rocky's aarch64 cloud image in a QEMU VM on the private test
-network, and the disk boots with UEFI to a login prompt with SSH
-([`docs/testbed.md`](docs/testbed.md)).
+k400 Raspberry Pi OS (`10.0.3.101`), both on. **VMs:** `stage0 install vm1
+--image rocky-10.2-vm` installs Rocky's aarch64 cloud image in a QEMU VM on
+the private test network and sees it up with SSH, hostname `vm1` and the
+site's keys from NoCloud, in 96 s ([`docs/testbed.md`](docs/testbed.md)).
 
 ## Open decisions
 (none)
 
 ## Next session
-1. `stage0 install` for VM nodes: site config for a VM (QEMU: memory,
-   disk file, MAC, the vswitch socket), power = starting and stopping the
-   QEMU process, the agent kernel and initrd from an image config (the
-   pxeboot files and their checksums from `.treeinfo`), the console from
-   QEMU's serial.
-2. cloud-init NoCloud for cloud images works by hand
-   ([`docs/testbed.md`](docs/testbed.md)): `install` for VMs writes the
-   node's `meta-data`/`user-data` into the served root and passes the
-   SMBIOS pointer. (A hand-written record for `vm1` is in
-   `~/.local/state/stage0/nodes/`; its disk is `~/.cache/stage0/vm`.)
+1. `install --keep` for VMs: keep the switch, serve and the VM running
+   after the install (today the VM stops when `install` exits), so stage 1
+   can be tested against it; and CI use (a script or `go test` that runs
+   `install vm1` end to end).
+2. Milestone 3 and on ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)):
+   IPv6 netboot, other network modes, x86_64/UEFI.
 3. k53 is powered off (it may run DHCP on piwulf); it may be powered and
    used as root, stopping (not disabling) its services. Its `sudo` needs a
    password stage0 doesn't have.

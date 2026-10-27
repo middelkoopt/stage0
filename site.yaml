@@ -15,13 +15,21 @@ switches:
 # paths, which stay put across reboots and replugging.
 nodes:
   - name: k52
+    network: pinet
     disk: mmcblk0
     console:
       device: /dev/serial/by-id/usb-Raspberry_Pi_Debug_Probe__CMSIS-DAP__E661640843924C33-if01
   - name: k400
+    network: pinet
     disk: mmcblk0
     console:
       device: /dev/serial/by-id/usb-Silicon_Labs_CP2102_USB_to_UART_Bridge_Controller_0001-if00-port0
+  # A QEMU VM on the test bed (docs/testbed.md).
+  - name: vm1
+    network: vnet
+    disk: vda
+    vm:
+      mac: 52:54:00:12:34:56
 
 # Provisioning networks stage0 serves (DHCPv4 + TFTP). The host's interface
 # must already carry the address; stage0 doesn't configure the host.

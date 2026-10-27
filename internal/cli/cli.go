@@ -35,6 +35,7 @@ type App struct {
 	FindAddress func(ctx context.Context, ifname string, macs []net.HardwareAddr) ([]netip.Addr, error)
 	Reach       func(ctx context.Context, addr string) reach.Result // waits until addr answers ping and SSH
 	OpenTap     func(name string) (vswitch.Port, error)
+	StartVM     func(args []string, log io.Writer) (VMProcess, error) // runs QEMU
 
 	sitePath    string
 	secretsPath string
@@ -47,7 +48,7 @@ type App struct {
 
 // New returns the stage0 root command wired to the real world.
 func New() *cobra.Command {
-	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic, Executable: os.Executable, FindAddress: neigh.Find, Reach: reach.Wait, OpenTap: vswitch.Tap}).Command()
+	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic, Executable: os.Executable, FindAddress: neigh.Find, Reach: reach.Wait, OpenTap: vswitch.Tap, StartVM: startQEMU}).Command()
 }
 
 // Command builds the command tree.

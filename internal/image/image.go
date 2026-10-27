@@ -55,7 +55,29 @@ type Config struct {
 	// the seed writes there, e.g. Raspberry Pi OS's empty "ssh" that turns
 	// its SSH server on.
 	BootFiles map[string]string `yaml:"bootFiles,omitempty"`
+
+	// Kernel and Initrd boot the agent on a VM (a distro's stock kernel
+	// and initrd; the agent is appended to the initrd). Images with them
+	// are VM images: installed by QEMU booting these directly.
+	Kernel *File `yaml:"kernel,omitempty"`
+	Initrd *File `yaml:"initrd,omitempty"`
+
+	// NoCloud: the image's cloud-init takes its hostname and keys from
+	// NoCloud data that stage0 serves.
+	NoCloud bool `yaml:"nocloud,omitempty"`
 }
+
+// File is a file to download, pinned by its checksum.
+type File struct {
+	URL    string `yaml:"url"`
+	SHA256 string `yaml:"sha256"`
+}
+
+// File is the file's name, from its URL.
+func (f File) File() string { return path.Base(f.URL) }
+
+// VM reports whether the image is installed on VMs (it has an agent kernel).
+func (c Config) VM() bool { return c.Kernel != nil }
 
 var (
 	validName = regexp.MustCompile(`^[a-z0-9][a-z0-9._-]*$`)
@@ -91,14 +113,21 @@ func Load(dir, name string) (Config, error) {
 	switch {
 	case !strings.HasPrefix(c.URL, "https://") && !strings.HasPrefix(c.URL, "http://"):
 		return c, fmt.Errorf("%s: url %q is not http(s)", p, c.URL)
-	case !strings.HasSuffix(c.URL, ".xz"):
-		return c, fmt.Errorf("%s: url %q: only xz-compressed raw disk images (.raw.xz, .img.xz) are supported", p, c.URL)
+	case !strings.HasSuffix(c.URL, ".xz") && !strings.HasSuffix(c.URL, ".qcow2"):
+		return c, fmt.Errorf("%s: url %q: only xz-compressed raw disk images (.raw.xz, .img.xz) and qcow2 are supported", p, c.URL)
 	case !hexSum.MatchString(c.SHA256):
 		return c, fmt.Errorf("%s: sha256 %q is not 64 hex digits", p, c.SHA256)
-	case c.Cmdline == "":
+	case (c.Kernel == nil) != (c.Initrd == nil):
+		return c, fmt.Errorf("%s: kernel and initrd go together", p)
+	case c.Cmdline == "" && c.Kernel == nil:
 		return c, fmt.Errorf("%s: no cmdline", p)
 	case c.BootPartition < 0:
 		return c, fmt.Errorf("%s: bootPartition %d", p, c.BootPartition)
+	}
+	for _, f := range []*File{c.Kernel, c.Initrd} {
+		if f != nil && (!strings.HasPrefix(f.URL, "http") || !hexSum.MatchString(f.SHA256)) {
+			return c, fmt.Errorf("%s: kernel/initrd need an http(s) url and a 64-hex-digit sha256", p)
+		}
 	}
 	for name := range c.BootFiles {
 		if !filepath.IsLocal(name) || strings.ContainsAny(name, "\\") {
@@ -181,18 +210,24 @@ func SetCloudInitHostname(userData []byte, hostname string) []byte {
 func (c Config) File() string { return path.Base(c.URL) }
 
 // Fetch makes sure the image is in cacheDir with the right checksum,
+// downloading it if not, and returns its path.
+func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (string, error) {
+	return FetchFile(ctx, File{URL: c.URL, SHA256: c.SHA256}, cacheDir, progress)
+}
+
+// FetchFile makes sure f is in cacheDir with the right checksum,
 // downloading it if not, and returns its path. A download that doesn't
 // match the checksum is deleted.
-func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (string, error) {
-	dst := filepath.Join(cacheDir, c.File())
-	if sum, err := fileSHA256(dst); err == nil && sum == c.SHA256 {
+func FetchFile(ctx context.Context, f File, cacheDir string, progress io.Writer) (string, error) {
+	dst := filepath.Join(cacheDir, f.File())
+	if sum, err := fileSHA256(dst); err == nil && sum == f.SHA256 {
 		return dst, nil
 	}
 	if err := os.MkdirAll(cacheDir, 0o755); err != nil {
 		return "", err
 	}
-	fmt.Fprintf(progress, "downloading %s\n", c.URL)
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, c.URL, nil)
+	fmt.Fprintf(progress, "downloading %s\n", f.URL)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, f.URL, nil)
 	if err != nil {
 		return "", err
 	}
@@ -202,7 +237,7 @@ func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
-		return "", fmt.Errorf("download %s: %s", c.URL, resp.Status)
+		return "", fmt.Errorf("download %s: %s", f.URL, resp.Status)
 	}
 	tmp, err := os.CreateTemp(cacheDir, ".download-*")
 	if err != nil {
@@ -212,10 +247,10 @@ func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (
 	h := sha256.New()
 	_, err = io.Copy(io.MultiWriter(tmp, h), resp.Body)
 	if err = errors.Join(err, tmp.Close()); err != nil {
-		return "", fmt.Errorf("download %s: %w", c.URL, err)
+		return "", fmt.Errorf("download %s: %w", f.URL, err)
 	}
-	if sum := hex.EncodeToString(h.Sum(nil)); sum != c.SHA256 {
-		return "", fmt.Errorf("download %s: checksum %s, but images/%s.yaml says %s", c.URL, sum, c.Name, c.SHA256)
+	if sum := hex.EncodeToString(h.Sum(nil)); sum != f.SHA256 {
+		return "", fmt.Errorf("download %s: checksum %s, but the image config says %s", f.URL, sum, f.SHA256)
 	}
 	if err := os.Chmod(tmp.Name(), 0o644); err != nil {
 		return "", err

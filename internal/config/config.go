@@ -6,9 +6,11 @@ package config
 
 import (
 	"bytes"
+	"cmp"
 	"errors"
 	"fmt"
 	"io/fs"
+	"net"
 	"net/netip"
 	"os"
 	"regexp"
@@ -49,6 +51,22 @@ type Node struct {
 
 	// Hostname the installed system gets; default the node's name.
 	Hostname string `yaml:"hostname,omitempty"`
+
+	// Network it is installed over; default the only one in the site.
+	Network string `yaml:"network,omitempty"`
+
+	// VM makes the node a QEMU VM on the test bed instead of a machine on
+	// a switch port; its console is QEMU's serial.
+	VM *VM `yaml:"vm,omitempty"`
+}
+
+// VM is a test bed VM's hardware.
+type VM struct {
+	MAC      string `yaml:"mac"`                // its NIC's address
+	Memory   int    `yaml:"memory,omitempty"`   // MB, default 2048
+	CPUs     int    `yaml:"cpus,omitempty"`     // default 2
+	DiskGB   int    `yaml:"diskGB,omitempty"`   // default 16
+	Firmware string `yaml:"firmware,omitempty"` // UEFI code, default Debian's AAVMF_CODE.fd
 }
 
 // Console is a node's local serial console.
@@ -132,6 +150,20 @@ func (s *Site) normalize() error {
 		if !hostname.MatchString(n.Hostname) {
 			return fmt.Errorf("node %q: hostname %q is not a valid host name", n.Name, n.Hostname)
 		}
+		if v := n.VM; v != nil {
+			hw, err := net.ParseMAC(v.MAC)
+			switch {
+			case err != nil || len(hw) != 6:
+				return fmt.Errorf("node %q: vm needs a mac like 52:54:00:12:34:56", n.Name)
+			case n.Console != nil:
+				return fmt.Errorf("node %q: a VM's console is QEMU's serial; drop console", n.Name)
+			}
+			v.MAC = hw.String()
+			v.Memory = cmp.Or(v.Memory, 2048)
+			v.CPUs = cmp.Or(v.CPUs, 2)
+			v.DiskGB = cmp.Or(v.DiskGB, 16)
+			v.Firmware = cmp.Or(v.Firmware, "/usr/share/AAVMF/AAVMF_CODE.fd")
+		}
 		if n.Disk != "" && !diskName.MatchString(n.Disk) {
 			return fmt.Errorf("node %q: disk %q is not a name under /dev like mmcblk0", n.Name, n.Disk)
 		}
@@ -147,6 +179,13 @@ func (s *Site) normalize() error {
 		}
 	}
 
+	for _, n := range s.Nodes {
+		if n.Network != "" {
+			if _, err := s.Network(n.Network); err != nil {
+				return fmt.Errorf("node %q: %w", n.Name, err)
+			}
+		}
+	}
 	for i, k := range s.SSHKeys {
 		f := strings.Fields(k)
 		if strings.ContainsAny(k, "\r\n") || len(f) < 2 || !sshKeyType.MatchString(f[0]) {
