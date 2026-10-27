@@ -8,6 +8,7 @@ require golang.org/x/net v0.61.0
 
 require (
 	github.com/insomniacslk/dhcp v0.0.0-20261014062924-c6bb46ad3f3a
+	github.com/klauspost/compress v1.20.3
 	github.com/pin/tftp/v3 v3.2.0
 	github.com/spf13/cobra v1.10.2
 	github.com/ulikunitz/xz v0.5.17
