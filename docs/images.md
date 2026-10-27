@@ -56,9 +56,11 @@ in the `.CHECKSUM` file beside it). Raw size 3,508,535,296 bytes.
   partition at all (with `uart_2ndstage=1`: "Failed to load Device Tree
   file", "Failed to open command line file 'cmdline.txt'", "No compatible
   kernel found"), including files stage0 never touches. Over TFTP the same
-  `start4.elf` and `kernel8.img` run the agent fine. Unverified guess: the
-  boot partition's GPT type (EFI System; Alma's image uses Microsoft basic
-  data).
+  `start4.elf` and `kernel8.img` run the agent fine. Likely the boot
+  partition's GPT type (EFI System; Alma's image uses Microsoft basic
+  data): Rocky from the container, whose boot partition stage0 makes as
+  basic data, boots the Pi 400 from SD (k400, 2026-10-27,
+  [containers](containers.md)).
 - **On a Pi 400 the firmware picks `kernel8.img`**, which runs the agent
   over TFTP (k400, 2026-10-26); writing the image to its SD card took 378 s
   (k52's: 101 s).

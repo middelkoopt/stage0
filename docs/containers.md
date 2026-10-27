@@ -8,9 +8,13 @@ it rests on, as seen on k52. The container is
 
 ## How it works
 
-**Works on a Pi 5** (k52, 2026-10-27): `stage0 install k52 --image
-rocky10-rpi-container` installed Rocky 10.2 in 45 s; it was up 197 s after
-power-on, root logging in with the site's keys.
+**Works on a Pi 5 and a Pi 400** (k52, k400, 2026-10-27): `stage0 install
+k52 --image rocky10-rpi-container` installed Rocky 10.2 in 45 s; it was up
+197 s after power-on, root logging in with the site's keys. On k400 the
+install took 93 s, and Rocky booted from SD, which Rocky's own image
+doesn't on a Pi 400 ([images](images.md)): the bootloader matched the
+boot partition's basic-data GPT type. Its GPIO console stayed silent
+without `enable_uart=1`, now in the image config.
 
 1. Build and save the container as an OCI layout:
    `podman build -t stage0/rocky10-rpi containers/rocky10-rpi`, then
