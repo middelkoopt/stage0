@@ -144,3 +144,75 @@ func TestRetransmitRunsOnce(t *testing.T) {
 		t.Errorf("power changes %v, want one cycle (off, on)", c)
 	}
 }
+
+// fakeConsole prints a prompt and records what is typed.
+type fakeConsole struct {
+	out    chan []byte
+	mu     sync.Mutex
+	typed  []byte
+	closed chan struct{}
+	once   sync.Once
+}
+
+func (c *fakeConsole) Read(b []byte) (int, error) {
+	select {
+	case d := <-c.out:
+		return copy(b, d), nil
+	case <-c.closed:
+		return 0, io.EOF
+	}
+}
+
+func (c *fakeConsole) Write(b []byte) (int, error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.typed = append(c.typed, b...)
+	return len(b), nil
+}
+
+func (c *fakeConsole) Close() error { c.once.Do(func() { close(c.closed) }); return nil }
+
+type solNode struct {
+	fakeNode
+	console *fakeConsole
+}
+
+func (n *solNode) Console() (Console, error) { return n.console, nil }
+
+func TestIpmitoolSOL(t *testing.T) {
+	if _, err := exec.LookPath("ipmitool"); err != nil {
+		t.Skip("no ipmitool")
+	}
+	con := &fakeConsole{out: make(chan []byte, 4), closed: make(chan struct{})}
+	port := start(t, &solNode{console: con})
+	cmd := exec.Command("ipmitool", "-I", "lanplus", "-H", "127.0.0.1", "-p", strconv.Itoa(port),
+		"-U", "admin", "-P", "s3cret", "-C", "17", "sol", "activate")
+	stdin, _ := cmd.StdinPipe()
+	var out strings.Builder
+	cmd.Stdout, cmd.Stderr = &out, &out
+	if err := cmd.Start(); err != nil {
+		t.Fatal(err)
+	}
+	time.Sleep(1 * time.Second) // activated
+	con.out <- []byte("k52 login: ")
+	time.Sleep(1 * time.Second)
+	io.WriteString(stdin, "root\r")
+	time.Sleep(1 * time.Second)
+	io.WriteString(stdin, "~.") // ipmitool's escape: deactivate and exit
+	done := make(chan error, 1)
+	go func() { done <- cmd.Wait() }()
+	select {
+	case <-done:
+	case <-time.After(10 * time.Second):
+		cmd.Process.Kill()
+		t.Fatalf("ipmitool did not exit:\n%s", out.String())
+	}
+	if !strings.Contains(out.String(), "k52 login: ") {
+		t.Errorf("console output missing:\n%s", out.String())
+	}
+	con.mu.Lock()
+	defer con.mu.Unlock()
+	if !strings.Contains(string(con.typed), "root") {
+		t.Errorf("typed %q", con.typed)
+	}
+}

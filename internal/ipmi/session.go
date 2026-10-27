@@ -176,8 +176,11 @@ func (s *Server) handle20(ctx context.Context, b []byte, from net.Addr) []byte {
 		ss.lastReq, ss.lastResp, ss.lastAt = append([]byte(nil), payload...), resp, time.Now()
 		return ss.wrap(payloadIPMI, resp)
 	case payloadSOL:
-		if ss.sol != nil {
-			if out := ss.sol.receive(payload); out != nil {
+		s.mu.Lock()
+		p := ss.sol
+		s.mu.Unlock()
+		if p != nil {
+			if out := p.receive(payload); out != nil {
 				return ss.wrap(payloadSOL, out)
 			}
 		}
