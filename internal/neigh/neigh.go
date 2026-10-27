@@ -171,3 +171,63 @@ func parse(b []byte) (Neighbor, bool) {
 	}
 	return n, n.Addr.IsValid() && len(n.MAC) == 6
 }
+
+// newNeighMessage is an RTM_NEWNEIGH request for a permanent entry: addr is
+// at mac on interface index.
+func newNeighMessage(index int, addr netip.Addr, mac net.HardwareAddr, seq uint32) []byte {
+	b := make([]byte, 60)
+	binary.NativeEndian.PutUint32(b[0:], 60)
+	binary.NativeEndian.PutUint16(b[4:], syscall.RTM_NEWNEIGH)
+	binary.NativeEndian.PutUint16(b[6:], syscall.NLM_F_REQUEST|syscall.NLM_F_ACK|syscall.NLM_F_REPLACE|syscall.NLM_F_CREATE)
+	binary.NativeEndian.PutUint32(b[8:], seq)
+	b[16] = syscall.AF_INET6 // ndmsg
+	binary.NativeEndian.PutUint32(b[20:], uint32(index))
+	binary.NativeEndian.PutUint16(b[24:], 0x80) // NUD_PERMANENT
+	binary.NativeEndian.PutUint16(b[28:], 20)   // NDA_DST
+	binary.NativeEndian.PutUint16(b[30:], 1)
+	a := addr.As16()
+	copy(b[32:], a[:])
+	binary.NativeEndian.PutUint16(b[48:], 10) // NDA_LLADDR
+	binary.NativeEndian.PutUint16(b[50:], 2)
+	copy(b[52:], mac[:6])
+	return b
+}
+
+// Add makes the kernel's neighbour table say addr is at mac on interface
+// ifname, permanently, so the host can reply to a node that doesn't answer
+// neighbour solicitations (a Pi 5's bootloader over IPv6). Needs
+// CAP_NET_ADMIN.
+func Add(ifname string, addr netip.Addr, mac net.HardwareAddr) error {
+	ifc, err := net.InterfaceByName(ifname)
+	if err != nil {
+		return err
+	}
+	if len(mac) != 6 {
+		return fmt.Errorf("neigh: MAC %v", mac)
+	}
+	fd, err := syscall.Socket(syscall.AF_NETLINK, syscall.SOCK_RAW|syscall.SOCK_CLOEXEC, syscall.NETLINK_ROUTE)
+	if err != nil {
+		return err
+	}
+	defer syscall.Close(fd)
+	if err := syscall.Sendto(fd, newNeighMessage(ifc.Index, addr, mac, 1), 0, &syscall.SockaddrNetlink{Family: syscall.AF_NETLINK}); err != nil {
+		return fmt.Errorf("neigh: netlink: %w", err)
+	}
+	buf := make([]byte, 4096)
+	n, _, err := syscall.Recvfrom(fd, buf, 0)
+	if err != nil {
+		return fmt.Errorf("neigh: netlink: %w", err)
+	}
+	msgs, err := syscall.ParseNetlinkMessage(buf[:n])
+	if err != nil {
+		return fmt.Errorf("neigh: netlink: %w", err)
+	}
+	for _, m := range msgs {
+		if m.Header.Type == syscall.NLMSG_ERROR && len(m.Data) >= 4 {
+			if code := int32(binary.NativeEndian.Uint32(m.Data)); code != 0 {
+				return fmt.Errorf("neigh: adding %s at %s (needs CAP_NET_ADMIN): %w", addr, mac, syscall.Errno(-code))
+			}
+		}
+	}
+	return nil
+}

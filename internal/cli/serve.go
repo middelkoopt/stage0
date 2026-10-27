@@ -15,6 +15,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/dhcp6d"
 	"github.com/middelkoopt/stage0/internal/dhcpd"
 	"github.com/middelkoopt/stage0/internal/httpd"
+	"github.com/middelkoopt/stage0/internal/neigh"
 	"github.com/middelkoopt/stage0/internal/radv"
 	"github.com/middelkoopt/stage0/internal/tftpd"
 )
@@ -129,6 +130,13 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 		// The Bootfile-URL names the global address: with the link-local
 		// one the Pi took the reply but didn't go on to TFTP (docs/netboot.md).
 		leases6 := dhcp6d.New(dhcp6d.Config{Server: n.Server6, Prefix: n.IPv6Prefix, MAC: mac}, log)
+		// A Pi's bootloader doesn't answer neighbour solicitations for its
+		// DHCPv6 address, so the host is told where it is.
+		leases6.OnLease = func(ip netip.Addr, mac net.HardwareAddr) {
+			if err := neigh.Add(n.Interface, ip, mac); err != nil {
+				log.Warn("dhcpv6: neighbour entry", "ip", ip, "err", err)
+			}
+		}
 		log.Info("serving IPv6 netboot (experimental)", "address", n.Server6)
 		g.Go(func() error { return leases6.Serve(ctx, socks.DHCP6) })
 		if root != "" {

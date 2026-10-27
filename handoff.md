@@ -14,23 +14,17 @@ the private test network and sees it up with SSH, hostname `vm1` and the
 site's keys from NoCloud, in 96 s ([`docs/testbed.md`](docs/testbed.md)).
 
 ## Open decisions
-- **AC1** IPv6 netboot's next step needs `CAP_NET_ADMIN` as well as
-  `CAP_NET_RAW` on `/usr/local/bin/stage0` (for a static neighbour entry):
-  OK to add it to `tools/install-capped.sh`'s `setcap`? That script runs
-  without a prompt, so this widens what runs unprompted.
+(none)
 
 ## Next session
-1. IPv6 netboot on the Pi 5 (AB2: the human said "see what you can do"):
-   [`docs/netboot.md`](docs/netboot.md#ipv6-netboot-on-a-pi-5-experimental-not-working-yet).
-   DHCPv6 works; the bootloader never answers neighbour solicitations for
-   its DHCPv6 address, so the host can't reply over TFTP. Plan: when
-   dhcp6d leases an address, stage0 adds a static neighbour entry for it
-   (netlink RTM_NEWNEIGH, MAC from the client's DUID-LL; needs
-   CAP_NET_ADMIN, AC1), then retry. Live test: `tools/install-capped.sh`,
-   then `/usr/local/bin/stage0 serve pinet --root ~/.cache/stage0/run/k52`,
-   `./stage0 power cycle k52`, follow `./stage0 console k52`. k52 has
-   `USE_IPV6=1` in its EEPROM (falls back to IPv4/SD fine).
-2. Then the agent over IPv6 (kernel SLAAC, HTTP to `[fd00:10:3::1]`).
+1. IPv6 netboot on the Pi 5 works up to the agent
+   ([`docs/netboot.md`](docs/netboot.md#ipv6-netboot-on-a-pi-5)): serve
+   must run from `/usr/local/bin/stage0` (`tools/install-capped.sh` after a
+   rebuild) for router advertisements and neighbour entries. k52 has
+   `USE_IPV6=1` in its EEPROM.
+2. The agent over IPv6 (kernel SLAAC on link up, then HTTP to
+   `[fd00:10:3::1]`), so an install needs no IPv4; then `install` choosing
+   IPv6 URLs.
 3. k53 is powered off (it may run DHCP on piwulf); it may be powered and
    used as root, stopping (not disabling) its services. Its `sudo` needs a
    password stage0 doesn't have.

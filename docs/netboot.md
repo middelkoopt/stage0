@@ -76,7 +76,16 @@ Source unless noted: Raspberry Pi documentation
   EEPROM; the lab set 60000 on Pi 5s) is the knob, and that the ~92 MB
   ceiling in `../lab` is the same limit at 30 s, are inferences, unverified.
 
-## IPv6 netboot on a Pi 5 (experimental, not working yet)
+## IPv6 netboot on a Pi 5
+
+**Works** (k52, 2026-10-26) once the host has a permanent neighbour entry
+for the node's DHCPv6 address: `serve`'s DHCPv6 adds one on each lease
+(netlink, MAC from the client's DUID-LL; needs `CAP_NET_ADMIN`, from
+`tools/install-capped.sh`). The bootloader then fetched `config.txt`, the
+device tree, stage0's initramfs and the overlays over TFTP on IPv6, and
+the agent ran (its own networking is still IPv4: `ip=dhcp`).
+
+How it got there:
 
 Seen on k52 (bootloader 2026-09-25, `USE_IPV6=1`, 2026-10-26), with
 `stage0 serve` advertising `fd00:10:3::/64` and answering DHCPv6:
@@ -90,8 +99,8 @@ Seen on k52 (bootloader 2026-09-25, `USE_IPV6=1`, 2026-10-26), with
   TFTP, but **never answered the host's neighbour solicitations** for
   `fd00:10:3::100` (94 unanswered), so the host could not send it a single
   reply; it retried until it gave up. (The lab notes: "Pi 5 IPv6 netboot
-  failed without manual neighbour-table entries on the server".) A static
-  neighbour entry needs `CAP_NET_ADMIN`.
+  failed without manual neighbour-table entries on the server".) The
+  permanent entry fixes it.
 - With the Bootfile-URL naming the host's link-local address instead, the
   bootloader took the DHCPv6 reply but didn't go on to TFTP.
 - The TFTP library can't listen on an address with a zone; IPv6 TFTP is

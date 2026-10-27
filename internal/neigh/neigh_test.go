@@ -1,6 +1,7 @@
 package neigh
 
 import (
+	"bytes"
 	"context"
 	"encoding/binary"
 	"net"
@@ -98,4 +99,23 @@ func TestFindLive(t *testing.T) {
 		t.Fatal(err)
 	}
 	t.Log(addrs)
+}
+
+func TestNewNeighMessage(t *testing.T) {
+	hw, _ := net.ParseMAC("d8:3a:dd:c5:c1:f3")
+	got := newNeighMessage(4, netip.MustParseAddr("fd00:10:3::100"), hw, 9)
+	want := []byte{
+		60, 0, 0, 0, // length 60
+		28, 0, // RTM_NEWNEIGH
+		0x05, 0x05, // NLM_F_REQUEST|NLM_F_ACK|NLM_F_REPLACE|NLM_F_CREATE
+		9, 0, 0, 0, 0, 0, 0, 0, // sequence, port id
+		10, 0, 0, 0, // AF_INET6, padding
+		4, 0, 0, 0, // interface index
+		0x80, 0, 0, 0, // NUD_PERMANENT, flags, type
+		20, 0, 1, 0, 0xfd, 0, 0, 0x10, 0, 3, 0, 0, 0, 0, 0, 0, 0, 0, 1, 0, // NDA_DST
+		10, 0, 2, 0, 0xd8, 0x3a, 0xdd, 0xc5, 0xc1, 0xf3, 0, 0, // NDA_LLADDR, padded
+	}
+	if !bytes.Equal(got, want) {
+		t.Errorf("message\n got % x\nwant % x", got, want)
+	}
 }

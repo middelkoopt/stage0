@@ -87,3 +87,13 @@ func TestIgnoresNonBootClients(t *testing.T) {
 		t.Errorf("answered a client that wants no boot file: %v", r)
 	}
 }
+
+func TestOnLease(t *testing.T) {
+	s := testServer()
+	var got []string
+	s.OnLease = func(ip netip.Addr, mac net.HardwareAddr) { got = append(got, ip.String()+" "+mac.String()) }
+	s.Reply(solicit(t, "d8:3a:dd:c5:c1:f3", true))
+	if len(got) != 1 || got[0] != "fd00:10:3::100 d8:3a:dd:c5:c1:f3" {
+		t.Errorf("OnLease calls %v", got)
+	}
+}

@@ -41,6 +41,10 @@ type Server struct {
 	duid dhcpv6.DUID
 	log  *slog.Logger
 
+	// OnLease, if set, is called with each address handed out and the
+	// client's MAC (from its DUID), e.g. to add a neighbour entry.
+	OnLease func(ip netip.Addr, mac net.HardwareAddr)
+
 	mu     sync.Mutex
 	leases map[string]netip.Addr // client DUID -> address
 	next   netip.Addr
@@ -126,6 +130,11 @@ func (s *Server) Reply(m *dhcpv6.Message) *dhcpv6.Message {
 		iaid = ia.IaId
 	}
 	ip := s.lease(cid.String())
+	if s.OnLease != nil {
+		if mac := duidMAC(cid); mac != nil {
+			s.OnLease(ip, mac)
+		}
+	}
 	mods := []dhcpv6.Modifier{
 		dhcpv6.WithServerID(s.duid),
 		dhcpv6.WithOption(dhcpv6.OptBootFileURL("tftp://[" + cmp.Or(s.cfg.TFTP, s.cfg.Server).WithZone("").String() + "]/")),
@@ -166,4 +175,15 @@ func (s *Server) lease(client string) netip.Addr {
 	s.next = s.next.Next()
 	s.leases[client] = ip
 	return ip
+}
+
+// duidMAC is the MAC in a DUID-LL or DUID-LLT, or nil.
+func duidMAC(d dhcpv6.DUID) net.HardwareAddr {
+	switch d := d.(type) {
+	case *dhcpv6.DUIDLL:
+		return d.LinkLayerAddr
+	case *dhcpv6.DUIDLLT:
+		return d.LinkLayerAddr
+	}
+	return nil
 }
