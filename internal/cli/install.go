@@ -526,7 +526,15 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 				return fmt.Errorf("image %s: the agent needs its %s: %w", img.Name, distroInitrd, err)
 			}
 			defer distro.Close()
-			if _, err := io.Copy(w, distro); err != nil {
+			n, err := io.Copy(w, distro)
+			if err != nil {
+				return err
+			}
+			// The kernel skips zeros between archives and takes an
+			// uncompressed cpio only at a 4-byte boundary (k52: a
+			// 37,939,845-byte dracut image followed directly by one was
+			// "not initramfs").
+			if _, err := w.Write(make([]byte, (4-n%4)%4)); err != nil {
 				return err
 			}
 		}

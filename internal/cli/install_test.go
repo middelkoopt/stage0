@@ -673,7 +673,8 @@ func TestStageBootDir(t *testing.T) {
 	if b, err := os.ReadFile(filepath.Join(run, "current", "cmdline.txt")); err != nil || !strings.Contains(string(b), "stage0.disk=mmcblk0") {
 		t.Errorf("current/cmdline.txt: %q %v", b, err)
 	}
-	if b, err := os.ReadFile(filepath.Join(run, "current", initrdName)); err != nil || !bytes.HasPrefix(b, []byte("DISTRO")) || len(b) <= 6 {
+	// Padded to a 4-byte boundary, then the agent's gzip-compressed cpio.
+	if b, err := os.ReadFile(filepath.Join(run, "current", initrdName)); err != nil || !bytes.HasPrefix(b, []byte("DISTRO\x00\x00\x1f\x8b")) {
 		t.Errorf("current/%s: %d bytes %v", initrdName, len(b), err)
 	}
 	if _, err := os.Stat(filepath.Join(run, "cmdline.txt")); err == nil {
