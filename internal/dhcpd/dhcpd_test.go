@@ -345,3 +345,18 @@ func TestOfferToUEFI(t *testing.T) {
 		t.Errorf("Pi boot file %q", r.BootFileName)
 	}
 }
+
+func TestOfferToUEFIHTTP(t *testing.T) {
+	// edk2's HTTP boot: class HTTPClient, client architecture 19.
+	s := testServer(t, "10.0.3.199")
+	d := discover(t, "52:54:00:12:34:56", "HTTPClient:Arch:00019:UNDI:003000")
+	d.UpdateOption(dhcpv4.OptClientArch(iana.EFI_ARM64_HTTP))
+	r := s.Reply(d)
+	if r == nil {
+		t.Fatal("no reply to HTTP boot's discover")
+	}
+	// The boot file is a URL, and the reply must say HTTPClient back.
+	if r.BootFileName != "http://10.0.3.1/"+UEFIBootFile || r.ClassIdentifier() != "HTTPClient" {
+		t.Errorf("boot file %q, class %q", r.BootFileName, r.ClassIdentifier())
+	}
+}

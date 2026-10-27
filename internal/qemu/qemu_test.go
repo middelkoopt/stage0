@@ -21,6 +21,7 @@ func TestNetArgs(t *testing.T) {
 		"-drive file=/c/vm1.raw,if=none,id=disk,format=raw -device virtio-blk-pci,drive=disk,bootindex=1",
 		"-netdev stream,id=net0,server=off,addr.type=unix,addr.path=/c/vnet.sock",
 		"-device virtio-net-pci,netdev=net0,mac=52:54:00:12:34:56,bootindex=0",
+		"-fw_cfg name=opt/org.tianocore/IPv4PXESupport,string=n -fw_cfg name=opt/org.tianocore/IPv6PXESupport,string=n",
 		"-no-reboot",
 	} {
 		if !strings.Contains(got, want) {

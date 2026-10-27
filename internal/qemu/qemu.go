@@ -48,10 +48,15 @@ func (vm VM) args(netFirst bool) []string {
 	}
 }
 
-// NetArgs boot the agent: the firmware netboots (stage0's DHCP names a
-// UKI). With -no-reboot the VM's own reboot ends QEMU.
+// NetArgs boot the agent: the firmware netboots by UEFI HTTP boot
+// (stage0's DHCP names the UKI's URL), its PXE turned off (edk2's fw_cfg
+// switches), as an unanswered PXE try first costs over a minute. With
+// -no-reboot the VM's own reboot ends QEMU.
 func (vm VM) NetArgs() []string {
-	return append(vm.args(true), "-no-reboot")
+	return append(vm.args(true),
+		"-fw_cfg", "name=opt/org.tianocore/IPv4PXESupport,string=n",
+		"-fw_cfg", "name=opt/org.tianocore/IPv6PXESupport,string=n",
+		"-no-reboot")
 }
 
 // DiskArgs boot the disk, with serial (e.g. a cloud-init NoCloud pointer)

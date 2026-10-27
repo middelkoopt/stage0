@@ -194,7 +194,8 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 	}
 	mac := req.ClientHWAddr.String()
 	log := s.log.With("mac", mac, "class", req.ClassIdentifier())
-	pxe := strings.HasPrefix(req.ClassIdentifier(), "PXEClient")
+	// HTTPClient: UEFI HTTP boot, which stage0 treats as PXE.
+	pxe := strings.HasPrefix(req.ClassIdentifier(), "PXEClient") || strings.HasPrefix(req.ClassIdentifier(), "HTTPClient")
 	// stage0's agent when it booted without PXE (a VM given -kernel):
 	// a node to lease to, but one that needs no boot options.
 	agent := req.ClassIdentifier() == AgentClass
@@ -307,7 +308,14 @@ func (s *Server) reply(req *dhcpv4.DHCPv4, typ dhcpv4.MessageType, ip netip.Addr
 			dhcpv4.WithServerIP(server),
 			dhcpv4.WithOption(dhcpv4.OptTFTPServerName(s.cfg.Server.String())),
 		)
-		if slices.Contains(req.ClientArch(), iana.EFI_ARM64) {
+		if slices.Contains(req.ClientArch(), iana.EFI_ARM64_HTTP) {
+			// UEFI HTTP boot: the boot file is a URL on serve's HTTP, and
+			// the reply must carry the HTTPClient class.
+			u := "http://" + s.cfg.Server.String() + "/" + UEFIBootFile
+			mods = append(mods, dhcpv4.WithOption(dhcpv4.OptClassIdentifier("HTTPClient")),
+				dhcpv4.WithOption(dhcpv4.OptBootFileName(u)),
+				func(d *dhcpv4.DHCPv4) { d.BootFileName = u })
+		} else if slices.Contains(req.ClientArch(), iana.EFI_ARM64) {
 			// UEFI loads the named file, stage0's UKI, over TFTP; named in
 			// the header's file field and option 67, as firmware reads
 			// either. A plain DHCP offer: with the PXEClient class but no
