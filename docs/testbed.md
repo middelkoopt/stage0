@@ -4,17 +4,17 @@ How a QEMU VM is installed by stage0 on the host's private test network
 (pilab: aarch64, KVM). One command does it:
 
 ```
-$ ./stage0 install vm1 --image rocky-10.2-vm     # 96 s on pilab
+$ ./stage0 install vm1 --image rocky-10.2-vm     # 129 s on pilab
 ```
 
 `site.yaml` names the VM (`vm: {mac: …}`, optional `memory`, `cpus`,
 `diskGB`, `firmware`) and its network (`vnet`); the image config
 (`images/rocky-10.2-vm.yaml`) gives the cloud image (qcow2), the agent's
-`kernel` and `initrd`, and `nocloud: true`. `install` runs the switch with
-the tap as a port, serves, starts QEMU to boot the agent (`-kernel`,
-`-initrd`, console on a Unix socket QEMU waits for), follows its console,
-stops it after `STAGE0-INSTALLED`, starts it again from the disk with UEFI
-and the NoCloud pointer, and waits for the login prompt, the lease and
+`kernel` and `initrd`, and `nocloud: true`. `install` builds the agent's
+UKI, runs the switch with the tap as a port, serves, starts QEMU to
+netboot it with UEFI (console on a Unix socket QEMU waits for), follows
+its console, stops it after `STAGE0-INSTALLED`, starts it again from the
+disk with the NoCloud pointer, and waits for the login prompt, the lease and
 ping and SSH. The VM's files (disk, UEFI variables, console socket) are in
 `~/.cache/stage0/vm/`. The VM is stopped when `install` exits, since its
 network lives in the `install` process; with `--keep`, `install` keeps the
@@ -23,11 +23,11 @@ stage 1 can be pointed at it.
 
 `tools/test-vm.sh [node] [image]` is the end-to-end check for CI: it
 builds stage0 and runs that install, printing its JSON result and exiting
-non-zero if it fails (101 s on pilab).
+non-zero if it fails (135 s on pilab, building included).
 
 The sections below are the pieces, and how they were first run by hand.
 
-> Last verified: 2026-10-26
+> Last verified: 2026-10-27
 
 ## The network
 
@@ -38,54 +38,51 @@ The sections below are the pieces, and how they were first run by hand.
   `-netdev stream,id=n0,server=off,addr.type=unix,addr.path=PATH`; the tap
   is one more port, so `stage0 serve vnet` answers the VMs.
 
-## Booting the agent
+## Booting the agent: UEFI netboot of a UKI
 
-Debian's UEFI firmware for QEMU can't netboot
-([`netboot.md`](netboot.md#qemu-aarch64)), so QEMU loads the agent
-directly (`-kernel`, `-initrd`):
+The VM netboots like a real UEFI machine (2026-10-27; until then QEMU
+loaded the agent itself with `-kernel`/`-initrd`):
 
-- **Kernel:** Rocky 10's stock arm64 pxeboot `vmlinuz`
-  (`https://dl.rockylinux.org/pub/rocky/10/BaseOS/aarch64/os/images/pxeboot/`).
-- **Initrd:** that directory's `initrd.img` with stage0's initramfs
-  (`stage0 build initrd`) appended (`cat initrd.img agent.cpio.gz`); the
-  kernel unpacks both, and stage0's `/init` replaces dracut's.
+- **Firmware:** Ubuntu's `AAVMF_CODE.no-secboot.fd` and `AAVMF_VARS.fd`
+  (package `qemu-efi-aarch64`, Debian's can't netboot:
+  [`netboot.md`](netboot.md#qemu-aarch64)), which stage0 fetches by pinned
+  URL and SHA-256 into `~/.cache/stage0/firmware/` unless the node names
+  its own `firmware`. QEMU boots the NIC first (`bootindex`) for the agent,
+  the disk first afterwards.
+- **DHCP:** an aarch64 UEFI client (class `PXEClient:Arch:00011`, option 93
+  = 11) gets a plain offer naming `uki.efi`; with the Pi's `PXEClient`
+  class but no option 43, edk2 waits for a boot server (BINL) and reports
+  "No valid offer received". It first asks the file's size and aborts
+  ("User aborted the transfer"), then fetches it: 265 MB in 16 s
+  (16 MB/s) over stage0's TFTP.
+- **The UKI** (`internal/uki`), built by stage0: systemd's EFI stub
+  (Debian's `systemd-boot-efi`, fetched by pinned URL and SHA-256; Debian's
+  pool keeps only the current version, so a point release means a new pin)
+  with sections `.osrel`, `.cmdline` (the agent's plan), `.initrd` and
+  `.linux`. The kernel is Rocky 10's stock arm64 pxeboot `vmlinuz`
+  (`https://dl.rockylinux.org/pub/rocky/10/BaseOS/aarch64/os/images/pxeboot/`),
+  an EFI zboot wrapper ("zimg", gzip) that stage0 unwraps to the plain
+  `Image`. The initrd is that directory's `initrd.img`, padded to 4 bytes,
+  with stage0's initramfs appended; the kernel unpacks both, and stage0's
+  `/init` replaces dracut's.
 - EL builds `virtio_net` and `virtio_blk` as modules (they are `.ko.xz`
   files in that initrd), so the agent loads drivers itself: every device's
-  `modalias` under `/sys`, handed to the initrd's `modprobe`. The kernel's
-  `ip=dhcp` runs before that, so the agent asks for an address itself
-  (DHCP with vendor class `stage0-agent`, which stage0 answers like a PXE
-  client, without boot options) and sets it over netlink.
+  modalias under `/sys`, handed to the initrd's `modprobe`, and asks for
+  an address itself (DHCP with vendor class `stage0-agent`), set over
+  netlink.
 - **Image:** EL publishes aarch64 cloud images only as qcow2. The agent
   takes a qcow2 payload as it takes xz: fetched into RAM, checked against
   `stage0.sha256=`, then written with only its data clusters.
 
-The run (Rocky 10.2 GenericCloud aarch64, 447 MB qcow2, 10 GiB disk):
-
-```bash
-./stage0 build initrd --out agent.cpio.gz
-cat initrd.img agent.cpio.gz > initrd
-truncate -s 11G disk.raw
-./stage0 vswitch --socket vnet.sock &
-./stage0 serve vnet --root root &          # root/images/<the .qcow2>
-qemu-system-aarch64 -M virt -accel kvm -cpu host -m 2048 -smp 2 \
-  -display none -serial file:agent.log \
-  -kernel vmlinuz -initrd initrd \
-  -append "console=ttyAMA0 stage0.disk=vda stage0.sha256=<sum> stage0.url=http://10.0.9.1/images/<file> stage0.report=http://10.0.9.1/stage0/report" \
-  -drive file=disk.raw,if=virtio,format=raw \
-  -netdev stream,id=n0,server=off,addr.type=unix,addr.path=vnet.sock \
-  -device virtio-net-pci,netdev=n0,mac=52:54:00:12:34:56
-```
-
-Result: drivers for 51 devices, `10.0.9.100` by DHCP, the image fetched in
-13 s and written in 24 s (`STAGE0-INSTALLED`).
+Result (Rocky 10.2 GenericCloud aarch64, 447 MB qcow2, 10 GiB disk): the
+image fetched in 15 s and written in 20 s; up and answering SSH 129 s
+after QEMU started.
 
 ## Booting the installed disk
 
-The same VM with UEFI firmware instead of `-kernel` (`-drive
-if=pflash,…,file=/usr/share/AAVMF/AAVMF_CODE.fd` and a writable copy of
-`AAVMF_VARS.fd`) boots the disk to `localhost login:`, takes its address
-from stage0 (the same lease) and its SSH server greets
-(`SSH-2.0-OpenSSH_9.9`).
+The same VM, the disk first in the boot order, boots to `localhost login:`
+(`vm1 login:` with NoCloud), takes its address from stage0 (the same
+lease) and its SSH server greets (`SSH-2.0-OpenSSH_9.9`).
 
 ## Hostname and keys: cloud-init NoCloud from `serve`
 

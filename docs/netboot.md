@@ -150,6 +150,12 @@ An installed system needs a lease to be reached after the reboot: run
   -x`, no install; 2026-10-27): its `QEMU_EFI.fd` as `-bios`, with
   `-nic user,model=virtio-net-pci,tftp=…,bootfile=…`, ran "Start PXE over
   IPv4", downloaded the NBP over TFTP, then tried "PXE over IPv6".
+- **UEFI netboot of a UKI works** (2026-10-27): with Ubuntu's
+  `AAVMF_CODE.no-secboot.fd` from flash, `stage0 install vm1` netboots the
+  agent's UKI from stage0's DHCP and TFTP ([test bed](testbed.md)). edk2
+  drops a DHCP offer carrying vendor class `PXEClient` without option 43
+  ("No valid offer received": it then expects a boot server); a plain
+  offer with a boot file works.
 - The firmware follows QEMU's `bootindex`; it needs `-drive if=pflash`
   for code and a writable copy of `AAVMF_VARS.fd` to keep its boot
   entries.
