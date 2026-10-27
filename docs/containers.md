@@ -16,12 +16,25 @@ doesn't on a Pi 400 ([images](images.md)): the bootloader matched the
 boot partition's basic-data GPT type. Its GPIO console stayed silent
 without `enable_uart=1`, now in the image config.
 
-1. Build and save the container as an OCI layout:
-   `podman build -t stage0/rocky10-rpi containers/rocky10-rpi`, then
-   `podman save --format oci-dir -o ~/.cache/stage0/oci/rocky10-rpi
-   localhost/stage0/rocky10-rpi`. An image config names it with
-   `container: rocky10-rpi` and gives the installed system's `cmdline`
-   ([`images/rocky10-rpi-container.yaml`](../images/rocky10-rpi-container.yaml)).
+1. **The container** comes from a registry or a saved layout. An image
+   config names it with `container:` and gives the installed system's
+   `cmdline`
+   ([`images/rocky10-rpi-container.yaml`](../images/rocky10-rpi-container.yaml)):
+   - **A registry reference** (it has a `/`), e.g.
+     `quay.io/org/rocky10-rpi:10`: stage0 (`internal/registry`) pulls it
+     into `~/.cache/stage0/oci/registry/<manifest digest>/` on each
+     install (the tag resolved again; blobs already there kept), choosing
+     linux/arm64 from a multi-arch index. Anonymous, with the bearer token
+     public registries ask for; `localhost` registries are plain HTTP, as
+     with podman. Verified 2026-10-27: Alpine from Docker Hub, Rocky from
+     quay.io, and k52 installed from a local `registry:2` the Rocky Pi
+     container was pushed to (`podman push --tls-verify=false … 
+     localhost:5000/stage0/rocky10-rpi:latest`). Nodes never reach the
+     registry: stage0 serves what it pulled.
+   - **A layout name**, e.g. `rocky10-rpi`: `podman build -t
+     stage0/rocky10-rpi containers/rocky10-rpi`, then `podman save
+     --format oci-dir -o ~/.cache/stage0/oci/rocky10-rpi
+     localhost/stage0/rocky10-rpi`.
 2. **The layout** — partitions (`name`, `size`, `type` vfat or ext4,
    `path`; the first is the Pi's boot partition, the last the root,
    filling the disk) and the installer (`kernel`, `initramfs`: paths in
@@ -47,7 +60,7 @@ without `enable_uart=1`, now in the image config.
    keeps no owners or links), writes `/etc/fstab` (by `PARTLABEL`), hosts
    and resolv.conf, then seeds the boot partition as for disk images.
 
-Not yet: `--ipv6`, VMs, a registry.
+Not yet: `--ipv6`, VMs, private registries (credentials).
 
 ## The installer initramfs
 
