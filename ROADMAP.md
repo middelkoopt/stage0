@@ -109,8 +109,11 @@ HTTP), the agent, initramfs and seed builders (see
 1. **Pi 5 head node over IPv4:** `stage0 install k52` installs Rocky 10.2
    and leaves it reachable over SSH with its hostname and key. Done.
 2. QEMU test bed on the virtual switch; the same install for an aarch64 VM.
-   Done (tap port; `install` drives VMs, `--keep` keeps one up); still to
-   do: the gVisor port, the raw-socket port. `tools/test-vm.sh` runs it for CI.
+   Done (tap port; `install` drives VMs, `--keep` keeps one up;
+   `tools/test-vm.sh` runs it for CI). Deferred (YY1): the gVisor port,
+   until a test bed machine without root needs it; then current gVisor,
+   which needs Go 1.27.3 or later (stage0 is on 1.26). The raw-socket
+   port waits for it, as stage0 must serve through a netstack port there.
 3. Pi 5 over IPv6.
 4. Network modes beyond *own*: none, boot-only, proxy.
 5. UEFI and x86_64: HTTP boot, installer ISO route, QEMU power and console,
