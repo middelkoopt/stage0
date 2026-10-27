@@ -35,6 +35,11 @@ type Config struct {
 	URL    string `yaml:"url"`    // an xz-compressed raw disk image
 	SHA256 string `yaml:"sha256"` // of the file at URL
 
+	// Container, instead of URL, installs a container image: the OCI
+	// layout directory <cache>/oci/<Container> (podman save --format
+	// oci-dir). Its labels say how (docs/containers.md).
+	Container string `yaml:"container,omitempty"`
+
 	// BootPartition holds the firmware's boot files (Pi: config.txt,
 	// kernels, device trees); default 1.
 	BootPartition int `yaml:"bootPartition,omitempty"`
@@ -120,6 +125,17 @@ func Load(dir, name string) (Config, error) {
 	}
 	if c.Ready == "" {
 		c.Ready = "login: "
+	}
+	if c.Container != "" {
+		switch {
+		case !validName.MatchString(c.Container):
+			return c, fmt.Errorf("%s: container %q: use lowercase letters, digits, '.', '_' and '-'", p, c.Container)
+		case c.URL != "" || c.SHA256 != "" || c.Kernel != nil:
+			return c, fmt.Errorf("%s: container goes without url, sha256, kernel and initrd", p)
+		case c.Cmdline == "":
+			return c, fmt.Errorf("%s: no cmdline", p)
+		}
+		return c, nil
 	}
 	switch {
 	case !strings.HasPrefix(c.URL, "https://") && !strings.HasPrefix(c.URL, "http://"):
@@ -237,8 +253,16 @@ func SetCloudInitHostname(userData []byte, hostname string) []byte {
 func (c Config) File() string { return path.Base(c.URL) }
 
 // Fetch makes sure the image is in cacheDir with the right checksum,
-// downloading it if not, and returns its path.
+// downloading it if not, and returns its path. For a container it
+// returns its OCI layout directory, which must be there.
 func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (string, error) {
+	if c.Container != "" {
+		dir := filepath.Join(cacheDir, "oci", c.Container)
+		if _, err := os.Stat(filepath.Join(dir, "index.json")); err != nil {
+			return "", fmt.Errorf("image %s: no OCI layout at %s (podman save --format oci-dir -o %s <image>): %w", c.Name, dir, dir, err)
+		}
+		return dir, nil
+	}
 	return FetchFile(ctx, File{URL: c.URL, SHA256: c.SHA256}, cacheDir, progress)
 }
 

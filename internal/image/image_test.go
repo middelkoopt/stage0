@@ -271,3 +271,28 @@ func TestLoadBootDir(t *testing.T) {
 		t.Error("bootDir outside the partition: want error")
 	}
 }
+
+func TestLoadContainer(t *testing.T) {
+	dir := t.TempDir()
+	writeConfig(t, dir, "rocky", "container: rocky10-rpi\ncmdline: root=PARTLABEL=piroot\n")
+	c, err := Load(dir, "rocky")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.Container != "rocky10-rpi" || c.VM() {
+		t.Errorf("config %+v", c)
+	}
+	writeConfig(t, dir, "both", "container: x\nurl: https://e.org/u.img.xz\nsha256: "+strings.Repeat("ab", 32)+"\ncmdline: x\n")
+	if _, err := Load(dir, "both"); err == nil {
+		t.Error("container with url: want error")
+	}
+	cache := t.TempDir()
+	if _, err := Fetch(t.Context(), c, cache, io.Discard); err == nil || !strings.Contains(err.Error(), "podman save") {
+		t.Errorf("no layout: err = %v", err)
+	}
+	os.MkdirAll(filepath.Join(cache, "oci", "rocky10-rpi"), 0o755)
+	os.WriteFile(filepath.Join(cache, "oci", "rocky10-rpi", "index.json"), []byte("{}"), 0o644)
+	if p, err := Fetch(t.Context(), c, cache, io.Discard); err != nil || p != filepath.Join(cache, "oci", "rocky10-rpi") {
+		t.Errorf("Fetch = %q, %v", p, err)
+	}
+}

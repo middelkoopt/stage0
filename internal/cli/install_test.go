@@ -29,6 +29,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/cpio"
 	"github.com/middelkoopt/stage0/internal/image"
 	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/internal/oci/ocitest"
 	"github.com/middelkoopt/stage0/internal/reach"
 	"github.com/middelkoopt/stage0/internal/vswitch"
 )
@@ -679,5 +680,48 @@ func TestStageBootDir(t *testing.T) {
 	}
 	if _, err := os.Stat(filepath.Join(run, "cmdline.txt")); err == nil {
 		t.Error("cmdline.txt at the top too")
+	}
+}
+
+func TestStageContainer(t *testing.T) {
+	dir := t.TempDir()
+	layout := filepath.Join(dir, "oci", "rocky")
+	digest := ocitest.Write(t, layout, map[string]string{
+		"pi.provision.partition": `[{"name":"piboot","size":"512MiB","type":"vfat","path":"/boot/efi"},{"name":"piroot","type":"ext4","path":"/"}]`,
+		"pi.provision.installer": `{"kernel":"/boot/efi/kernel8.img","initramfs":"/boot/installer.img"}`,
+	}, map[string][]byte{
+		"boot/efi": nil, "boot/efi/config.txt": []byte("arm_64bit=1\n"), "boot/efi/kernel8.img": []byte("KERNEL"),
+		"boot/installer.img": []byte("DRACUT"), "etc/os-release": []byte("x"),
+	})
+	agent := filepath.Join(dir, "stage0")
+	os.WriteFile(agent, []byte("AGENT"), 0o755)
+	a := &App{Executable: func() (string, error) { return agent, nil }, CheckStatic: func(string) error { return nil }}
+	img := image.Config{Name: "rocky-ct", Container: "rocky", Config: []string{"dtoverlay=disable-bt"}}
+	run := filepath.Join(dir, "run")
+	if err := a.stageContainer(run, layout, img, "root=PARTLABEL=piroot", "k52", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err != nil {
+		t.Fatal(err)
+	}
+	cfg, _ := os.ReadFile(filepath.Join(run, "config.txt"))
+	for _, l := range []string{"kernel=kernel8.img", "initramfs " + initrdName + " followkernel", "dtoverlay=disable-bt"} {
+		if !strings.Contains(string(cfg), l+"\n") {
+			t.Errorf("config.txt lacks %q:\n%s", l, cfg)
+		}
+	}
+	cmdline, _ := os.ReadFile(filepath.Join(run, "cmdline.txt"))
+	for _, f := range []string{"rd.neednet=1", "rd.net.dhcp.vendor-class=stage0-agent", "stage0.disk=mmcblk0",
+		"stage0.sha256=" + strings.TrimPrefix(digest, "sha256:"), "stage0.oci=http://10.0.3.1/oci"} {
+		if !strings.Contains(string(cmdline), f) {
+			t.Errorf("cmdline.txt lacks %q: %s", f, cmdline)
+		}
+	}
+	// The installer, padded to 4 bytes, then the agent and hook, gzip'd.
+	if b, _ := os.ReadFile(filepath.Join(run, initrdName)); !bytes.HasPrefix(b, []byte("DRACUT\x00\x00\x1f\x8b")) {
+		t.Errorf("%s starts %q", initrdName, b[:min(len(b), 12)])
+	}
+	if b, err := os.ReadFile(filepath.Join(run, "oci", "index.json")); err != nil || len(b) == 0 {
+		t.Errorf("layout not served: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(run, "seed.cpio")); err != nil {
+		t.Error(err)
 	}
 }

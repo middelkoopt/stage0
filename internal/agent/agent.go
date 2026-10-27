@@ -83,7 +83,23 @@ func Main() {
 			fmt.Fprintf(out, "stage0 agent: network: %v\n", err)
 		}
 	}
-	e := emitter{out: out, url: reportURL(string(cmdline))}
+	run(out, string(cmdline))
+}
+
+// Hook runs the agent from a dracut hook in a container's installer
+// initramfs (docs/containers.md): dracut has mounted the kernel
+// filesystems, loaded drivers and brought the network up. Like Main it
+// never returns, so dracut never goes on to boot.
+func Hook() {
+	out := os.Stdout // the hook points it at /dev/console
+	fmt.Fprintln(out, "stage0 agent: started from the installer's initramfs")
+	cmdline, _ := os.ReadFile("/proc/cmdline")
+	run(out, string(cmdline))
+}
+
+// run reports, installs as the command line says, then waits.
+func run(out io.Writer, cmdline string) {
+	e := emitter{out: out, url: reportURL(cmdline)}
 	r, err := settle("/", 500*time.Millisecond, 3*time.Second, 30*time.Second)
 	if err != nil {
 		e.emit(kindError, fmt.Appendf(nil, "report: %v", err))
@@ -91,7 +107,7 @@ func Main() {
 		b, _ := json.Marshal(r)
 		e.emit(kindReport, b)
 	}
-	install(e, string(cmdline))
+	install(e, cmdline)
 	fmt.Fprintln(out, "stage0 agent: done; waiting to be powered off")
 	for {
 		time.Sleep(time.Hour)
@@ -110,19 +126,16 @@ func install(e emitter, cmdline string) {
 	case plan == nil:
 		return
 	}
-	if plan.URL != "" {
-		fmt.Fprintf(out, "stage0 agent: fetching %s\n", plan.URL)
-		if _, err := Fetch(plan.URL, "/"+PayloadPath, out); err != nil {
-			fail("install", err)
-			return
-		}
-	}
 	// A card can be found after the first driver pass (a Pi 5's SD card
 	// on Ubuntu's kernel, whose mmc_block is a module): load drivers again
 	// until the disk is there.
 	waitFor("/dev/"+plan.Disk, 15*time.Second, func() { loadModules(io.Discard) })
-	fmt.Fprintf(out, "stage0 agent: installing the payload on /dev/%s\n", plan.Disk)
-	res, err := Install("/"+PayloadPath, "/dev/"+plan.Disk, plan.SHA256, out)
+	var res Result
+	if plan.OCI != "" {
+		res, err = installContainer(out, plan)
+	} else {
+		res, err = installImage(out, plan)
+	}
 	if err != nil {
 		fail("install", err)
 		return
@@ -141,6 +154,19 @@ func install(e emitter, cmdline string) {
 	}
 	b, _ := json.Marshal(res)
 	e.emit(kindInstalled, b)
+}
+
+// installImage writes the disk image (fetched first if plan.URL is set,
+// else the payload in the initramfs) to the disk.
+func installImage(out io.Writer, plan *Plan) (Result, error) {
+	if plan.URL != "" {
+		fmt.Fprintf(out, "stage0 agent: fetching %s\n", plan.URL)
+		if _, err := Fetch(plan.URL, "/"+PayloadPath, out); err != nil {
+			return Result{}, err
+		}
+	}
+	fmt.Fprintf(out, "stage0 agent: installing the payload on /dev/%s\n", plan.Disk)
+	return Install("/"+PayloadPath, "/dev/"+plan.Disk, plan.SHA256, out)
 }
 
 // needsNetwork reports whether the command line asks for anything over

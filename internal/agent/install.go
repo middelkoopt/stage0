@@ -27,6 +27,9 @@ type Plan struct {
 	SHA256 string // of the payload, an xz-compressed raw disk image
 	URL    string // where to fetch the payload; empty: it is in the initramfs
 	Seed   string // where to fetch first-boot files for the boot partition; optional
+	// OCI, instead of URL, is where a container's OCI layout is served;
+	// SHA256 is then its manifest's digest.
+	OCI string
 }
 
 var (
@@ -51,6 +54,9 @@ func ParsePlan(cmdline string) (*Plan, error) {
 		if v, ok := strings.CutPrefix(f, "stage0.seed="); ok {
 			p.Seed = v
 		}
+		if v, ok := strings.CutPrefix(f, "stage0.oci="); ok {
+			p.OCI = v
+		}
 	}
 	switch {
 	case p.Disk == "" && p.SHA256 == "":
@@ -67,6 +73,10 @@ func ParsePlan(cmdline string) (*Plan, error) {
 		return nil, fmt.Errorf("stage0.url=%q: only http:// is supported", p.URL)
 	case p.Seed != "" && !strings.HasPrefix(p.Seed, "http://"):
 		return nil, fmt.Errorf("stage0.seed=%q: only http:// is supported", p.Seed)
+	case p.OCI != "" && !strings.HasPrefix(p.OCI, "http://"):
+		return nil, fmt.Errorf("stage0.oci=%q: only http:// is supported", p.OCI)
+	case p.OCI != "" && p.URL != "":
+		return nil, errors.New("stage0.oci and stage0.url: an image or a container, not both")
 	}
 	return &p, nil
 }

@@ -1,0 +1,8 @@
+# Rocky Linux 10 for Raspberry Pi, installed from a container
+# (containers/rocky10-rpi; route A, docs/containers.md). Save it first:
+#   podman build -t stage0/rocky10-rpi containers/rocky10-rpi
+#   podman save --format oci-dir -o ~/.cache/stage0/oci/rocky10-rpi localhost/stage0/rocky10-rpi
+container: rocky10-rpi
+
+# Root by the partition's GPT name (pi.provision.partition).
+cmdline: console=serial0,115200 console=tty1 root=PARTLABEL=piroot rootfstype=ext4 rootwait

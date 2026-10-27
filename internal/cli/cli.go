@@ -14,6 +14,7 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/middelkoopt/stage0/internal/agent"
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/console"
 	"github.com/middelkoopt/stage0/internal/initrd"
@@ -67,7 +68,7 @@ func (a *App) Command() *cobra.Command {
 	f.StringVar(&a.switchName, "switch", "", "switch to use (default: the only one in the site config)")
 	f.StringVar(&a.statePath, "state", "", "records of installed nodes (default: $XDG_STATE_HOME/stage0 or ~/.local/state/stage0)")
 
-	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand(), a.installCommand(), a.checkCommand(), a.vswitchCommand())
+	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand(), a.installCommand(), a.checkCommand(), a.vswitchCommand(), agentCommand())
 	return root
 }
 
@@ -113,4 +114,16 @@ func openSwitch(sw config.Switch, sec config.SwitchSecret) (netswitch.Controller
 		return c, nil
 	}
 	return nil, fmt.Errorf("switch %q: no driver %q", sw.Name, sw.Driver)
+}
+
+// agentCommand runs the agent from a container installer's dracut hook
+// (docs/containers.md). Hidden: only the hook stage0 appends calls it.
+func agentCommand() *cobra.Command {
+	return &cobra.Command{
+		Use:    "agent",
+		Short:  "Run as the install agent inside an installer's initramfs",
+		Hidden: true,
+		Args:   cobra.NoArgs,
+		Run:    func(*cobra.Command, []string) { agent.Hook() },
+	}
 }

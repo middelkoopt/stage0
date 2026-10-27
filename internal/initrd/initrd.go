@@ -13,6 +13,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 
 	"github.com/middelkoopt/stage0/internal/agent"
 	"github.com/middelkoopt/stage0/internal/cpio"
@@ -71,6 +72,37 @@ func Build(w io.Writer, agentPath, payloadPath string) (Summary, error) {
 	}
 	s.Bytes = cw.n
 	return s, nil
+}
+
+// hookScript is the dracut hook that runs the agent from an installer's
+// initramfs. dracut sources pre-mount hooks once the network is up
+// (rd.neednet=1); the agent installs and reboots, so it never returns.
+const hookScript = `#!/bin/sh
+# stage0: install from the container (the agent reboots when done).
+/usr/bin/stage0 agent </dev/console >/dev/console 2>&1
+`
+
+// BuildHook writes, as a gzip'd cpio for appending to a dracut initramfs
+// (an installer's, docs/containers.md), the stage0 binary and the dracut
+// hook that runs it as the agent.
+func BuildHook(w io.Writer, agentPath string) error {
+	z, err := gzip.NewWriterLevel(w, gzip.BestSpeed)
+	if err != nil {
+		return err
+	}
+	a := cpio.NewWriter(z)
+	for _, d := range []string{"usr", "usr/bin", "var", "var/lib", "var/lib/dracut", "var/lib/dracut/hooks", "var/lib/dracut/hooks/pre-mount"} {
+		if err := a.Dir(d, 0o755); err != nil {
+			return err
+		}
+	}
+	if _, err := addFile(a, "usr/bin/stage0", 0o755, agentPath); err != nil {
+		return err
+	}
+	if err := a.File("var/lib/dracut/hooks/pre-mount/90-stage0.sh", 0o755, int64(len(hookScript)), strings.NewReader(hookScript)); err != nil {
+		return err
+	}
+	return errors.Join(a.Close(), z.Close())
 }
 
 func addFile(a *cpio.Writer, name string, perm fs.FileMode, path string) (int64, error) {

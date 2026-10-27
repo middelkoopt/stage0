@@ -135,3 +135,18 @@ func TestBuildSeedRefusesSymlinks(t *testing.T) {
 		t.Error("symlink accepted")
 	}
 }
+
+func TestBuildHook(t *testing.T) {
+	var buf bytes.Buffer
+	if err := BuildHook(&buf, write(t, "agent", "AGENT")); err != nil {
+		t.Fatal(err)
+	}
+	got := entries(t, buf.Bytes())
+	if got["usr/bin/stage0"] != "-rwxr-xr-x AGENT" {
+		t.Errorf("agent %q", got["usr/bin/stage0"])
+	}
+	hook := got["var/lib/dracut/hooks/pre-mount/90-stage0.sh"]
+	if !strings.HasPrefix(hook, "-rwxr-xr-x #!/bin/sh\n") || !strings.Contains(hook, "/usr/bin/stage0 agent") {
+		t.Errorf("hook %q", hook)
+	}
+}

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"io/fs"
 	"log/slog"
 	"net"
 	"os"
@@ -23,9 +24,11 @@ import (
 	"github.com/middelkoopt/stage0/internal/agent"
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/console"
+	"github.com/middelkoopt/stage0/internal/container"
 	"github.com/middelkoopt/stage0/internal/dhcpd"
 	"github.com/middelkoopt/stage0/internal/image"
 	"github.com/middelkoopt/stage0/internal/initrd"
+	"github.com/middelkoopt/stage0/internal/oci"
 	"github.com/middelkoopt/stage0/internal/reach"
 )
 
@@ -164,6 +167,10 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		return fmt.Errorf("--ipv6: network %q has no prefix6", n.Name)
 	case o.ipv6 && node.VM != nil:
 		return errors.New("--ipv6: not for VMs yet")
+	case o.ipv6 && img.Container != "":
+		return errors.New("--ipv6: not for containers yet")
+	case node.VM != nil && img.Container != "":
+		return errors.New("containers install on Pis only, for now")
 	}
 	ready, _ := regexp.Compile(img.Ready) // checked by Load
 	var installed string
@@ -198,7 +205,11 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		if o.ipv6 {
 			server = "[" + n.Server6.String() + "]"
 		}
-		err = a.stage(run, imgPath, img, installed, node.Hostname, disk, server, filepath.Join(o.cache, "boot", img.SHA256))
+		if img.Container != "" {
+			err = a.stageContainer(run, imgPath, img, installed, node.Hostname, disk, server, filepath.Join(o.cache, "boot"))
+		} else {
+			err = a.stage(run, imgPath, img, installed, node.Hostname, disk, server, filepath.Join(o.cache, "boot", img.SHA256))
+		}
 	}
 	if err != nil {
 		return err
@@ -544,44 +555,7 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 		return err
 	}
 
-	seed := filepath.Join(run, ".seed")
-	if err := os.MkdirAll(seed, 0o755); err != nil {
-		return err
-	}
-	if err := os.MkdirAll(filepath.Join(seed, img.BootDir), 0o755); err != nil {
-		return err
-	}
-	if err := os.WriteFile(filepath.Join(seed, img.BootDir, "cmdline.txt"), []byte(installed+"\n"), 0o644); err != nil {
-		return err
-	}
-	if len(img.Config) > 0 {
-		if err := os.WriteFile(filepath.Join(seed, "config.txt"), image.EnsureConfig(cfg, img.Config), 0o644); err != nil {
-			return err
-		}
-	}
-	for name, body := range img.BootFiles {
-		p := filepath.Join(seed, name)
-		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
-			return err
-		}
-		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
-			return err
-		}
-	}
-	// cloud-init images (user-data on the boot partition) would otherwise
-	// set their own hostname at first boot.
-	if ud, err := os.ReadFile(filepath.Join(bootCache, "user-data")); err == nil {
-		if err := os.WriteFile(filepath.Join(seed, "user-data"), image.SetCloudInitHostname(ud, hostname), 0o644); err != nil {
-			return err
-		}
-	}
-	if err := writeFile(filepath.Join(run, "seed.cpio"), func(w io.Writer) error {
-		_, err := initrd.BuildSeed(w, seed)
-		return err
-	}); err != nil {
-		return err
-	}
-	if err := os.RemoveAll(seed); err != nil {
+	if err := writeSeed(run, img, cfg, installed, hostname, bootCache); err != nil {
 		return err
 	}
 
@@ -670,6 +644,148 @@ func nocloudUserData(hostname string, keys []string) string {
 		fmt.Fprintf(&b, "      - %s\n", k)
 	}
 	return b.String()
+}
+
+// writeSeed writes run/seed.cpio, the first-boot files the agent lays on
+// the installed boot partition: cmdline.txt (in the image's boot
+// directory), config.txt with the image's lines ensured (cfg is the
+// shipped one), its bootFiles, and cloud-init user-data with the hostname
+// when the boot partition (bootCache) has user-data.
+func writeSeed(run string, img image.Config, cfg []byte, installed, hostname, bootCache string) error {
+	seed := filepath.Join(run, ".seed")
+	if err := os.MkdirAll(seed, 0o755); err != nil {
+		return err
+	}
+	if err := os.MkdirAll(filepath.Join(seed, img.BootDir), 0o755); err != nil {
+		return err
+	}
+	if err := os.WriteFile(filepath.Join(seed, img.BootDir, "cmdline.txt"), []byte(installed+"\n"), 0o644); err != nil {
+		return err
+	}
+	if len(img.Config) > 0 {
+		if err := os.WriteFile(filepath.Join(seed, "config.txt"), image.EnsureConfig(cfg, img.Config), 0o644); err != nil {
+			return err
+		}
+	}
+	for name, body := range img.BootFiles {
+		p := filepath.Join(seed, name)
+		if err := os.MkdirAll(filepath.Dir(p), 0o755); err != nil {
+			return err
+		}
+		if err := os.WriteFile(p, []byte(body), 0o644); err != nil {
+			return err
+		}
+	}
+	// cloud-init images (user-data on the boot partition) would otherwise
+	// set their own hostname at first boot.
+	if ud, err := os.ReadFile(filepath.Join(bootCache, "user-data")); err == nil {
+		if err := os.WriteFile(filepath.Join(seed, "user-data"), image.SetCloudInitHostname(ud, hostname), 0o644); err != nil {
+			return err
+		}
+	}
+	if err := writeFile(filepath.Join(run, "seed.cpio"), func(w io.Writer) error {
+		_, err := initrd.BuildSeed(w, seed)
+		return err
+	}); err != nil {
+		return err
+	}
+	return os.RemoveAll(seed)
+}
+
+// stageContainer builds the directory serve offers a node installing a
+// container (docs/containers.md): the container's boot partition, with its
+// kernel and its installer initramfs (stage0's agent and dracut hook
+// appended) in config.txt, a cmdline.txt carrying the agent's plan, the
+// seed, and the OCI layout under oci/ for the agent to pull.
+func (a *App) stageContainer(run, layout string, img image.Config, installed, hostname, disk, server, bootCaches string) error {
+	ci, err := oci.Open(layout)
+	if err != nil {
+		return err
+	}
+	spec, err := container.Parse(ci.Labels)
+	if err != nil {
+		return fmt.Errorf("container %s: %w", img.Container, err)
+	}
+	digest := strings.TrimPrefix(ci.Digest, "sha256:")
+	bootCache := filepath.Join(bootCaches, digest)
+	if _, err := os.Stat(bootCache); err != nil {
+		tmp := bootCache + ".tmp"
+		os.RemoveAll(tmp)
+		if err := ci.Extract(spec.Boot().Path, tmp); err != nil {
+			return err
+		}
+		if err := os.Rename(tmp, bootCache); err != nil {
+			return err
+		}
+	}
+	if err := os.RemoveAll(run); err != nil {
+		return err
+	}
+	if err := os.CopyFS(run, os.DirFS(bootCache)); err != nil {
+		return err
+	}
+
+	kernel, err := spec.InBoot(spec.Installer.Kernel)
+	if err != nil {
+		return fmt.Errorf("container %s: installer kernel: %w", img.Container, err)
+	}
+	cfg, err := os.ReadFile(filepath.Join(run, "config.txt"))
+	if err != nil {
+		return fmt.Errorf("container %s: no config.txt in its boot partition: %w", img.Container, err)
+	}
+	agentCfg := image.EnsureConfig(cfg, append(slices.Clone(img.Config),
+		"kernel="+kernel, "initramfs "+initrdName+" followkernel", "enable_uart=1"))
+	if err := os.WriteFile(filepath.Join(run, "config.txt"), agentCfg, 0o644); err != nil {
+		return err
+	}
+	// dracut brings the network up, asking DHCP as the agent does, then
+	// its hook runs the agent. No ip=dhcp: a Pi kernel with its own DHCP
+	// client built in would take it first, without the agent's class, and
+	// retry for minutes (k52, Rocky).
+	base := "http://" + server
+	cmdline := fmt.Sprintf("console=serial0,115200 rd.neednet=1 rd.net.dhcp.vendor-class=%s stage0.disk=%s stage0.sha256=%s stage0.oci=%s/oci stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
+		dhcpd.AgentClass, disk, digest, base, base, base)
+	if err := os.WriteFile(filepath.Join(run, "cmdline.txt"), []byte(cmdline), 0o644); err != nil {
+		return err
+	}
+
+	exe, err := a.Executable()
+	if err != nil {
+		return err
+	}
+	if err := a.CheckStatic(exe); err != nil {
+		return err
+	}
+	files, err := ci.Files(spec.Installer.Initramfs)
+	if err != nil {
+		return fmt.Errorf("container %s: installer initramfs: %w", img.Container, err)
+	}
+	installer := files[spec.Installer.Initramfs]
+	if err := writeFile(filepath.Join(run, initrdName), func(w io.Writer) error {
+		// Padded: the kernel takes an appended archive at a 4-byte boundary.
+		if _, err := w.Write(append(installer, make([]byte, (4-len(installer)%4)%4)...)); err != nil {
+			return err
+		}
+		return initrd.BuildHook(w, exe)
+	}); err != nil {
+		return err
+	}
+
+	if err := writeSeed(run, img, cfg, installed, hostname, bootCache); err != nil {
+		return err
+	}
+	// The layout, linked file by file (serve won't follow a link out).
+	return filepath.WalkDir(layout, func(p string, d fs.DirEntry, err error) error {
+		if err != nil {
+			return err
+		}
+		rel, _ := filepath.Rel(layout, p)
+		dst := filepath.Join(run, "oci", rel)
+		if d.IsDir() {
+			return os.MkdirAll(dst, 0o755)
+		}
+		return linkOrCopy(p, dst)
+	})
 }
 
 // linkOrCopy hard-links src to dst, copying when they're on different

@@ -35,6 +35,11 @@ func TestParsePlan(t *testing.T) {
 		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.seed=http://10.0.3.1/seed.cpio",
 			&Plan{Disk: "mmcblk0", SHA256: sum, Seed: "http://10.0.3.1/seed.cpio"}, ""},
 		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.seed=/seed.cpio", nil, "http://"},
+		// A container: its layout's URL, and the manifest's digest.
+		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.oci=http://10.0.3.1/oci",
+			&Plan{Disk: "mmcblk0", SHA256: sum, OCI: "http://10.0.3.1/oci"}, ""},
+		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.oci=/oci", nil, "http://"},
+		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.oci=http://a/oci stage0.url=http://a/x.xz", nil, "not both"},
 	}
 	for _, tt := range tests {
 		got, err := ParsePlan(tt.cmdline)
