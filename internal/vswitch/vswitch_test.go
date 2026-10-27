@@ -221,3 +221,57 @@ func TestQEMU(t *testing.T) {
 		}
 	}
 }
+
+// TestTap opens the tap device STAGE0_TEST_TAP names (e.g. stage0tap0,
+// owned by the user, its host side 10.0.9.1) and asks for 10.0.9.1's MAC
+// with ARP: the host kernel answers through the tap.
+func TestTap(t *testing.T) {
+	name := os.Getenv("STAGE0_TEST_TAP")
+	if name == "" {
+		t.Skip("set STAGE0_TEST_TAP to a tap device you own, its host side 10.0.9.1")
+	}
+	p, err := Tap(name)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer p.Close()
+	mine := []byte{0x52, 0x54, 0, 0x12, 0x34, 0x57}
+	arp := append([]byte{0xff, 0xff, 0xff, 0xff, 0xff, 0xff}, mine...)
+	arp = append(arp, 0x08, 0x06, // ARP
+		0, 1, 8, 0, 6, 4, 0, 1) // Ethernet, IPv4, request
+	arp = append(arp, mine...)
+	arp = append(arp, 10, 0, 9, 2)                   // from 10.0.9.2
+	arp = append(arp, 0, 0, 0, 0, 0, 0, 10, 0, 9, 1) // who has 10.0.9.1
+	got := make(chan []byte, 8)
+	go func() {
+		for {
+			f, err := p.ReadFrame()
+			if err != nil {
+				t.Logf("tap read: %v", err)
+				return
+			}
+			got <- f
+		}
+	}()
+	// Opening the tap brings its link up and the host reconfigures it, so
+	// ask again until it answers, as a real host retries ARP.
+	deadline := time.After(5 * time.Second)
+	resend := time.NewTicker(500 * time.Millisecond)
+	defer resend.Stop()
+	if err := p.WriteFrame(arp); err != nil {
+		t.Fatal(err)
+	}
+	for {
+		select {
+		case <-resend.C:
+			p.WriteFrame(arp)
+		case f := <-got:
+			if len(f) >= 42 && f[12] == 8 && f[13] == 6 && f[21] == 2 && bytes.Equal(f[0:6], mine) {
+				t.Logf("ARP reply: 10.0.9.1 is at % x", f[22:28])
+				return
+			}
+		case <-deadline:
+			t.Fatal("no ARP reply from the host through the tap")
+		}
+	}
+}

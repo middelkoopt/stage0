@@ -13,7 +13,10 @@ import (
 	"io"
 	"log/slog"
 	"net"
+	"os"
 	"sync"
+	"syscall"
+	"unsafe"
 )
 
 // maxFrame bounds a frame (jumbo frames included).
@@ -170,3 +173,44 @@ func (s *stream) WriteFrame(f []byte) error {
 }
 
 func (s *stream) Close() error { return s.c.Close() }
+
+// Tap is a port on a tap device (a kernel network interface): frames
+// written here appear on the interface, and frames the kernel sends out of
+// it come back here. The device must exist and be owned by the user, e.g.
+// one a systemd-networkd .netdev with [Tap] User= creates.
+func Tap(name string) (Port, error) {
+	// Attach the descriptor before Go's poller sees it: /dev/net/tun only
+	// becomes pollable once it is a tap.
+	fd, err := syscall.Open("/dev/net/tun", syscall.O_RDWR|syscall.O_CLOEXEC|syscall.O_NONBLOCK, 0)
+	if err != nil {
+		return nil, fmt.Errorf("vswitch: tap %s: %w", name, err)
+	}
+	const (
+		tunsetiff = 0x400454ca
+		iffTap    = 0x0002
+		iffNoPI   = 0x1000 // frames without the 4-byte packet-info header
+	)
+	var req [40]byte // struct ifreq: name, then flags
+	copy(req[:15], name)
+	binary.NativeEndian.PutUint16(req[16:], iffTap|iffNoPI)
+	if _, _, errno := syscall.Syscall(syscall.SYS_IOCTL, uintptr(fd), tunsetiff, uintptr(unsafe.Pointer(&req[0]))); errno != 0 {
+		syscall.Close(fd)
+		return nil, fmt.Errorf("vswitch: tap %s (does it exist, and is it yours?): %w", name, errno)
+	}
+	return &tap{f: os.NewFile(uintptr(fd), "/dev/net/tun:"+name)}, nil
+}
+
+type tap struct{ f *os.File }
+
+func (t *tap) ReadFrame() ([]byte, error) {
+	buf := make([]byte, maxFrame)
+	n, err := t.f.Read(buf)
+	return buf[:n], err
+}
+
+func (t *tap) WriteFrame(f []byte) error {
+	_, err := t.f.Write(f)
+	return err
+}
+
+func (t *tap) Close() error { return t.f.Close() }

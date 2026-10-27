@@ -32,3 +32,10 @@ networks:
     pool: 10.0.3.100-10.0.3.199
     vlan: pinet
     prefix6: fd00:10:3::/64
+  # The QEMU test bed's network: the host's side of the tap stage0tap0
+  # (systemd-networkd .netdev), joined by VMs through `stage0 vswitch`.
+  - name: vnet
+    interface: stage0tap0
+    address: 10.0.9.1/24
+    pool: 10.0.9.100-10.0.9.199
+    prefix6: fd00:10:9::/64
