@@ -66,16 +66,10 @@ builds a root filesystem in RAM (from a container built here, or the
 image's partitions mounted) and runs the target's own tools from a chroot
 to partition, format, copy and install the bootloader (LL1).
 
-**Next: install from a container (route A, decided BA1–BA3).** The
-container (`containers/`) ships its kernel and a dracut installer
-initramfs (`dracut --add network-manager`, plus sgdisk and mkfs). stage0
-reads it as an OCI layout directory (`podman save --format oci-dir`; a
-registry later), takes kernel and initramfs from its layers in Go, and
-appends one cpio: the agent plus a dracut hook. dracut brings up the
-network (`rd.neednet=1 ip=dhcp rd.net.dhcp.vendor-class=stage0-agent`);
-the hook runs the agent, which partitions as the image's label says,
-unpacks the layers (whiteouts honoured), seeds and reboots. The hook and
-network parts are proven ([containers](docs/containers.md)). Partitioning could come from an **Ignition** config's
+**Container route (A, decided BA1–BA3): built** for Pis over IPv4
+([containers](docs/containers.md)). Next for it: layouts per node or
+image, not only from labels (BB1); `--ipv6`; a registry instead of a
+layout directory. Partitioning could come from an **Ignition** config's
 `storage` section (disks, partitions, filesystems) instead of the
 `pi.provision.partition` label, with dracut's ignition module or the agent
 reading it (unexplored). Later, bootc (E) for UEFI machines, testable in

@@ -1,10 +1,43 @@
-# Container route facts
+# Installing from a container
 
-Facts for installing from a container (route A,
-[`ROADMAP.md`](../ROADMAP.md#install-routes)), as seen in a pilot on k52.
-The container is [`containers/rocky10-rpi`](../containers/rocky10-rpi/Containerfile).
+How `stage0 install` installs a container image (route A), and the facts
+it rests on, as seen on k52. The container is
+[`containers/rocky10-rpi`](../containers/rocky10-rpi/Containerfile).
 
 > Last verified: 2026-10-27
+
+## How it works
+
+**Works on a Pi 5** (k52, 2026-10-27): `stage0 install k52 --image
+rocky10-rpi-container` installed Rocky 10.2 in 45 s; it was up 197 s after
+power-on, root logging in with the site's keys.
+
+1. Build and save the container as an OCI layout:
+   `podman build -t stage0/rocky10-rpi containers/rocky10-rpi`, then
+   `podman save --format oci-dir -o ~/.cache/stage0/oci/rocky10-rpi
+   localhost/stage0/rocky10-rpi`. An image config names it with
+   `container: rocky10-rpi` and gives the installed system's `cmdline`
+   ([`images/rocky10-rpi-container.yaml`](../images/rocky10-rpi-container.yaml)).
+2. **Labels** say how to install it: `pi.provision.partition` (a JSON list
+   of `name`, `size`, `type` (vfat or ext4), `path`; the first is the Pi's
+   boot partition, the last the root, filling the disk) and
+   `pi.provision.installer` (`kernel`, `initramfs`: paths in the image).
+   Optional: `pi.provision.hosts` (lines of `/etc/hosts`) and
+   `pi.provision.resolv` (where `/etc/resolv.conf` points).
+3. **stage0** (`internal/oci`, `internal/container`) reads the layout in Go,
+   no container runtime: it takes the boot partition's files and the
+   installer initramfs from the layers, appends its agent and a dracut
+   hook to the initramfs, and serves the layout under `oci/`. The kernel
+   command line carries the manifest's digest; the agent checks every blob
+   against its digest from there down.
+4. **The agent**, run by the hook once dracut's network is up, partitions
+   with the installer's `sgdisk` (GPT, partitions named as labelled),
+   formats with `mkfs.vfat`/`mkfs.ext4`, unpacks the layers onto the root
+   (owners, modes, links, xattrs; whiteouts applied), moves the boot
+   partition's files onto it, writes `/etc/fstab` (by `PARTLABEL`), hosts
+   and resolv.conf, then seeds the boot partition as for disk images.
+
+Not yet: `--ipv6`, VMs, layouts other than the labels'.
 
 ## The installer initramfs
 
@@ -35,13 +68,23 @@ The container is [`containers/rocky10-rpi`](../containers/rocky10-rpi/Containerf
 
 ## Network in the initramfs
 
-- **`rd.neednet=1 ip=dhcp`** makes dracut's NetworkManager ask for an
+- **`rd.neednet=1`** alone makes dracut's NetworkManager ask DHCP for an
   address (interface `end0` on the Pi 5; `nm-wait-online-initrd` waits
-  for it, with no time limit).
+  for it, with no time limit). **Not `ip=dhcp`:** the Rocky Pi kernel has
+  its own DHCP client built in (`IP-Config`), which takes `ip=dhcp` first,
+  without the vendor class, and retries for minutes before dracut starts.
 - **`rd.net.dhcp.vendor-class=stage0-agent`** sets the DHCP vendor class,
   so `stage0 serve` answers it as it answers the agent. Without it, a node
   that netbooted over IPv6 has no IPv4 lease on record, and serve ignores
   the plain request ("not a PXE client and never booted here").
 - With no `root=` dracut runs its stages to the end and fails at
-  switch-root, then enters emergency mode (root is locked in this
-  container, so the shell isn't reachable).
+  switch-root, then enters emergency mode. The installer initramfs has
+  the container's `/etc/passwd` but no `/etc/shadow`; whether its
+  emergency shell then lets root in is untested.
+
+## The installed system
+
+- **No clock:** a Pi has no clock battery and this container has no time
+  sync ("NTP service: n/a"), so k52 came up on 2026-06-10, and `rpm`
+  called 89 of 242 package signatures BAD (signed "in the future"); with
+  the clock set, none.

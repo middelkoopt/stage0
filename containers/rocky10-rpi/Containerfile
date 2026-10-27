@@ -1,7 +1,7 @@
 # Rocky Linux 10 for Raspberry Pi, as a container stage0 installs from
 # (route A, ROADMAP.md). Adapted from ../lab/images/rocky10: site files
 # (keys, network connections) left out, since stage0 seeds those, and an
-# installer initramfs added.
+# installer initramfs added, built last so it sees the configured system.
 FROM registry.ipv6.docker.com/rockylinux/rockylinux:10
 
 ## Update and setup Rocky
@@ -25,6 +25,13 @@ RUN dnf install -y ca-certificates procps zstd jq yq && \
     dnf install -y openssh openssh-clients openssh-server iproute iputils NetworkManager sudo && \
     dnf install -y nano vim less bash-completion man
 
+## Configure system. An empty root password opens the serial console
+## only: sshd refuses empty passwords.
+ENV OS_RELEASE='el10'
+RUN passwd -d root && \
+    sed -i '/alias/d' /root/.bashrc && \
+    systemctl enable sshd.service
+
 ## Installer initramfs: dracut brings the network up (NetworkManager);
 ## stage0 appends its agent and a hook. The partitioning tools come along.
 RUN dnf install -y dracut dracut-network gdisk e2fsprogs dosfstools && \
@@ -34,7 +41,3 @@ RUN dnf install -y dracut dracut-network gdisk e2fsprogs dosfstools && \
       --kver "$kver" /boot/stage0-installer.img
 LABEL pi.provision.installer='{"kernel":"/boot/efi/kernel8.img","initramfs":"/boot/stage0-installer.img"}'
 
-## Configure system
-ENV OS_RELEASE='el10'
-RUN sed -i '/alias/d' /root/.bashrc && \
-    systemctl enable sshd.service
