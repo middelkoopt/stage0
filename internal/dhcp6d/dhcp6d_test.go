@@ -97,3 +97,14 @@ func TestOnLease(t *testing.T) {
 		t.Errorf("OnLease calls %v", got)
 	}
 }
+
+func TestIgnoresInstalled(t *testing.T) {
+	s := testServer()
+	s.IsInstalled = func(mac net.HardwareAddr) bool { return mac.String() == "d8:3a:dd:c5:c1:f3" }
+	if r := s.Reply(solicit(t, "d8:3a:dd:c5:c1:f3", true)); r != nil {
+		t.Errorf("answered an installed node's netboot: %v", r)
+	}
+	if r := s.Reply(solicit(t, "e4:5f:01:1d:17:a2", true)); r == nil {
+		t.Error("ignored a node that isn't installed")
+	}
+}

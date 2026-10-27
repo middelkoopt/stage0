@@ -23,3 +23,26 @@ func TestNewAddrMessage(t *testing.T) {
 		t.Errorf("message\n got % x\nwant % x", got, want)
 	}
 }
+
+func TestWantsIPv6(t *testing.T) {
+	if !wantsIPv6("console=ttyAMA10 stage0.url=http://[fd00:10:3::1]/images/x.img.xz") {
+		t.Error("IPv6 literal URL not seen")
+	}
+	if wantsIPv6("ip=dhcp stage0.url=http://10.0.3.1/images/x.img.xz") {
+		t.Error("IPv4 URL taken for IPv6")
+	}
+}
+
+func TestGlobalIPv6(t *testing.T) {
+	addrs := []netip.Prefix{
+		netip.MustParsePrefix("fe80::1/64"),
+		netip.MustParsePrefix("10.0.3.100/24"),
+		netip.MustParsePrefix("fd00:10:3:0:da3a:ddff:fec5:c1f3/64"),
+	}
+	if a, ok := firstGlobal6(addrs); !ok || a.String() != "fd00:10:3:0:da3a:ddff:fec5:c1f3" {
+		t.Errorf("got %v %v", a, ok)
+	}
+	if _, ok := firstGlobal6(addrs[:2]); ok {
+		t.Error("link-local taken as global")
+	}
+}

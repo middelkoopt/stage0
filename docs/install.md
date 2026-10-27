@@ -144,6 +144,13 @@ k52: fe80::a9e7:2c9a:8c3d:d7c9%eth0.3
 
 With the lab key, add `-i ~/.cache/stage0/ssh/id_ed25519` to `ssh`.
 
+With `--ipv6`, the install runs over IPv6 alone (the network needs
+`prefix6`, and `install` must run from `/usr/local/bin/stage0` for router
+advertisements and neighbour entries): the node netboots by DHCPv6 and
+TFTP on IPv6 (its EEPROM needs `USE_IPV6=1`), and the agent takes an
+address by SLAAC and fetches from `[<prefix>::1]`; details in
+[`netboot.md`](netboot.md#ipv6-netboot-on-a-pi-5).
+
 With `--keep`, `install` keeps serving after the install (renewing the
 node's lease) until interrupted or `--timeout`.
 

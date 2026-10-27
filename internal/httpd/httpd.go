@@ -53,7 +53,11 @@ func Listen(ctx context.Context, ifname string, addr netip.Addr) (net.Listener, 
 		})
 		return errors.Join(err, serr)
 	}}
-	ln, err := lc.Listen(ctx, "tcp4", netip.AddrPortFrom(addr, Port).String())
+	network := "tcp4"
+	if addr.Is6() {
+		network = "tcp6"
+	}
+	ln, err := lc.Listen(ctx, network, netip.AddrPortFrom(addr, Port).String())
 	if err != nil {
 		return nil, fmt.Errorf("http on %s: %w", ifname, err)
 	}

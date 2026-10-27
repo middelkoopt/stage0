@@ -24,6 +24,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/config` | `site.yaml` (committed: switches; nodes with console, install disk, network, or `vm:` for test bed VMs; networks with their VLAN and IPv6 prefix) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
 | `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients, then the same MACs' kernels (`ip=dhcp`, no vendor class) with the same address; stage0's agent asking itself (vendor class `stage0-agent`, a VM booted with `-kernel`); installed nodes get plain leases (24 h) and no answer to PXE; in-memory leases; the Pi's option 43 |
 | `internal/httpd` | HTTP (port 80) from the same root, every request logged; for images too big or slow for TFTP. Read-only except agents' `POST /stage0/report/<kind>`, when a listener is set |
+| `internal/dhcp6d` | DHCPv6 for IPv6 netboot: clients asking for a Bootfile-URL get an address (by DUID) and `tftp://[<prefix>::1]/`; installed nodes are ignored; a hook adds neighbour entries |
 | `internal/radv` | IPv6 router advertisements of one prefix (lifetime 0, no default route), for SLAAC; needs `CAP_NET_RAW` |
 | `internal/reach` | Ping (unprivileged ICMP) and the SSH server's greeting |
 | `internal/tftpd` | Read-only TFTP from one directory (confined with `os.Root`), every request logged |

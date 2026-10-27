@@ -132,6 +132,7 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 		leases6 := dhcp6d.New(dhcp6d.Config{Server: n.Server6, Prefix: n.IPv6Prefix, MAC: mac}, log)
 		// A Pi's bootloader doesn't answer neighbour solicitations for its
 		// DHCPv6 address, so the host is told where it is.
+		leases6.IsInstalled = leases.IsInstalled
 		leases6.OnLease = func(ip netip.Addr, mac net.HardwareAddr) {
 			if err := neigh.Add(n.Interface, ip, mac); err != nil {
 				log.Warn("dhcpv6: neighbour entry", "ip", ip, "err", err)
@@ -141,8 +142,10 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 		g.Go(func() error { return leases6.Serve(ctx, socks.DHCP6) })
 		if root != "" {
 			g.Go(func() error { return files.Serve(ctx, socks.TFTP6) })
+			g.Go(func() error { return web.Serve(ctx, socks.HTTP6) })
 		} else {
 			socks.TFTP6.Close()
+			socks.HTTP6.Close()
 		}
 	}
 	if root != "" {
@@ -163,6 +166,7 @@ type Sockets struct {
 	DHCP, TFTP   net.PacketConn
 	HTTP         net.Listener
 	DHCP6, TFTP6 net.PacketConn
+	HTTP6        net.Listener
 }
 
 // openNetwork checks the network's interface and opens serve's sockets
@@ -193,6 +197,10 @@ func openNetwork(ctx context.Context, n config.Network) (Sockets, error) {
 			if s.TFTP6, err = tftpd.Listen(ctx, n.Interface, netip.IPv6Unspecified()); err != nil {
 				s.DHCP6.Close()
 				s.DHCP6 = nil
+			} else if s.HTTP6, err = httpd.Listen(ctx, n.Interface, n.Server6); err != nil {
+				s.DHCP6.Close()
+				s.TFTP6.Close()
+				s.DHCP6, s.TFTP6 = nil, nil
 			}
 		}
 		err = nil // IPv6 netboot is optional; serve says what runs

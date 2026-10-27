@@ -82,8 +82,16 @@ Source unless noted: Raspberry Pi documentation
 for the node's DHCPv6 address: `serve`'s DHCPv6 adds one on each lease
 (netlink, MAC from the client's DUID-LL; needs `CAP_NET_ADMIN`, from
 `tools/install-capped.sh`). The bootloader then fetched `config.txt`, the
-device tree, stage0's initramfs and the overlays over TFTP on IPv6, and
-the agent ran (its own networking is still IPv4: `ip=dhcp`).
+device tree, stage0's initramfs and the overlays over TFTP on IPv6.
+
+**A whole install over IPv6 works too** (`install --ipv6`, k52, Rocky
+10.2): the agent got `fd00:10:3:0:da3a:ddff:fec5:c1f3` by SLAAC from
+stage0's router advertisement, fetched the image (947 MB in 8.6 s) and the
+seed from `[fd00:10:3::1]`, and the installed system came up. The Pi
+kernels of Raspberry Pi OS and Rocky build IPv6 as a module ("address
+family not supported by protocol" otherwise), so for IPv6 the agent boots
+`kernel8.img` with the image's own `initramfs8` and stage0's appended, and
+loads `ipv6` with its `modprobe`.
 
 How it got there:
 

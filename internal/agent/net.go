@@ -8,6 +8,9 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"os"
+	"os/exec"
+	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -23,7 +26,10 @@ import (
 // kernel loads virtio_net as a module, after the kernel's own DHCP): each
 // Ethernet interface is brought up and asks stage0 by DHCP until one gets
 // a lease.
-func bringUpNetwork(out io.Writer) error {
+func bringUpNetwork(out io.Writer, ipv6 bool) error {
+	if ipv6 {
+		return bringUpIPv6(out)
+	}
 	ifs, err := net.Interfaces()
 	if err != nil {
 		return err
@@ -154,4 +160,70 @@ func addAddr(index int, p netip.Prefix) error {
 		}
 	}
 	return nil
+}
+
+// wantsIPv6 reports whether the command line's image URL is an IPv6
+// literal: the install then runs over IPv6 alone.
+func wantsIPv6(cmdline string) bool {
+	for _, f := range strings.Fields(cmdline) {
+		if v, ok := strings.CutPrefix(f, "stage0.url="); ok {
+			return strings.HasPrefix(v, "http://[")
+		}
+	}
+	return false
+}
+
+// firstGlobal6 returns the first global IPv6 address among addrs.
+func firstGlobal6(addrs []netip.Prefix) (netip.Addr, bool) {
+	for _, p := range addrs {
+		if a := p.Addr(); a.Is6() && !a.Is4In6() && a.IsGlobalUnicast() {
+			return a, true
+		}
+	}
+	return netip.Addr{}, false
+}
+
+// bringUpIPv6 brings every Ethernet interface up and waits for the kernel
+// to form a global address from a router advertisement (SLAAC).
+func bringUpIPv6(out io.Writer) error {
+	// A distro kernel may build IPv6 as a module (Raspberry Pi OS and
+	// Rocky's Pi kernels do).
+	if _, err := os.Stat("/proc/net/if_inet6"); err != nil {
+		if mp := findModprobe("/"); mp != "" {
+			if b, err := exec.Command(mp, "ipv6").CombinedOutput(); err != nil {
+				fmt.Fprintf(out, "stage0 agent: modprobe ipv6: %v %s\n", err, b)
+			}
+		}
+	}
+	ifs, err := net.Interfaces()
+	if err != nil {
+		return err
+	}
+	for _, ifc := range ifs {
+		if ifc.Flags&net.FlagLoopback == 0 && len(ifc.HardwareAddr) == 6 {
+			if err := setLinkUp(ifc.Name); err != nil {
+				fmt.Fprintf(out, "stage0 agent: %v\n", err)
+			}
+		}
+	}
+	for deadline := time.Now().Add(60 * time.Second); time.Now().Before(deadline); time.Sleep(time.Second) {
+		ifs, _ := net.Interfaces()
+		for _, ifc := range ifs {
+			if ifc.Flags&net.FlagLoopback != 0 {
+				continue
+			}
+			addrs, _ := ifc.Addrs()
+			var ps []netip.Prefix
+			for _, a := range addrs {
+				if p, err := netip.ParsePrefix(a.String()); err == nil {
+					ps = append(ps, p)
+				}
+			}
+			if a, ok := firstGlobal6(ps); ok {
+				fmt.Fprintf(out, "stage0 agent: %s has %s from a router advertisement\n", ifc.Name, a)
+				return nil
+			}
+		}
+	}
+	return errors.New("no IPv6 address from a router advertisement within 60 s")
 }

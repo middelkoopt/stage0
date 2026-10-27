@@ -64,7 +64,7 @@ type installResult struct {
 
 func (a *App) installCommand() *cobra.Command {
 	var imageName, imagesDir, cacheDir, disk, network string
-	var setPort, keep bool
+	var setPort, keep, ipv6 bool
 	cmd := &cobra.Command{
 		Use:   "install <node> --image NAME",
 		Short: "Install an image on a node: netboot the agent, write the disk, boot it",
@@ -99,7 +99,7 @@ func (a *App) installCommand() *cobra.Command {
 			}
 			return a.install(ctx, installOptions{
 				node: args[0], image: imageName, images: imagesDir, cache: cacheDir, disk: disk, network: network,
-				setPort: setPort, keep: keep,
+				setPort: setPort, keep: keep, ipv6: ipv6,
 			})
 		},
 	}
@@ -109,6 +109,7 @@ func (a *App) installCommand() *cobra.Command {
 	f.StringVar(&cacheDir, "cache", "", "where images and staged boot files go (default: the user cache dir/stage0)")
 	f.StringVar(&disk, "disk", "", "disk to write, e.g. mmcblk0 (default: the node's disk in site.yaml)")
 	f.StringVar(&network, "network", "", "network to install over (default: the only one in site.yaml)")
+	f.BoolVar(&ipv6, "ipv6", false, "install over IPv6 alone: the agent gets its address by SLAAC and fetches from <prefix>::1 (needs the network's prefix6, and the CAP_NET_RAW/CAP_NET_ADMIN copy)")
 	f.BoolVar(&keep, "keep", false, "after the install, keep serving (and a VM running) until interrupted or --timeout")
 	f.BoolVar(&setPort, "set-port", false, "move the node's port to the network's VLAN first (its old PVID stays tagged)")
 	return cmd
@@ -116,7 +117,7 @@ func (a *App) installCommand() *cobra.Command {
 
 type installOptions struct {
 	node, image, images, cache, disk, network string
-	setPort, keep                             bool
+	setPort, keep, ipv6                       bool
 }
 
 func (a *App) install(ctx context.Context, o installOptions) error {
@@ -158,6 +159,12 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	case node.VM == nil && img.VM():
 		return fmt.Errorf("image %s is for VMs, but %s is not one", img.Name, node.Name)
 	}
+	switch {
+	case o.ipv6 && !n.Server6.IsValid():
+		return fmt.Errorf("--ipv6: network %q has no prefix6", n.Name)
+	case o.ipv6 && node.VM != nil:
+		return errors.New("--ipv6: not for VMs yet")
+	}
 	ready, _ := regexp.Compile(img.Ready) // checked by Load
 	var installed string
 	if !img.VM() {
@@ -187,7 +194,11 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	if img.VM() {
 		kernel, initrdPath, err = a.stageVM(ctx, run, img, imgPath, node, site.SSHKeys, filepath.Join(o.cache, "agent", img.Name), progress)
 	} else {
-		err = a.stage(run, imgPath, img, installed, node.Hostname, disk, n.Server.String(), filepath.Join(o.cache, "boot", img.SHA256))
+		server := n.Server.String()
+		if o.ipv6 {
+			server = "[" + n.Server6.String() + "]"
+		}
+		err = a.stage(run, imgPath, img, installed, node.Hostname, disk, server, filepath.Join(o.cache, "boot", img.SHA256))
 	}
 	if err != nil {
 		return err
@@ -323,7 +334,11 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	// disk; its installed system's DHCP gets the same address.
 	if macs, err := res.macs(); err == nil {
 		for _, m := range macs {
-			if ip, ok := leases.Install(m); ok {
+			ip, ok := leases.Install(m)
+			if !ok && o.ipv6 { // it netbooted over IPv6: no IPv4 lease yet
+				ip, ok = leases.Reserve(m)
+			}
+			if ok {
 				res.MAC, res.IPv4 = m.String(), ip.String()
 				break
 			}
@@ -468,15 +483,27 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 		return fmt.Errorf("image %s: no config.txt in its boot partition: %w", img.Name, err)
 	}
 	// The agent boots with stage0's initramfs, on the serial console
-	// (enable_uart: a Pi 4's GPIO serial port is off without it).
-	agentCfg := image.EnsureConfig(cfg, append(slices.Clone(img.Config), "initramfs "+initrdName+" followkernel", "enable_uart=1"))
+	// (enable_uart: a Pi 4's GPIO serial port is off without it). Over
+	// IPv6 it needs the kernel's ipv6 module, so it boots kernel8.img
+	// with the image's own initramfs8 (modules included) and stage0's
+	// appended to it.
+	ipv6 := strings.HasPrefix(server, "[")
+	agentLines := append(slices.Clone(img.Config), "initramfs "+initrdName+" followkernel", "enable_uart=1")
+	if ipv6 {
+		agentLines = append(agentLines, "kernel=kernel8.img")
+	}
+	agentCfg := image.EnsureConfig(cfg, agentLines)
 	if err := os.WriteFile(filepath.Join(run, "config.txt"), agentCfg, 0o644); err != nil {
 		return err
 	}
 	base := "http://" + server
+	netcfg := "ip=dhcp " // the kernel takes an IPv4 address
+	if strings.HasPrefix(server, "[") {
+		netcfg = "" // IPv6: the agent waits for SLAAC itself
+	}
 	// serial0 is the Pi's console UART.
-	cmdline := fmt.Sprintf("console=serial0,115200 ip=dhcp stage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
-		disk, img.SHA256, base, img.File(), base, base)
+	cmdline := fmt.Sprintf("console=serial0,115200 %sstage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
+		netcfg, disk, img.SHA256, base, img.File(), base, base)
 	if err := os.WriteFile(filepath.Join(run, "cmdline.txt"), []byte(cmdline), 0o644); err != nil {
 		return err
 	}
@@ -489,6 +516,16 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 		return err
 	}
 	if err := writeFile(filepath.Join(run, initrdName), func(w io.Writer) error {
+		if ipv6 {
+			distro, err := os.Open(filepath.Join(run, "initramfs8"))
+			if err != nil {
+				return fmt.Errorf("image %s: --ipv6 needs its initramfs8: %w", img.Name, err)
+			}
+			defer distro.Close()
+			if _, err := io.Copy(w, distro); err != nil {
+				return err
+			}
+		}
 		_, err := initrd.Build(w, exe, "")
 		return err
 	}); err != nil {

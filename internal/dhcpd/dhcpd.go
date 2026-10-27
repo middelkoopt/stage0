@@ -104,6 +104,24 @@ func (s *Server) InstalledNodes() []string {
 	return out
 }
 
+// Reserve gives mac a lease if it has none and marks it installed: for a
+// node that netbooted over IPv6, so its installed system's DHCPv4 request
+// is answered.
+func (s *Server) Reserve(mac net.HardwareAddr) (netip.Addr, bool) {
+	ip, ok := s.lease(mac.String())
+	if !ok {
+		return ip, false
+	}
+	return s.Install(mac)
+}
+
+// IsInstalled reports whether mac is an installed node.
+func (s *Server) IsInstalled(mac net.HardwareAddr) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	return s.installed[mac.String()]
+}
+
 // Acked returns the address last acknowledged to mac.
 func (s *Server) Acked(mac net.HardwareAddr) (netip.Addr, bool) {
 	s.mu.Lock()

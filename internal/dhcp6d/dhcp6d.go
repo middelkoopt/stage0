@@ -45,6 +45,10 @@ type Server struct {
 	// client's MAC (from its DUID), e.g. to add a neighbour entry.
 	OnLease func(ip netip.Addr, mac net.HardwareAddr)
 
+	// IsInstalled, if set, says which nodes are installed: their netboot
+	// requests get no answer, so they boot from their disks.
+	IsInstalled func(mac net.HardwareAddr) bool
+
 	mu     sync.Mutex
 	leases map[string]netip.Addr // client DUID -> address
 	next   netip.Addr
@@ -125,6 +129,10 @@ func (s *Server) Reply(m *dhcpv6.Message) *dhcpv6.Message {
 		return nil // for another server
 	}
 	log := s.log.With("client", cid.String(), "type", m.Type().String())
+	if mac := duidMAC(cid); mac != nil && s.IsInstalled != nil && s.IsInstalled(mac) {
+		log.Debug("dhcpv6: ignored, installed node (it boots from its disk)")
+		return nil
+	}
 	var iaid [4]byte
 	if ia := m.Options.OneIANA(); ia != nil {
 		iaid = ia.IaId

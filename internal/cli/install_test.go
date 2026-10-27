@@ -632,3 +632,21 @@ func TestInstallKeep(t *testing.T) {
 		t.Errorf("did not keep serving (%s):\n%s", time.Since(start), out)
 	}
 }
+
+func TestInstallIPv6Staging(t *testing.T) {
+	// The test image has no initramfs8, which --ipv6 needs (the kernel's
+	// ipv6 module is in it): staging stops there, with what came before.
+	env := newInstallEnv(t, nil)
+	if _, err := env.run(t, "--ipv6"); err == nil || !strings.Contains(err.Error(), "needs its initramfs8") {
+		t.Fatalf("err = %v", err)
+	}
+	if cfg, _ := os.ReadFile(filepath.Join(env.cache, "run", "k53", "config.txt")); !strings.Contains(string(cfg), "kernel=kernel8.img") {
+		t.Errorf("config.txt: %s", cfg)
+	}
+	cmdline, _ := os.ReadFile(filepath.Join(env.cache, "run", "k53", "cmdline.txt"))
+	if !strings.Contains(string(cmdline), "stage0.url=http://[fd00:10:3::1]/images/test.raw.xz") ||
+		!strings.Contains(string(cmdline), "stage0.report=http://[fd00:10:3::1]/stage0/report") ||
+		strings.Contains(string(cmdline), "ip=dhcp") {
+		t.Errorf("cmdline.txt: %s", cmdline)
+	}
+}

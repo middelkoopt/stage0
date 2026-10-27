@@ -17,14 +17,13 @@ site's keys from NoCloud, in 96 s ([`docs/testbed.md`](docs/testbed.md)).
 (none)
 
 ## Next session
-1. IPv6 netboot on the Pi 5 works up to the agent
-   ([`docs/netboot.md`](docs/netboot.md#ipv6-netboot-on-a-pi-5)): serve
-   must run from `/usr/local/bin/stage0` (`tools/install-capped.sh` after a
-   rebuild) for router advertisements and neighbour entries. k52 has
-   `USE_IPV6=1` in its EEPROM.
-2. The agent over IPv6 (kernel SLAAC on link up, then HTTP to
-   `[fd00:10:3::1]`), so an install needs no IPv4; then `install` choosing
-   IPv6 URLs.
+1. IPv6: `install --ipv6` works end to end on k52 (Rocky)
+   ([`docs/netboot.md`](docs/netboot.md#ipv6-netboot-on-a-pi-5)); run
+   from `/usr/local/bin/stage0` (`tools/install-capped.sh` after a
+   rebuild). Untested: Raspberry Pi OS and Alma over IPv6, the Pi 400
+   (IPv6 netboot is documented for Pi 4 too), VMs (`--ipv6` refuses).
+2. Milestone 4 (network modes) or 5 (UEFI/x86_64)
+   ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)).
 3. k53 is powered off (it may run DHCP on piwulf); it may be powered and
    used as root, stopping (not disabling) its services. Its `sudo` needs a
    password stage0 doesn't have.

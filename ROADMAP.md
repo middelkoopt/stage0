@@ -117,7 +117,7 @@ HTTP), the agent, initramfs and seed builders (see
    until a test bed machine without root needs it; then current gVisor,
    which needs Go 1.27.3 or later (stage0 is on 1.26). The raw-socket
    port waits for it, as stage0 must serve through a netstack port there.
-3. Pi 5 over IPv6.
+3. Pi 5 over IPv6. Done (`install --ipv6`, k52).
 4. Network modes beyond *own*: none, boot-only, proxy.
 5. UEFI and x86_64: HTTP boot, installer ISO route, QEMU power and console,
    IPMI client with SOL against a virtual BMC.

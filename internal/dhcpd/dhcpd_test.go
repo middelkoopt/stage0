@@ -284,3 +284,20 @@ func TestAnswersStage0Agent(t *testing.T) {
 		t.Error("boot options sent to the agent")
 	}
 }
+
+func TestReserveAndIsInstalled(t *testing.T) {
+	// A node that netbooted over IPv6 has no IPv4 lease yet: Reserve gives
+	// it one and marks it installed.
+	s := testServer(t, "10.0.3.199")
+	hw := mac("d8:3a:dd:c5:c1:f3")
+	if s.IsInstalled(hw) {
+		t.Error("installed before anything")
+	}
+	ip, ok := s.Reserve(hw)
+	if !ok || ip.String() != "10.0.3.100" || !s.IsInstalled(hw) {
+		t.Errorf("Reserve = %v %v, installed %v", ip, ok, s.IsInstalled(hw))
+	}
+	if r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", "")); r == nil || r.YourIPAddr.String() != "10.0.3.100" {
+		t.Errorf("installed system's request: %v", r)
+	}
+}

@@ -79,7 +79,7 @@ func Main() {
 	loadModules(out)
 	cmdline, _ := os.ReadFile("/proc/cmdline")
 	if needsNetwork(string(cmdline)) {
-		if err := bringUpNetwork(out); err != nil {
+		if err := bringUpNetwork(out, wantsIPv6(string(cmdline))); err != nil {
 			fmt.Fprintf(out, "stage0 agent: network: %v\n", err)
 		}
 	}
