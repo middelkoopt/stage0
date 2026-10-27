@@ -4,7 +4,7 @@ How a QEMU VM is installed by stage0 on the host's private test network
 (pilab: aarch64, KVM). One command does it:
 
 ```
-$ ./stage0 install vm1 --image rocky-10.2-vm     # 129 s on pilab
+$ ./stage0 install vm1 --image rocky-10.2-vm     # 128 s on pilab
 ```
 
 `site.yaml` names the VM (`vm: {mac: …}`, optional `memory`, `cpus`,
@@ -49,12 +49,20 @@ loaded the agent itself with `-kernel`/`-initrd`):
   URL and SHA-256 into `~/.cache/stage0/firmware/` unless the node names
   its own `firmware`. QEMU boots the NIC first (`bootindex`) for the agent,
   the disk first afterwards.
-- **DHCP:** an aarch64 UEFI client (class `PXEClient:Arch:00011`, option 93
-  = 11) gets a plain offer naming `uki.efi`; with the Pi's `PXEClient`
-  class but no option 43, edk2 waits for a boot server (BINL) and reports
-  "No valid offer received". It first asks the file's size and aborts
-  ("User aborted the transfer"), then fetches it: 265 MB in 16 s
-  (16 MB/s) over stage0's TFTP.
+- **HTTP boot:** for the agent QEMU turns the firmware's PXE off
+  (`-fw_cfg name=opt/org.tianocore/IPv4PXESupport,string=n`, and
+  `IPv6PXESupport`), so it goes straight to UEFI HTTP boot (class
+  `HTTPClient:Arch:00019`, option 93 = 19); an unanswered PXE try first
+  costs over a minute. stage0's DHCP answers with class `HTTPClient` and
+  the boot file `http://10.0.9.1/uki.efi`; serve's HTTP sent the 265 MB in
+  9.9 s (27 MB/s).
+- **PXE (TFTP)** still works for firmware that only does PXE: an aarch64
+  UEFI client (class `PXEClient:Arch:00011`, option 93 = 11) gets a plain
+  offer naming `uki.efi`; with the Pi's `PXEClient` class but no option
+  43, edk2 waits for a boot server (BINL) and reports "No valid offer
+  received". It first asks the file's size and aborts ("User aborted the
+  transfer"), then fetches it: 265 MB in 16 s (16 MB/s) over stage0's
+  TFTP.
 - **The UKI** (`internal/uki`), built by stage0: systemd's EFI stub
   (Debian's `systemd-boot-efi`, fetched by pinned URL and SHA-256; Debian's
   pool keeps only the current version, so a point release means a new pin)
@@ -75,7 +83,7 @@ loaded the agent itself with `-kernel`/`-initrd`):
   `stage0.sha256=`, then written with only its data clusters.
 
 Result (Rocky 10.2 GenericCloud aarch64, 447 MB qcow2, 10 GiB disk): the
-image fetched in 15 s and written in 20 s; up and answering SSH 129 s
+image fetched in 15 s and written in 20 s; up and answering SSH 128 s
 after QEMU started.
 
 ## Booting the installed disk

@@ -128,9 +128,9 @@ HTTP), the agent, initramfs and seed builders (see
    port waits for it, as stage0 must serve through a netstack port there.
 3. Pi 5 over IPv6. Done (`install --ipv6`, k52).
 4. Network modes beyond *own*: none, boot-only, proxy.
-5. UEFI and x86_64: aarch64 VMs netboot the agent as a UKI over TFTP (done,
-   [test bed](docs/testbed.md)); next HTTP boot, x86_64, the installer ISO
-   route, IPMI client with SOL against a virtual BMC.
+5. UEFI and x86_64: aarch64 VMs netboot the agent as a UKI by UEFI HTTP
+   boot, or PXE (done, [test bed](docs/testbed.md)); next x86_64, the
+   installer ISO route, IPMI client with SOL against a virtual BMC.
 6. Install-once state, workflow plans, optional state export for stage 1.
 
 ## Later goals

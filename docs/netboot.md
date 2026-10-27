@@ -155,7 +155,10 @@ An installed system needs a lease to be reached after the reboot: run
   agent's UKI from stage0's DHCP and TFTP ([test bed](testbed.md)). edk2
   drops a DHCP offer carrying vendor class `PXEClient` without option 43
   ("No valid offer received": it then expects a boot server); a plain
-  offer with a boot file works.
+  offer with a boot file works. **UEFI HTTP boot** works too, and is what
+  VMs use: with `IPv4PXESupport`/`IPv6PXESupport` set to `n` by `-fw_cfg`,
+  Ubuntu's build skips PXE and asks DHCP as `HTTPClient:Arch:00019`; the
+  reply needs class `HTTPClient` and a URL as the boot file.
 - The firmware follows QEMU's `bootindex`; it needs `-drive if=pflash`
   for code and a writable copy of `AAVMF_VARS.fd` to keep its boot
   entries.

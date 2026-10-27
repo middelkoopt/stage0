@@ -11,19 +11,17 @@ alone. **Containers:** `stage0 install k52 --image rocky10-rpi-container`
 installs the Rocky container from its OCI layout (45 s; up in 197 s), or
 from a registry (`container: <registry>/<repo>:<tag>`); k52 runs it now,
 from a local test registry (`10.0.3.100` while serve runs). **VMs:** `stage0 install
-vm1 --image rocky-10.2-vm` netboots the agent as a UKI with Ubuntu's UEFI
-firmware (129 s; [`docs/testbed.md`](docs/testbed.md)). Rocky from the
+vm1 --image rocky-10.2-vm` netboots the agent as a UKI by UEFI HTTP boot
+with Ubuntu's firmware (128 s; [`docs/testbed.md`](docs/testbed.md)). Rocky from the
 container also runs on k400 (Pi 400).
 
 ## Open decisions
 (none)
 
 ## Next session
-1. HTTP boot for UEFI (agreed next): the 265 MB UKI over HTTP instead of
-   TFTP (16 MB/s).
-2. Then VMs and containers over IPv6 (`stage0tap0` would need
+1. VMs and containers over IPv6 (agreed next) (`stage0tap0` would need
    `fd00:10:9::1`; dracut's NetworkManager and SLAAC).
-3. Later: private registries (credentials in `.secrets`), Ignition,
+2. Later: private registries (credentials in `.secrets`), Ignition,
    x86_64 ([`docs/containers.md`](docs/containers.md)).
-4. k53 is powered off; it may be powered and used as root, stopping (not
+3. k53 is powered off; it may be powered and used as root, stopping (not
    disabling) its services. Its `sudo` needs a password stage0 doesn't have.
