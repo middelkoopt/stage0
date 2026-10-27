@@ -4,24 +4,24 @@ Stage0 installs a head node from this repo alone. Read
 for how an install works and [`docs/development.md`](docs/development.md)
 for code.
 
-## Status (2026-10-26)
+## Status (2026-10-27)
 **Pis:** three images install and come up with SSH on the Pi 5 (k52) and
-the Pi 400 (k400) (Rocky 10.2: Pi 5 only); both run Raspberry Pi OS
-(`10.0.3.100`, `10.0.3.101`) and are on, their bootloaders updated to
-2026-09 ([`docs/netboot.md`](docs/netboot.md#bootloader-eeprom-updates)). **VMs:** `stage0 install vm1
---image rocky-10.2-vm` installs Rocky's aarch64 cloud image in a QEMU VM on
-the private test network and sees it up with SSH, hostname `vm1` and the
-site's keys from NoCloud, in 96 s ([`docs/testbed.md`](docs/testbed.md)).
+the Pi 400 (k400) (Rocky 10.2: Pi 5 only), over IPv4 or, with
+`install --ipv6`, IPv6 alone; bootloaders at 2026-09. k52 runs Raspberry
+Pi OS (`10.0.3.100`), k400 Alma (`10.0.3.101`), both on. **VMs:**
+`stage0 install vm1 --image rocky-10.2-vm` installs Rocky's aarch64 cloud
+image in a QEMU VM on the private test network (96 s;
+[`docs/testbed.md`](docs/testbed.md)).
 
 ## Open decisions
 (none)
 
 ## Next session
-1. IPv6: `install --ipv6` works end to end on k52 (Rocky)
-   ([`docs/netboot.md`](docs/netboot.md#ipv6-netboot-on-a-pi-5)); run
-   from `/usr/local/bin/stage0` (`tools/install-capped.sh` after a
-   rebuild). Untested: Raspberry Pi OS and Alma over IPv6, the Pi 400
-   (IPv6 netboot is documented for Pi 4 too), VMs (`--ipv6` refuses).
+1. IPv6: `install --ipv6` works end to end on k52 (Rocky, Raspberry Pi
+   OS) and k400 (Alma) ([`docs/netboot.md`](docs/netboot.md#ipv6-netboot-on-a-pi-5));
+   run from `/usr/local/bin/stage0` (`tools/install-capped.sh` after a
+   rebuild); both nodes have `USE_IPV6=1` in their EEPROM. Not done: VMs
+   over IPv6 (`--ipv6` refuses; `stage0tap0` would need `fd00:10:9::1`).
 2. Milestone 4 (network modes) or 5 (UEFI/x86_64)
    ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)).
 3. k53 is powered off (it may run DHCP on piwulf); it may be powered and

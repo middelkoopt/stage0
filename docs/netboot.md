@@ -89,7 +89,10 @@ device tree, stage0's initramfs and the overlays over TFTP on IPv6.
 stage0's router advertisement, fetched the image (947 MB in 8.6 s) and the
 seed from `[fd00:10:3::1]`, and the installed system came up. The Pi
 kernels of Raspberry Pi OS and Rocky build IPv6 as a module ("address
-family not supported by protocol" otherwise), so for IPv6 the agent boots
+family not supported by protocol" otherwise). Also verified: Raspberry Pi
+OS on k52, and AlmaLinux on k400 (Pi 400, `USE_IPV6=1` set the same way):
+its bootloader used its SLAAC address (`fd00:10:3:0:e65f:1ff:fe1d:17a2`,
+EUI-64) rather than the DHCPv6 one, and TFTP worked. For IPv6 the agent boots
 `kernel8.img` with the image's own `initramfs8` and stage0's appended, and
 loads `ipv6` with its `modprobe`.
 
