@@ -32,46 +32,68 @@ type Installer struct {
 type Spec struct {
 	Partitions []Partition `json:"partitions"`
 	Installer  Installer   `json:"installer"`
+	// Ignition: the installer's Ignition makes the partitions and
+	// filesystems (from the config stage0 serves); the agent only mounts.
+	Ignition bool `json:"ignition,omitempty"`
 }
 
+// Layout is one level's say on the partitions: a list, or an Ignition
+// config (Partitions then read from its storage).
+type Layout struct {
+	Partitions []Partition
+	Ignition   []byte // the Ignition config, JSON
+}
+
+func (l Layout) given() bool { return len(l.Partitions) > 0 || len(l.Ignition) > 0 }
+
 // Resolve settles the spec: the container's labels (a partition list, or
-// an Ignition config's storage), overridden by the
-// image config's partitions and installer, the partitions overridden in
-// turn by the node's. Any of them may be missing; the result is checked.
-func Resolve(labels map[string]string, imageParts []Partition, imageInstaller *Installer, nodeParts []Partition) (Spec, error) {
+// an Ignition config), overridden by the image config's layout and
+// installer, the layout overridden in turn by the node's. Any of them may
+// be missing; the result is checked. When the winning layout is an
+// Ignition config, it is returned too, for the installer's Ignition.
+func Resolve(labels map[string]string, image Layout, imageInstaller *Installer, node Layout) (Spec, []byte, error) {
 	var s Spec
+	var layout Layout
 	pl, hasPartitions := labels["pi.provision.partition"]
 	il, hasIgnition := labels["pi.provision.ignition"]
 	switch {
 	case hasPartitions && hasIgnition:
-		return s, errors.New("labels pi.provision.partition and pi.provision.ignition: one layout, not both")
+		return s, nil, errors.New("labels pi.provision.partition and pi.provision.ignition: one layout, not both")
 	case hasPartitions:
-		if err := json.Unmarshal([]byte(pl), &s.Partitions); err != nil {
-			return s, fmt.Errorf("label pi.provision.partition: %w", err)
+		if err := json.Unmarshal([]byte(pl), &layout.Partitions); err != nil {
+			return s, nil, fmt.Errorf("label pi.provision.partition: %w", err)
 		}
 	case hasIgnition:
 		ps, err := FromIgnition([]byte(il))
 		if err != nil {
-			return s, fmt.Errorf("label pi.provision.ignition: %w", err)
+			return s, nil, fmt.Errorf("label pi.provision.ignition: %w", err)
 		}
-		s.Partitions = ps
+		layout = Layout{Partitions: ps, Ignition: []byte(il)}
 	}
 	if v, ok := labels["pi.provision.installer"]; ok {
 		if err := json.Unmarshal([]byte(v), &s.Installer); err != nil {
-			return s, fmt.Errorf("label pi.provision.installer: %w", err)
+			return s, nil, fmt.Errorf("label pi.provision.installer: %w", err)
 		}
 	}
-	if len(imageParts) > 0 {
-		s.Partitions = imageParts
+	if image.given() {
+		layout = image
 	}
 	if imageInstaller != nil {
 		s.Installer = *imageInstaller
 	}
-	if len(nodeParts) > 0 {
-		s.Partitions = nodeParts
+	if node.given() {
+		layout = node
 	}
-	s.Partitions = append([]Partition(nil), s.Partitions...) // Validate sets Bytes; leave the callers' alone
-	return s, s.Validate()
+	if len(layout.Ignition) > 0 && len(layout.Partitions) == 0 {
+		ps, err := FromIgnition(layout.Ignition)
+		if err != nil {
+			return s, nil, err
+		}
+		layout.Partitions = ps
+	}
+	s.Partitions = append([]Partition(nil), layout.Partitions...) // Validate sets Bytes; leave the callers' alone
+	s.Ignition = len(layout.Ignition) > 0
+	return s, layout.Ignition, s.Validate()
 }
 
 // Validate checks the spec and sets each partition's Bytes.

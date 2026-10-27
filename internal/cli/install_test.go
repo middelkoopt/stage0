@@ -779,3 +779,69 @@ func TestStageContainerIPv6(t *testing.T) {
 		t.Errorf("cmdline.txt: %s", cmdline)
 	}
 }
+
+func TestStageContainerIgnition(t *testing.T) {
+	// A node's Ignition config: served for the installer's Ignition, on
+	// the node's disk, with Ignition turned on in the command line.
+	dir := t.TempDir()
+	layout := filepath.Join(dir, "oci", "rocky")
+	ocitest.Write(t, layout, map[string]string{
+		"pi.provision.installer": `{"kernel":"/boot/efi/kernel8.img","initramfs":"/boot/installer.img"}`,
+	}, map[string][]byte{"boot/efi": nil, "boot/efi/config.txt": []byte("arm_64bit=1\n"), "boot/installer.img": []byte("DRACUT")})
+	agent := filepath.Join(dir, "stage0")
+	os.WriteFile(agent, []byte("AGENT"), 0o755)
+	a := &App{Executable: func() (string, error) { return agent, nil }, CheckStatic: func(string) error { return nil }}
+	ign := []byte(`{"ignition": {"version": "3.4.0"}, "storage": {
+  "disks": [{"device": "/dev/sda", "partitions": [{"label": "piboot", "sizeMiB": 512}, {"label": "piroot"}]}],
+  "filesystems": [{"device": "/dev/disk/by-partlabel/piboot", "format": "vfat", "path": "/boot/efi"},
+    {"device": "/dev/disk/by-partlabel/piroot", "format": "ext4", "path": "/"}]}}`)
+	ps, err := container.FromIgnition(ign)
+	if err != nil {
+		t.Fatal(err)
+	}
+	node := config.Node{Name: "k52", Hostname: "k52", Partitions: ps, IgnitionConfig: ign}
+	run := filepath.Join(dir, "run")
+	if err := a.stageContainer(run, layout, image.Config{Name: "ct", Container: "rocky"}, node,
+		"root=PARTLABEL=piroot", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err != nil {
+		t.Fatal(err)
+	}
+	cmdline, _ := os.ReadFile(filepath.Join(run, "cmdline.txt"))
+	if !strings.Contains(string(cmdline), "ignition.firstboot ignition.platform.id=metal ignition.config.url=http://10.0.3.1/ignition.ign") {
+		t.Errorf("cmdline.txt: %s", cmdline)
+	}
+	served, _ := os.ReadFile(filepath.Join(run, "ignition.ign"))
+	if !strings.Contains(string(served), `"device": "/dev/mmcblk0"`) || !strings.Contains(string(served), `"wipeTable": true`) {
+		t.Errorf("ignition.ign: %s", served)
+	}
+	var spec container.Spec
+	if b, _ := os.ReadFile(filepath.Join(run, "layout.json")); json.Unmarshal(b, &spec) != nil || !spec.Ignition {
+		t.Errorf("layout.json: %+v", spec)
+	}
+}
+
+func TestInstallGarbledConsole(t *testing.T) {
+	// systemd's status lines write over the agent's on the console (seen
+	// with Ignition in the installer): a garbled report or result must not
+	// replace a good one, or the node isn't marked installed and netboots
+	// the installer again.
+	env := newInstallEnv(t, []string{
+		"<dhcp-pxe>",
+		`STAGE0-REPORT {"interfaces":[{"name":"eth0","mac":"d8:3a:dd:c5:c1:f3","state":"up"}]}` + "\r\n",
+		`STAGE0-REPORT {"interfaces":[{"name":"eth0","m` + "\x1b[K[  *** ] Job ignition-disks.service running\r\n",
+		`STAGE0-INSTALLED {"disk":"/dev/mmc` + "\x1b[K[ OK ]\r\n",
+		`STAGE0-INSTALLED {"disk":"/dev/mmcblk0","bytes":3508535296,"seconds":30}` + "\r\n",
+		"<rebooted>",
+		"<dhcp-plain>",
+		"Rocky Linux 10.2\r\nlocalhost login: ",
+	})
+	out, err := env.run(t)
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out, "wrote 3.5 GB") || !strings.Contains(out, "10.0.3.100 answers ping and ssh") {
+		t.Errorf("output:\n%s", out)
+	}
+	if b, err := os.ReadFile(filepath.Join(env.state, "nodes", "k53.json")); err != nil || !strings.Contains(string(b), "d8:3a:dd:c5:c1:f3") {
+		t.Errorf("install record: %s, %v", b, err)
+	}
+}

@@ -82,6 +82,14 @@ const hookScript = `#!/bin/sh
 /usr/bin/stage0 agent </dev/console >/dev/console 2>&1
 `
 
+// hookOrder is a systemd drop-in that runs dracut's pre-mount hooks (the
+// agent) after the installer's Ignition has partitioned the disk, when it
+// does (on k52 they ran at once otherwise); without Ignition it does
+// nothing.
+const hookOrder = `[Unit]
+After=ignition-disks.service
+`
+
 // BuildHook writes, as a gzip'd cpio for appending to a dracut initramfs
 // (an installer's, docs/containers.md), the stage0 binary and the dracut
 // hook that runs it as the agent.
@@ -91,7 +99,8 @@ func BuildHook(w io.Writer, agentPath string) error {
 		return err
 	}
 	a := cpio.NewWriter(z)
-	for _, d := range []string{"usr", "usr/bin", "var", "var/lib", "var/lib/dracut", "var/lib/dracut/hooks", "var/lib/dracut/hooks/pre-mount"} {
+	for _, d := range []string{"usr", "usr/bin", "var", "var/lib", "var/lib/dracut", "var/lib/dracut/hooks", "var/lib/dracut/hooks/pre-mount",
+		"etc", "etc/systemd", "etc/systemd/system", "etc/systemd/system/dracut-pre-mount.service.d"} {
 		if err := a.Dir(d, 0o755); err != nil {
 			return err
 		}
@@ -100,6 +109,9 @@ func BuildHook(w io.Writer, agentPath string) error {
 		return err
 	}
 	if err := a.File("var/lib/dracut/hooks/pre-mount/90-stage0.sh", 0o755, int64(len(hookScript)), strings.NewReader(hookScript)); err != nil {
+		return err
+	}
+	if err := a.File("etc/systemd/system/dracut-pre-mount.service.d/90-stage0.conf", 0o644, int64(len(hookOrder)), strings.NewReader(hookOrder)); err != nil {
 		return err
 	}
 	return errors.Join(a.Close(), z.Close())

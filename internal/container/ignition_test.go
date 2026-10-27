@@ -1,6 +1,7 @@
 package container
 
 import (
+	"encoding/json"
 	"strings"
 	"testing"
 )
@@ -74,12 +75,55 @@ func TestResolveIgnitionLabel(t *testing.T) {
 		"pi.provision.ignition":  testIgnition,
 		"pi.provision.installer": testLabels["pi.provision.installer"],
 	}
-	s, err := Resolve(labels, nil, nil, nil)
-	if err != nil || len(s.Partitions) != 3 || s.Partitions[1].Path != "/var" {
+	s, ig, err := Resolve(labels, Layout{}, nil, Layout{})
+	if err != nil || len(s.Partitions) != 3 || s.Partitions[1].Path != "/var" || !s.Ignition || string(ig) != testIgnition {
 		t.Errorf("Resolve = %+v, %v", s, err)
 	}
+	// A node's partition list wins over the label's Ignition config.
+	s, ig, err = Resolve(labels, Layout{}, nil, Layout{Partitions: []Partition{{Name: "b", Size: "1GiB", Type: "vfat", Path: "/boot/efi"}, {Name: "r", Type: "ext4", Path: "/"}}})
+	if err != nil || s.Ignition || ig != nil {
+		t.Errorf("node over label: %+v, %q, %v", s, ig, err)
+	}
 	labels["pi.provision.partition"] = testLabels["pi.provision.partition"]
-	if _, err := Resolve(labels, nil, nil, nil); err == nil {
+	if _, _, err := Resolve(labels, Layout{}, nil, Layout{}); err == nil {
 		t.Error("both partition and ignition labels: want error")
+	}
+}
+
+func TestForDisk(t *testing.T) {
+	b, err := ForDisk([]byte(testIgnition), "/dev/sda")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var c struct {
+		Ignition struct{ Version string }
+		Storage  struct {
+			Disks []struct {
+				Device    string
+				WipeTable bool
+			}
+		}
+	}
+	if err := json.Unmarshal(b, &c); err != nil || c.Storage.Disks[0].Device != "/dev/sda" || !c.Storage.Disks[0].WipeTable || c.Ignition.Version != "3.4.0" {
+		t.Errorf("ForDisk: %s", b)
+	}
+	// The FAT boot partition gets the type the Pi boots from; others none.
+	if strings.Count(string(b), `"typeGuid": "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"`) != 1 {
+		t.Errorf("boot partition type: %s", b)
+	}
+	if strings.Count(string(b), `"wipeFilesystem": true`) != 3 {
+		t.Errorf("wipeFilesystem not on every filesystem: %s", b)
+	}
+	if ps, err := FromIgnition(b); err != nil || len(ps) != 3 {
+		t.Errorf("the rewritten config: %v", err)
+	}
+}
+
+func TestForDiskKeepsType(t *testing.T) {
+	in := strings.Replace(testIgnition, `{"label": "piboot", "number": 1, "sizeMiB": 1024}`,
+		`{"label": "piboot", "number": 1, "sizeMiB": 1024, "typeGuid": "c12a7328-f81f-11d2-ba4b-00a0c93ec93b"}`, 1)
+	b, err := ForDisk([]byte(in), "/dev/sda")
+	if err != nil || !strings.Contains(string(b), "c12a7328-f81f-11d2-ba4b-00a0c93ec93b") || strings.Contains(string(b), basicData) {
+		t.Errorf("a given type was replaced: %s, %v", b, err)
 	}
 }

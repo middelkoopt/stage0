@@ -12,7 +12,7 @@ var testLabels = map[string]string{
 }
 
 func TestResolveLabels(t *testing.T) {
-	s, err := Resolve(testLabels, nil, nil, nil)
+	s, _, err := Resolve(testLabels, Layout{}, nil, Layout{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -29,34 +29,34 @@ func TestResolveLabels(t *testing.T) {
 }
 
 func TestResolvePrecedence(t *testing.T) {
-	image := []Partition{{Name: "boot", Size: "1GiB", Type: "vfat", Path: "/boot/efi"}, {Name: "root", Type: "ext4", Path: "/"}}
-	node := []Partition{{Name: "fw", Size: "256MiB", Type: "vfat", Path: "/boot/efi"},
-		{Name: "var", Size: "8GiB", Type: "ext4", Path: "/var"}, {Name: "root", Type: "ext4", Path: "/"}}
+	image := Layout{Partitions: []Partition{{Name: "boot", Size: "1GiB", Type: "vfat", Path: "/boot/efi"}, {Name: "root", Type: "ext4", Path: "/"}}}
+	node := Layout{Partitions: []Partition{{Name: "fw", Size: "256MiB", Type: "vfat", Path: "/boot/efi"},
+		{Name: "var", Size: "8GiB", Type: "ext4", Path: "/var"}, {Name: "root", Type: "ext4", Path: "/"}}}
 	inst := &Installer{Kernel: "/boot/efi/k", Initramfs: "/boot/i"}
 
-	s, err := Resolve(testLabels, image, inst, nil)
+	s, _, err := Resolve(testLabels, image, inst, Layout{})
 	if err != nil || s.Partitions[0].Name != "boot" || s.Partitions[0].Bytes != 1<<30 || s.Installer.Kernel != "/boot/efi/k" {
 		t.Errorf("image over labels: %+v, %v", s, err)
 	}
-	s, err = Resolve(testLabels, image, nil, node)
+	s, _, err = Resolve(testLabels, image, nil, node)
 	if err != nil || len(s.Partitions) != 3 || s.Partitions[1].Bytes != 8<<30 || s.Installer.Kernel != "/boot/efi/kernel8.img" {
 		t.Errorf("node over image: %+v, %v", s, err)
 	}
 	// No labels at all: the image config says it all.
-	if _, err := Resolve(nil, image, inst, nil); err != nil {
+	if _, _, err := Resolve(nil, image, inst, Layout{}); err != nil {
 		t.Errorf("no labels: %v", err)
 	}
-	if _, err := Resolve(nil, image, nil, nil); err == nil || !strings.Contains(err.Error(), "installer") {
+	if _, _, err := Resolve(nil, image, nil, Layout{}); err == nil || !strings.Contains(err.Error(), "installer") {
 		t.Errorf("no installer anywhere: err = %v", err)
 	}
-	if _, err := Resolve(nil, nil, inst, nil); err == nil || !strings.Contains(err.Error(), "partitions") {
+	if _, _, err := Resolve(nil, Layout{}, inst, Layout{}); err == nil || !strings.Contains(err.Error(), "partitions") {
 		t.Errorf("no partitions anywhere: err = %v", err)
 	}
 }
 
 func TestSpecJSON(t *testing.T) {
 	// stage0 serves the resolved spec to the agent as JSON.
-	s, _ := Resolve(testLabels, nil, nil, nil)
+	s, _, _ := Resolve(testLabels, Layout{}, nil, Layout{})
 	b, err := json.Marshal(s)
 	if err != nil {
 		t.Fatal(err)
@@ -89,7 +89,7 @@ func TestCheckPartitions(t *testing.T) {
 			t.Errorf("%s: err = %v, want one mentioning %q", tt.parts, err, tt.err)
 		}
 	}
-	if _, err := Resolve(map[string]string{"pi.provision.partition": "not json"}, nil, nil, nil); err == nil {
+	if _, _, err := Resolve(map[string]string{"pi.provision.partition": "not json"}, Layout{}, nil, Layout{}); err == nil {
 		t.Error("a bad label: want error")
 	}
 }

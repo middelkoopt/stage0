@@ -56,7 +56,8 @@ type Config struct {
 	// Ignition, instead of Partitions, is an Ignition config (JSON, a path
 	// relative to the images directory) whose storage section gives the
 	// layout (docs/containers.md).
-	Ignition string `yaml:"ignition,omitempty"`
+	Ignition       string `yaml:"ignition,omitempty"`
+	IgnitionConfig []byte `yaml:"-"` // its contents
 
 	// BootPartition holds the firmware's boot files (Pi: config.txt,
 	// kernels, device trees); default 1.
@@ -167,11 +168,11 @@ func Load(dir, name string) (Config, error) {
 			if len(c.Partitions) > 0 {
 				return c, fmt.Errorf("%s: partitions or ignition, not both", p)
 			}
-			ps, err := ignitionLayout(dir, c.Ignition)
+			b, ps, err := ignitionLayout(dir, c.Ignition)
 			if err != nil {
 				return c, fmt.Errorf("%s: %w", p, err)
 			}
-			c.Partitions = ps
+			c.Partitions, c.IgnitionConfig = ps, b
 		}
 		if len(c.Partitions) > 0 {
 			if err := container.CheckPartitions(c.Partitions); err != nil {
@@ -325,17 +326,18 @@ func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (
 	return FetchFile(ctx, File{URL: c.URL, SHA256: c.SHA256}, cacheDir, progress)
 }
 
-// ignitionLayout reads the layout from the Ignition config at name
-// (relative to dir).
-func ignitionLayout(dir, name string) ([]container.Partition, error) {
+// ignitionLayout reads the Ignition config at name (relative to dir) and
+// the layout from it.
+func ignitionLayout(dir, name string) ([]byte, []container.Partition, error) {
 	if !filepath.IsAbs(name) {
 		name = filepath.Join(dir, name)
 	}
 	b, err := os.ReadFile(name)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
-	return container.FromIgnition(b)
+	ps, err := container.FromIgnition(b)
+	return b, ps, err
 }
 
 // podmanSave saves the image from podman's local store as an OCI layout

@@ -68,7 +68,8 @@ type Node struct {
 
 	// Ignition, instead of Partitions, is an Ignition config (JSON, a path
 	// relative to site.yaml) whose storage section gives the layout.
-	Ignition string `yaml:"ignition,omitempty"`
+	Ignition       string `yaml:"ignition,omitempty"`
+	IgnitionConfig []byte `yaml:"-"` // its contents
 
 	// BMC makes `stage0 bmc` answer IPMI for the node (docs/bmc.md).
 	BMC *BMC `yaml:"bmc,omitempty"`
@@ -216,6 +217,7 @@ func (s *Site) normalize(dir string) error {
 			if n.Partitions, err = container.FromIgnition(b); err != nil {
 				return fmt.Errorf("node %q: %w", n.Name, err)
 			}
+			n.IgnitionConfig = b
 		}
 		if len(n.Partitions) > 0 {
 			if err := container.CheckPartitions(n.Partitions); err != nil {

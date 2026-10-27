@@ -1,0 +1,15 @@
+{
+  "ignition": {"version": "3.4.0"},
+  "storage": {
+    "disks": [{"partitions": [
+      {"label": "piboot", "sizeMiB": 512},
+      {"label": "pivar", "sizeMiB": 4096},
+      {"label": "piroot"}
+    ]}],
+    "filesystems": [
+      {"device": "/dev/disk/by-partlabel/piboot", "format": "vfat", "path": "/boot/efi"},
+      {"device": "/dev/disk/by-partlabel/pivar", "format": "ext4", "path": "/var"},
+      {"device": "/dev/disk/by-partlabel/piroot", "format": "ext4", "path": "/"}
+    ]
+  }
+}

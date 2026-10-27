@@ -1,0 +1,13 @@
+# Rocky Linux 10 for Raspberry Pi from the container, partitioned by
+# Ignition in the installer (docs/containers.md): rocky10-rpi-var.ign gives
+# a separate /var. Build it first:
+#   podman build -t stage0/rocky10-rpi containers/rocky10-rpi
+container: podman:localhost/stage0/rocky10-rpi
+ignition: rocky10-rpi-var.ign
+
+# Root by the partition's GPT name (pi.provision.partition).
+cmdline: console=serial0,115200 console=tty1 root=PARTLABEL=piroot rootfstype=ext4 rootwait
+
+# A Pi 4's GPIO serial console (serial0) is off without enable_uart.
+config:
+  - enable_uart=1

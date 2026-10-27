@@ -145,6 +145,10 @@ func TestBuildHook(t *testing.T) {
 	if got["usr/bin/stage0"] != "-rwxr-xr-x AGENT" {
 		t.Errorf("agent %q", got["usr/bin/stage0"])
 	}
+	// The hook waits for the installer's Ignition, when it partitions.
+	if d := got["etc/systemd/system/dracut-pre-mount.service.d/90-stage0.conf"]; !strings.Contains(d, "After=ignition-disks.service") {
+		t.Errorf("drop-in %q", d)
+	}
 	hook := got["var/lib/dracut/hooks/pre-mount/90-stage0.sh"]
 	if !strings.HasPrefix(hook, "-rwxr-xr-x #!/bin/sh\n") || !strings.Contains(hook, "/usr/bin/stage0 agent") {
 		t.Errorf("hook %q", hook)

@@ -38,19 +38,31 @@ func installContainer(out io.Writer, plan *Plan) (Result, error) {
 	if err != nil {
 		return res, err
 	}
-	fmt.Fprintf(out, "stage0 agent: partitioning %s\n", dev)
-	if err := runTool(out, "sgdisk", sgdiskArgs(spec, dev)...); err != nil {
-		return res, err
-	}
 	parts := make([]string, len(spec.Partitions))
-	for i, p := range spec.Partitions {
-		parts[i] = "/dev/" + partition(plan.Disk, i+1)
-		if err := waitDev(parts[i]); err != nil {
+	if spec.Ignition {
+		// The installer's Ignition partitioned and formatted the disk
+		// before this hook ran: take its partitions by label.
+		fmt.Fprintf(out, "stage0 agent: %s partitioned by Ignition\n", dev)
+		for i, p := range spec.Partitions {
+			parts[i] = "/dev/disk/by-partlabel/" + p.Name
+			if err := waitDev(parts[i]); err != nil {
+				return res, err
+			}
+		}
+	} else {
+		fmt.Fprintf(out, "stage0 agent: partitioning %s\n", dev)
+		if err := runTool(out, "sgdisk", sgdiskArgs(spec, dev)...); err != nil {
 			return res, err
 		}
-		cmd, args := mkfsArgs(p, parts[i])
-		if err := runTool(out, cmd, args...); err != nil {
-			return res, err
+		for i, p := range spec.Partitions {
+			parts[i] = "/dev/" + partition(plan.Disk, i+1)
+			if err := waitDev(parts[i]); err != nil {
+				return res, err
+			}
+			cmd, args := mkfsArgs(p, parts[i])
+			if err := runTool(out, cmd, args...); err != nil {
+				return res, err
+			}
 		}
 	}
 

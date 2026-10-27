@@ -336,12 +336,21 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 			return fmt.Errorf("serve stopped: %v (log: %s)", serveErr, res.ServeLog)
 		case e := <-w.events:
 			switch e.kind {
+			// The report and the result come by console and by HTTP; on the
+			// console other output can garble them (systemd's status lines
+			// in an installer), so only valid JSON counts.
 			case agent.ReportPrefix:
-				if res.Report == nil { // it may come by console and by HTTP
+				if !json.Valid([]byte(e.text)) {
+					continue
+				}
+				if res.Report == nil {
 					say("%s: agent running", node.Name)
 				}
 				res.Report = json.RawMessage(e.text)
 			case agent.InstalledPrefix:
+				if !json.Valid([]byte(e.text)) {
+					continue // the other copy follows
+				}
 				res.Installed = json.RawMessage(e.text)
 				var r agent.Result
 				json.Unmarshal(res.Installed, &r)
@@ -747,7 +756,8 @@ func (a *App) stageContainer(run, layout string, img image.Config, node config.N
 		return err
 	}
 	// The layout: the node's, else the image config's, else the labels'.
-	spec, err := container.Resolve(ci.Labels, img.Partitions, img.Installer, node.Partitions)
+	spec, ign, err := container.Resolve(ci.Labels, container.Layout{Partitions: img.Partitions, Ignition: img.IgnitionConfig},
+		img.Installer, container.Layout{Partitions: node.Partitions, Ignition: node.IgnitionConfig})
 	if err != nil {
 		return fmt.Errorf("container %s for %s: %w", img.Container, node.Name, err)
 	}
@@ -795,8 +805,21 @@ func (a *App) stageContainer(run, layout string, img image.Config, node config.N
 	if strings.HasPrefix(server, "[") {
 		dhcpClass = ""
 	}
-	cmdline := fmt.Sprintf("console=serial0,115200 rd.neednet=1 %sstage0.disk=%s stage0.sha256=%s stage0.oci=%s/oci stage0.layout=%s/layout.json stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
-		dhcpClass, disk, digest, base, base, base, base)
+	// With an Ignition config, the installer's Ignition partitions and
+	// formats the disk first (docs/containers.md).
+	ignition := ""
+	if ign != nil {
+		ignition = "ignition.firstboot ignition.platform.id=metal ignition.config.url=" + base + "/ignition.ign "
+		b, err := container.ForDisk(ign, "/dev/"+disk)
+		if err != nil {
+			return err
+		}
+		if err := os.WriteFile(filepath.Join(run, "ignition.ign"), b, 0o644); err != nil {
+			return err
+		}
+	}
+	cmdline := fmt.Sprintf("console=serial0,115200 rd.neednet=1 %s%sstage0.disk=%s stage0.sha256=%s stage0.oci=%s/oci stage0.layout=%s/layout.json stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
+		dhcpClass, ignition, disk, digest, base, base, base, base)
 	if err := os.WriteFile(filepath.Join(run, "cmdline.txt"), []byte(cmdline), 0o644); err != nil {
 		return err
 	}

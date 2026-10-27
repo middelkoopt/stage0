@@ -87,3 +87,54 @@ func FromIgnition(b []byte) ([]Partition, error) {
 	}
 	return out, nil
 }
+
+// basicData is the GPT type Microsoft basic data, which the Pi firmware
+// boots from.
+const basicData = "ebd0a0a2-b9e5-4433-87c0-68b6b72699c7"
+
+// ForDisk returns the Ignition config for installing on dev (e.g.
+// /dev/mmcblk0): its one disk's device set to dev, wipeTable and every
+// filesystem's wipeFilesystem on, as stage0 installs afresh, and FAT
+// partitions without a type typed basic data. The rest stays as given.
+func ForDisk(config []byte, dev string) ([]byte, error) {
+	var c map[string]any
+	if err := json.Unmarshal(config, &c); err != nil {
+		return nil, fmt.Errorf("ignition: %w", err)
+	}
+	st, _ := c["storage"].(map[string]any)
+	disks, _ := st["disks"].([]any)
+	if len(disks) != 1 {
+		return nil, fmt.Errorf("ignition: want one disk in storage.disks, have %d", len(disks))
+	}
+	d, ok := disks[0].(map[string]any)
+	if !ok {
+		return nil, errors.New("ignition: storage.disks[0] is not an object")
+	}
+	d["device"], d["wipeTable"] = dev, true
+	// New partitions at the old offsets still hold the old filesystems,
+	// which Ignition would keep if their format matches.
+	fss, _ := st["filesystems"].([]any)
+	vfat := map[string]bool{} // partition labels with a FAT filesystem
+	for _, f := range fss {
+		if fm, ok := f.(map[string]any); ok {
+			fm["wipeFilesystem"] = true
+			if fm["format"] == "vfat" {
+				dev, _ := fm["device"].(string)
+				vfat[strings.TrimPrefix(dev, "/dev/disk/by-partlabel/")] = true
+			}
+		}
+	}
+	// A Pi boots only from a FAT partition typed Microsoft basic data
+	// (Ignition's default type is Linux filesystem: "GPT: No bootable
+	// partitions" on k52); a type the config gives stays.
+	parts, _ := d["partitions"].([]any)
+	for _, p := range parts {
+		if pm, ok := p.(map[string]any); ok {
+			label, _ := pm["label"].(string)
+			if _, set := pm["typeGuid"]; vfat[label] && !set {
+				pm["typeGuid"] = basicData
+			}
+		}
+	}
+	return json.MarshalIndent(c, "", "  ")
+}

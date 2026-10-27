@@ -34,10 +34,15 @@ RUN passwd -d root && \
     systemctl enable sshd.service chronyd.service
 
 ## Installer initramfs: dracut brings the network up (NetworkManager);
-## stage0 appends its agent and a hook. The partitioning tools come along.
-RUN dnf install -y dracut dracut-network gdisk e2fsprogs dosfstools && \
+## stage0 appends its agent and a hook. The partitioning tools come along,
+## and Ignition, which partitions instead when stage0 hands it a config
+## (ignition.firstboot on the installer's command line).
+## Ignition's dracut module requires mlxbf_bootctl on aarch64 (NVIDIA
+## BlueField), which a Pi kernel lacks: make it optional.
+RUN dnf install -y dracut dracut-network gdisk e2fsprogs dosfstools ignition && \
+    sed -i 's/instmods -c mlxbf_bootctl/instmods mlxbf_bootctl/' /usr/lib/dracut/modules.d/30ignition/module-setup.sh && \
     kver=$(ls /usr/lib/modules | head -1) && \
-    dracut --no-hostonly --add network-manager \
+    dracut --no-hostonly --add "network-manager ignition" \
       --install "sgdisk mkfs.ext4 mkfs.vfat" \
       --kver "$kver" /boot/stage0-installer.img
 LABEL pi.provision.installer='{"kernel":"/boot/efi/kernel8.img","initramfs":"/boot/stage0-installer.img"}'
