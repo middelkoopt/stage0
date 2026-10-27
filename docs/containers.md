@@ -18,26 +18,32 @@ power-on, root logging in with the site's keys.
    localhost/stage0/rocky10-rpi`. An image config names it with
    `container: rocky10-rpi` and gives the installed system's `cmdline`
    ([`images/rocky10-rpi-container.yaml`](../images/rocky10-rpi-container.yaml)).
-2. **Labels** say how to install it: `pi.provision.partition` (a JSON list
-   of `name`, `size`, `type` (vfat or ext4), `path`; the first is the Pi's
-   boot partition, the last the root, filling the disk) and
-   `pi.provision.installer` (`kernel`, `initramfs`: paths in the image).
-   Optional: `pi.provision.hosts` (lines of `/etc/hosts`) and
-   `pi.provision.resolv` (where `/etc/resolv.conf` points).
+2. **The layout** — partitions (`name`, `size`, `type` vfat or ext4,
+   `path`; the first is the Pi's boot partition, the last the root,
+   filling the disk) and the installer (`kernel`, `initramfs`: paths in
+   the image) — comes from, most specific first: the node's `partitions:`
+   in `site.yaml`; the image config's `partitions:` and `installer:`; the
+   container's labels `pi.provision.partition` and
+   `pi.provision.installer` (JSON). Optional labels: `pi.provision.hosts`
+   (lines of `/etc/hosts`) and `pi.provision.resolv` (where
+   `/etc/resolv.conf` points). Seen on k52 (2026-10-27): a node layout
+   adding an 8 GiB ext4 `/var` gave three partitions and the system ran.
 3. **stage0** (`internal/oci`, `internal/container`) reads the layout in Go,
    no container runtime: it takes the boot partition's files and the
    installer initramfs from the layers, appends its agent and a dracut
-   hook to the initramfs, and serves the layout under `oci/`. The kernel
-   command line carries the manifest's digest; the agent checks every blob
-   against its digest from there down.
+   hook to the initramfs, and serves the OCI layout under `oci/` and the
+   resolved partition layout as `layout.json`. The kernel command line
+   carries the manifest's digest; the agent checks every blob against its
+   digest from there down.
 4. **The agent**, run by the hook once dracut's network is up, partitions
    with the installer's `sgdisk` (GPT, partitions named as labelled),
-   formats with `mkfs.vfat`/`mkfs.ext4`, unpacks the layers onto the root
-   (owners, modes, links, xattrs; whiteouts applied), moves the boot
-   partition's files onto it, writes `/etc/fstab` (by `PARTLABEL`), hosts
+   formats with `mkfs.vfat`/`mkfs.ext4`, mounts the ext4 ones in the
+   root's tree, unpacks the layers onto it (owners, modes, links, xattrs;
+   whiteouts applied), copies the FAT partitions' files onto them (FAT
+   keeps no owners or links), writes `/etc/fstab` (by `PARTLABEL`), hosts
    and resolv.conf, then seeds the boot partition as for disk images.
 
-Not yet: `--ipv6`, VMs, layouts other than the labels'.
+Not yet: `--ipv6`, VMs, a registry.
 
 ## The installer initramfs
 

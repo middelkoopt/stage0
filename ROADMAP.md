@@ -67,9 +67,9 @@ image's partitions mounted) and runs the target's own tools from a chroot
 to partition, format, copy and install the bootloader (LL1).
 
 **Container route (A, decided BA1–BA3): built** for Pis over IPv4
-([containers](docs/containers.md)). Next for it: layouts per node or
-image, not only from labels (BB1); `--ipv6`; a registry instead of a
-layout directory. Partitioning could come from an **Ignition** config's
+([containers](docs/containers.md)). Layouts come from the node, the image
+config or the labels (BB1). Next for it: `--ipv6`; a registry instead of
+a layout directory. Partitioning could come from an **Ignition** config's
 `storage` section (disks, partitions, filesystems) instead of the
 `pi.provision.partition` label, with dracut's ignition module or the agent
 reading it (unexplored). Later, bootc (E) for UEFI machines, testable in
