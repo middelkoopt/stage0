@@ -33,7 +33,8 @@ The sections below are the pieces, and how they were first run by hand.
 
 - **`stage0tap0`**: a tap device owned by mtim, from
   `/etc/systemd/network/stage0tap0.netdev` and `.network`; the host's side
-  is `10.0.9.1/24`, connected to nothing real. `site.yaml` calls it `vnet`.
+  is `10.0.9.1/24` and `fd00:10:9::1/64`, connected to nothing real.
+  `site.yaml` calls it `vnet` (`prefix6: fd00:10:9::/64`).
 - **`stage0 vswitch --socket PATH`**: a learning switch that VMs join with
   `-netdev stream,id=n0,server=off,addr.type=unix,addr.path=PATH`; the tap
   is one more port, so `stage0 serve vnet` answers the VMs.
@@ -85,6 +86,17 @@ loaded the agent itself with `-kernel`/`-initrd`):
 Result (Rocky 10.2 GenericCloud aarch64, 447 MB qcow2, 10 GiB disk): the
 image fetched in 15 s and written in 20 s; up and answering SSH 128 s
 after QEMU started.
+
+## Over IPv6
+
+`stage0 install vm1 --image rocky-10.2-vm --ipv6` (2026-10-27): stage0's
+DHCPv4 leaves the VM's boot requests unanswered, so the firmware's HTTP
+boot over IPv4 times out (about 140 s: the install took 270 s instead of
+128 s) and it tries IPv6. Its DHCPv6 (DUID-LLT, architecture 19) gets an
+address and the boot file `http://[fd00:10:9::1]/uki.efi` with vendor
+class `HTTPClient` (enterprise 343); the UKI came in 10.9 s. The agent's
+plan names `[fd00:10:9::1]`, so it takes a SLAAC address and fetches the
+image over IPv6. The installed system then gets its IPv4 lease.
 
 ## Booting the installed disk
 

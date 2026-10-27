@@ -24,7 +24,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/config` | `site.yaml` (committed: switches; nodes with console, install disk, network, or `vm:` for test bed VMs; networks with their VLAN, IPv6 prefix and NTP servers; a node may give a container layout) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
 | `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients, then the same MACs' kernels (`ip=dhcp`, no vendor class) with the same address; stage0's agent asking itself (vendor class `stage0-agent`, a VM booted with `-kernel`); installed nodes get plain leases (24 h) and no answer to PXE; in-memory leases; the Pi's option 43, or `uki.efi` (TFTP) or its URL (UEFI HTTP boot) for aarch64 UEFI clients; the network's NTP servers (option 42) |
 | `internal/httpd` | HTTP (port 80) from the same root, every request logged; for images too big or slow for TFTP. Read-only except agents' `POST /stage0/report/<kind>`, when a listener is set |
-| `internal/dhcp6d` | DHCPv6 for IPv6 netboot: clients asking for a Bootfile-URL get an address (by DUID) and `tftp://[<prefix>::1]/`; installed nodes are ignored; a hook adds neighbour entries |
+| `internal/dhcp6d` | DHCPv6 for IPv6 netboot: clients asking for a Bootfile-URL get an address (by DUID) and `tftp://[<prefix>::1]/`, or for UEFI HTTP boot `http://[<prefix>::1]/uki.efi` with class `HTTPClient`; installed nodes are ignored; a hook adds neighbour entries |
 | `internal/radv` | IPv6 router advertisements of one prefix (lifetime 0, no default route), for SLAAC; needs `CAP_NET_RAW` |
 | `internal/reach` | Ping (unprivileged ICMP) and the SSH server's greeting |
 | `internal/tftpd` | Read-only TFTP from one directory (confined with `os.Root`), every request logged |
@@ -82,7 +82,8 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
   `tools/install-capped.sh` (its two `sudo` commands only; allowed without
   a prompt in this repo's `.claude/settings.local.json`, while other `sudo`
   still asks). Run `serve` and `install` from it to advertise `prefix6`.
-- **The test bed's tap device** `stage0tap0` (owned by mtim, `10.0.9.1/24`,
+- **The test bed's tap device** `stage0tap0` (owned by mtim, `10.0.9.1/24`
+  and `fd00:10:9::1/64`,
   connected to nothing real) comes from
   `/etc/systemd/network/stage0tap0.netdev` and `.network`.
 - **Packet capture without sudo:** `/usr/bin/tcpdump` has

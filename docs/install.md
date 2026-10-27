@@ -151,7 +151,11 @@ With `--ipv6`, the install runs over IPv6 alone (the network needs
 advertisements and neighbour entries): the node netboots by DHCPv6 and
 TFTP on IPv6 (its EEPROM needs `USE_IPV6=1`), and the agent takes an
 address by SLAAC and fetches from `[<prefix>::1]`; details in
-[`netboot.md`](netboot.md#ipv6-netboot-on-a-pi-5).
+[`netboot.md`](netboot.md#ipv6-netboot-on-a-pi-5). It works for
+containers (dracut's NetworkManager takes the SLAAC address; no DHCPv4
+class, so stage0's DHCPv4 leaves it alone: [containers](containers.md))
+and for VMs (UEFI HTTP boot over IPv6: [test bed](testbed.md)). The
+installed system then gets its IPv4 lease too.
 
 With `--keep`, `install` keeps serving after the install (renewing the
 node's lease) until interrupted or `--timeout`.

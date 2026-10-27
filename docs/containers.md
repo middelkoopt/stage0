@@ -60,7 +60,7 @@ without `enable_uart=1`, now in the image config.
    keeps no owners or links), writes `/etc/fstab` (by `PARTLABEL`), hosts
    and resolv.conf, then seeds the boot partition as for disk images.
 
-Not yet: `--ipv6`, VMs, private registries (credentials).
+Not yet: VMs, private registries (credentials).
 
 ## The installer initramfs
 
@@ -104,6 +104,16 @@ Not yet: `--ipv6`, VMs, private registries (credentials).
   switch-root, then enters emergency mode. The installer initramfs has
   the container's `/etc/passwd` but no `/etc/shadow`; whether its
   emergency shell then lets root in is untested.
+
+## Over IPv6
+
+`install --ipv6` (k52, 2026-10-27): the Pi netbooted by DHCPv6 and TFTP,
+dracut's NetworkManager took its SLAAC address from stage0's router
+advertisement with only `rd.neednet=1`, and the agent fetched the layout,
+the layers and the seed from `[fd00:10:3::1]` and reported there. The
+installer's command line leaves out the DHCP vendor class, so stage0's
+DHCPv4 never answered it; the first DHCPv4 lease went to the installed
+system.
 
 ## The installed system
 
