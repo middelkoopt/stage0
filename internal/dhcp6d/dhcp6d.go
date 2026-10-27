@@ -6,7 +6,6 @@
 package dhcp6d
 
 import (
-	"cmp"
 	"context"
 	"errors"
 	"fmt"
@@ -24,8 +23,7 @@ import (
 
 // Config describes the network served.
 type Config struct {
-	Server netip.Addr       // stage0's address in Prefix
-	TFTP   netip.Addr       // the TFTP server the Bootfile-URL names; default Server
+	Server netip.Addr       // stage0's address in Prefix: the TFTP server
 	Prefix netip.Prefix     // a /64; leases come from <prefix>::100 on
 	MAC    net.HardwareAddr // stage0's, for its server DUID
 }
@@ -145,7 +143,7 @@ func (s *Server) Reply(m *dhcpv6.Message) *dhcpv6.Message {
 	}
 	mods := []dhcpv6.Modifier{
 		dhcpv6.WithServerID(s.duid),
-		dhcpv6.WithOption(dhcpv6.OptBootFileURL("tftp://[" + cmp.Or(s.cfg.TFTP, s.cfg.Server).WithZone("").String() + "]/")),
+		dhcpv6.WithOption(dhcpv6.OptBootFileURL("tftp://[" + s.cfg.Server.String() + "]/")),
 	}
 	if m.Options.OneIANA() != nil {
 		mods = append(mods, dhcpv6.WithOption(&dhcpv6.OptIANA{IaId: iaid, T1: preferred / 2, T2: preferred * 4 / 5,
