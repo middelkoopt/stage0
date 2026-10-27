@@ -3,7 +3,7 @@
 Facts about the platforms and protocols stage0 boots, with sources. Where a
 fact comes from the lab notes rather than vendor docs, it says so.
 
-> Last verified: 2026-10-25
+> Last verified: 2026-10-27
 
 ## Raspberry Pi 4, 400 and 5
 
@@ -143,7 +143,13 @@ An installed system needs a lease to be reached after the reboot: run
   driver to a `virtio-net-pci` card, but have no network stack (no MNP,
   IP4, DHCP or PXE drivers in the shell's `drivers`; `ifconfig -l` lists
   nothing), so with `bootindex=0` on the card they still fall through to
-  the UEFI shell.
+  the UEFI shell. piwulf's `-fw_cfg name=opt/org.tianocore/IPv4PXESupport,string=y`
+  doesn't change that (2026-10-27).
+- **Ubuntu's can** (`qemu-efi-aarch64_2025.11-3ubuntu7.3_all.deb` from
+  `archive.ubuntu.com/ubuntu/pool/main/e/edk2/`, unpacked with `dpkg-deb
+  -x`, no install; 2026-10-27): its `QEMU_EFI.fd` as `-bios`, with
+  `-nic user,model=virtio-net-pci,tftp=…,bootfile=…`, ran "Start PXE over
+  IPv4", downloaded the NBP over TFTP, then tried "PXE over IPv6".
 - The firmware follows QEMU's `bootindex`; it needs `-drive if=pflash`
   for code and a writable copy of `AAVMF_VARS.fd` to keep its boot
   entries.
