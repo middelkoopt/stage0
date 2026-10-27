@@ -16,10 +16,8 @@ site's keys from NoCloud, in 96 s ([`docs/testbed.md`](docs/testbed.md)).
 (none)
 
 ## Next session
-1. `install --keep` for VMs: keep the switch, serve and the VM running
-   after the install (today the VM stops when `install` exits), so stage 1
-   can be tested against it; and CI use (a script or `go test` that runs
-   `install vm1` end to end).
+1. CI use of the test bed: a script or `go test` that runs `install vm1`
+   end to end (`install --keep` keeps a VM up for stage 1 to work on).
 2. Milestone 3 and on ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)):
    IPv6 netboot, other network modes, x86_64/UEFI.
 3. k53 is powered off (it may run DHCP on piwulf); it may be powered and

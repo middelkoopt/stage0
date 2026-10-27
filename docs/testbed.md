@@ -16,8 +16,10 @@ the tap as a port, serves, starts QEMU to boot the agent (`-kernel`,
 stops it after `STAGE0-INSTALLED`, starts it again from the disk with UEFI
 and the NoCloud pointer, and waits for the login prompt, the lease and
 ping and SSH. The VM's files (disk, UEFI variables, console socket) are in
-`~/.cache/stage0/vm/`. The VM is stopped when `install` exits: its network
-lives in the `install` process.
+`~/.cache/stage0/vm/`. The VM is stopped when `install` exits, since its
+network lives in the `install` process; with `--keep`, `install` keeps the
+switch, serve and the VM running until interrupted (or `--timeout`), so
+stage 1 can be pointed at it.
 
 The sections below are the pieces, and how they were first run by hand.
 

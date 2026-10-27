@@ -144,6 +144,9 @@ k52: fe80::a9e7:2c9a:8c3d:d7c9%eth0.3
 
 With the lab key, add `-i ~/.cache/stage0/ssh/id_ed25519` to `ssh`.
 
+With `--keep`, `install` keeps serving after the install (renewing the
+node's lease) until interrupted or `--timeout`.
+
 `install` also checks that the IPv4 address answers ping and that its SSH
 server greets (`SSH-2.0-…`); `./stage0 check <node>` repeats that check.
 

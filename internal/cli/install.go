@@ -64,7 +64,7 @@ type installResult struct {
 
 func (a *App) installCommand() *cobra.Command {
 	var imageName, imagesDir, cacheDir, disk, network string
-	var setPort bool
+	var setPort, keep bool
 	cmd := &cobra.Command{
 		Use:   "install <node> --image NAME",
 		Short: "Install an image on a node: netboot the agent, write the disk, boot it",
@@ -99,7 +99,7 @@ func (a *App) installCommand() *cobra.Command {
 			}
 			return a.install(ctx, installOptions{
 				node: args[0], image: imageName, images: imagesDir, cache: cacheDir, disk: disk, network: network,
-				setPort: setPort,
+				setPort: setPort, keep: keep,
 			})
 		},
 	}
@@ -109,13 +109,14 @@ func (a *App) installCommand() *cobra.Command {
 	f.StringVar(&cacheDir, "cache", "", "where images and staged boot files go (default: the user cache dir/stage0)")
 	f.StringVar(&disk, "disk", "", "disk to write, e.g. mmcblk0 (default: the node's disk in site.yaml)")
 	f.StringVar(&network, "network", "", "network to install over (default: the only one in site.yaml)")
+	f.BoolVar(&keep, "keep", false, "after the install, keep serving (and a VM running) until interrupted or --timeout")
 	f.BoolVar(&setPort, "set-port", false, "move the node's port to the network's VLAN first (its old PVID stays tagged)")
 	return cmd
 }
 
 type installOptions struct {
 	node, image, images, cache, disk, network string
-	setPort                                   bool
+	setPort, keep                             bool
 }
 
 func (a *App) install(ctx context.Context, o installOptions) error {
@@ -399,7 +400,17 @@ waitReady:
 		say("%s: %s\n  ssh root@%s", node.Name, addr, addr)
 	}
 	if a.output == "json" {
-		return a.writeJSON(res)
+		if err := a.writeJSON(res); err != nil {
+			return err
+		}
+	}
+	if o.keep {
+		say("%s: keeping it served%s until interrupted", node.Name, map[bool]string{true: " and running", false: ""}[node.VM != nil])
+		select {
+		case <-ctx.Done(): // interrupted, or --timeout: the install itself succeeded
+		case <-serveDone:
+			return fmt.Errorf("serve stopped: %v (log: %s)", serveErr, res.ServeLog)
+		}
 	}
 	return nil
 }

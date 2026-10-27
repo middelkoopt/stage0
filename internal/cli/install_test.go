@@ -609,3 +609,26 @@ func TestInstallVM(t *testing.T) {
 		t.Errorf("a VM install touched the switch: %v", env.sw.writes)
 	}
 }
+
+func TestInstallKeep(t *testing.T) {
+	// --keep: after the install, keep serving until the time limit, then
+	// end without an error.
+	env := newInstallEnv(t, []string{
+		"<dhcp-pxe>",
+		`STAGE0-REPORT {"interfaces":[{"name":"eth0","mac":"d8:3a:dd:c5:c1:f3"}]}` + "\r\n",
+		`STAGE0-INSTALLED {"disk":"/dev/mmcblk0","bytes":1}` + "\r\n",
+		"<rebooted>",
+		"<dhcp-plain>",
+		"k53 login: ",
+	})
+	start := time.Now()
+	t.Chdir(t.TempDir())
+	out, err := runApp(t, env.app, "--state", env.state, "install", "k53", "--image", "test", "--keep",
+		"--images", env.images, "--cache", env.cache, "--timeout", "3s")
+	if err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	if !strings.Contains(out, "keeping") || time.Since(start) < 2*time.Second {
+		t.Errorf("did not keep serving (%s):\n%s", time.Since(start), out)
+	}
+}
