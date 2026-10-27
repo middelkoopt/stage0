@@ -379,3 +379,24 @@ func TestLoadSiteBMC(t *testing.T) {
 		}
 	}
 }
+
+func TestLoadSiteNodeIgnition(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "k52.ign"), []byte(`{"ignition": {"version": "3.4.0"}, "storage": {
+  "disks": [{"partitions": [{"label": "piboot", "sizeMiB": 512}, {"label": "piroot"}]}],
+  "filesystems": [{"device": "/dev/disk/by-partlabel/piboot", "format": "vfat", "path": "/boot/efi"},
+    {"device": "/dev/disk/by-partlabel/piroot", "format": "ext4", "path": "/"}]}}`), 0o644)
+	p := filepath.Join(dir, "site.yaml")
+	os.WriteFile(p, []byte("nodes:\n  - {name: k52, ignition: k52.ign}\n"), 0o644)
+	s, err := LoadSite(p)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.Node("k52"); len(n.Partitions) != 2 || n.Partitions[0].Bytes != 512<<20 {
+		t.Errorf("partitions %+v", n.Partitions)
+	}
+	os.WriteFile(p, []byte("nodes:\n  - {name: k52, ignition: nope.ign}\n"), 0o644)
+	if _, err := LoadSite(p); err == nil {
+		t.Error("a missing ignition file: want error")
+	}
+}

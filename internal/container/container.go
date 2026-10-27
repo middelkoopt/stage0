@@ -34,15 +34,27 @@ type Spec struct {
 	Installer  Installer   `json:"installer"`
 }
 
-// Resolve settles the spec: the container's labels, overridden by the
+// Resolve settles the spec: the container's labels (a partition list, or
+// an Ignition config's storage), overridden by the
 // image config's partitions and installer, the partitions overridden in
 // turn by the node's. Any of them may be missing; the result is checked.
 func Resolve(labels map[string]string, imageParts []Partition, imageInstaller *Installer, nodeParts []Partition) (Spec, error) {
 	var s Spec
-	if v, ok := labels["pi.provision.partition"]; ok {
-		if err := json.Unmarshal([]byte(v), &s.Partitions); err != nil {
+	pl, hasPartitions := labels["pi.provision.partition"]
+	il, hasIgnition := labels["pi.provision.ignition"]
+	switch {
+	case hasPartitions && hasIgnition:
+		return s, errors.New("labels pi.provision.partition and pi.provision.ignition: one layout, not both")
+	case hasPartitions:
+		if err := json.Unmarshal([]byte(pl), &s.Partitions); err != nil {
 			return s, fmt.Errorf("label pi.provision.partition: %w", err)
 		}
+	case hasIgnition:
+		ps, err := FromIgnition([]byte(il))
+		if err != nil {
+			return s, fmt.Errorf("label pi.provision.ignition: %w", err)
+		}
+		s.Partitions = ps
 	}
 	if v, ok := labels["pi.provision.installer"]; ok {
 		if err := json.Unmarshal([]byte(v), &s.Installer); err != nil {

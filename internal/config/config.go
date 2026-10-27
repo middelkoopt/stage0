@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/netip"
 	"os"
+	"path/filepath"
 	"regexp"
 	"slices"
 	"strings"
@@ -64,6 +65,10 @@ type Node struct {
 	// Partitions, for installing a container, override the image config's
 	// and the container's (docs/containers.md): this node's disk may differ.
 	Partitions []container.Partition `yaml:"partitions,omitempty"`
+
+	// Ignition, instead of Partitions, is an Ignition config (JSON, a path
+	// relative to site.yaml) whose storage section gives the layout.
+	Ignition string `yaml:"ignition,omitempty"`
 
 	// BMC makes `stage0 bmc` answer IPMI for the node (docs/bmc.md).
 	BMC *BMC `yaml:"bmc,omitempty"`
@@ -128,13 +133,15 @@ func LoadSite(path string) (*Site, error) {
 	if err := decode(path, &s); err != nil {
 		return nil, err
 	}
-	if err := s.normalize(); err != nil {
+	if err := s.normalize(filepath.Dir(path)); err != nil {
 		return nil, fmt.Errorf("%s: %w", path, err)
 	}
 	return &s, nil
 }
 
-func (s *Site) normalize() error {
+// normalize checks the site and fills in defaults; dir is the site
+// file's directory, which relative paths in it are under.
+func (s *Site) normalize(dir string) error {
 	seen := map[string]bool{}
 	for i := range s.Switches {
 		sw := &s.Switches[i]
@@ -193,6 +200,22 @@ func (s *Site) normalize() error {
 				return fmt.Errorf("node %q: bmc port %d is %s's too", n.Name, b.Port, bmcPorts[b.Port])
 			}
 			bmcPorts[b.Port] = n.Name
+		}
+		if n.Ignition != "" {
+			if len(n.Partitions) > 0 {
+				return fmt.Errorf("node %q: partitions or ignition, not both", n.Name)
+			}
+			p := n.Ignition
+			if !filepath.IsAbs(p) {
+				p = filepath.Join(dir, p)
+			}
+			b, err := os.ReadFile(p)
+			if err != nil {
+				return fmt.Errorf("node %q: %w", n.Name, err)
+			}
+			if n.Partitions, err = container.FromIgnition(b); err != nil {
+				return fmt.Errorf("node %q: %w", n.Name, err)
+			}
 		}
 		if len(n.Partitions) > 0 {
 			if err := container.CheckPartitions(n.Partitions); err != nil {

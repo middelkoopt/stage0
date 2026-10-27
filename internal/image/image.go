@@ -53,6 +53,11 @@ type Config struct {
 	Partitions []container.Partition `yaml:"partitions,omitempty"`
 	Installer  *container.Installer  `yaml:"installer,omitempty"`
 
+	// Ignition, instead of Partitions, is an Ignition config (JSON, a path
+	// relative to the images directory) whose storage section gives the
+	// layout (docs/containers.md).
+	Ignition string `yaml:"ignition,omitempty"`
+
 	// BootPartition holds the firmware's boot files (Pi: config.txt,
 	// kernels, device trees); default 1.
 	BootPartition int `yaml:"bootPartition,omitempty"`
@@ -158,6 +163,16 @@ func Load(dir, name string) (Config, error) {
 		case c.Installer != nil && (c.Installer.Kernel == "" || c.Installer.Initramfs == ""):
 			return c, fmt.Errorf("%s: installer needs kernel and initramfs", p)
 		}
+		if c.Ignition != "" {
+			if len(c.Partitions) > 0 {
+				return c, fmt.Errorf("%s: partitions or ignition, not both", p)
+			}
+			ps, err := ignitionLayout(dir, c.Ignition)
+			if err != nil {
+				return c, fmt.Errorf("%s: %w", p, err)
+			}
+			c.Partitions = ps
+		}
 		if len(c.Partitions) > 0 {
 			if err := container.CheckPartitions(c.Partitions); err != nil {
 				return c, fmt.Errorf("%s: %w", p, err)
@@ -165,8 +180,8 @@ func Load(dir, name string) (Config, error) {
 		}
 		return c, nil
 	}
-	if len(c.Partitions) > 0 || c.Installer != nil {
-		return c, fmt.Errorf("%s: partitions and installer are for containers", p)
+	if len(c.Partitions) > 0 || c.Installer != nil || c.Ignition != "" {
+		return c, fmt.Errorf("%s: partitions, ignition and installer are for containers", p)
 	}
 	switch {
 	case !strings.HasPrefix(c.URL, "https://") && !strings.HasPrefix(c.URL, "http://"):
@@ -308,6 +323,19 @@ func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (
 		return dir, nil
 	}
 	return FetchFile(ctx, File{URL: c.URL, SHA256: c.SHA256}, cacheDir, progress)
+}
+
+// ignitionLayout reads the layout from the Ignition config at name
+// (relative to dir).
+func ignitionLayout(dir, name string) ([]container.Partition, error) {
+	if !filepath.IsAbs(name) {
+		name = filepath.Join(dir, name)
+	}
+	b, err := os.ReadFile(name)
+	if err != nil {
+		return nil, err
+	}
+	return container.FromIgnition(b)
 }
 
 // podmanSave saves the image from podman's local store as an OCI layout

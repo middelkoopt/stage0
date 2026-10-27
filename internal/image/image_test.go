@@ -420,3 +420,28 @@ esac
 		t.Error("podman: without an image: want error")
 	}
 }
+
+func TestLoadContainerIgnition(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "var.ign"), []byte(`{"ignition": {"version": "3.4.0"}, "storage": {
+  "disks": [{"device": "/dev/mmcblk0", "partitions": [{"label": "piboot", "sizeMiB": 512}, {"label": "pivar", "sizeMiB": 4096}, {"label": "piroot"}]}],
+  "filesystems": [{"device": "/dev/disk/by-partlabel/piboot", "format": "vfat", "path": "/boot/efi"},
+    {"device": "/dev/disk/by-partlabel/pivar", "format": "ext4", "path": "/var"},
+    {"device": "/dev/disk/by-partlabel/piroot", "format": "ext4", "path": "/"}]}}`), 0o644)
+	writeConfig(t, dir, "ct", "container: rocky10-rpi\ncmdline: x\nignition: var.ign\n")
+	c, err := Load(dir, "ct")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(c.Partitions) != 3 || c.Partitions[1].Path != "/var" || c.Partitions[1].Bytes != 4<<30 {
+		t.Errorf("partitions %+v", c.Partitions)
+	}
+	writeConfig(t, dir, "both", "container: x\ncmdline: x\nignition: var.ign\npartitions: [{name: b, size: 1GiB, type: vfat, path: /boot/efi}, {name: r, type: ext4, path: /}]\n")
+	if _, err := Load(dir, "both"); err == nil || !strings.Contains(err.Error(), "not both") {
+		t.Errorf("partitions and ignition: err = %v", err)
+	}
+	writeConfig(t, dir, "missing", "container: x\ncmdline: x\nignition: nope.ign\n")
+	if _, err := Load(dir, "missing"); err == nil {
+		t.Error("a missing ignition file: want error")
+	}
+}
