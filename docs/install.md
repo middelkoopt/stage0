@@ -130,6 +130,12 @@ k52: fe80::a9e7:2c9a:8c3d:d7c9%eth0.3
   of the time. The lease lasts 24 h; `stage0 serve pinet` (no `--root`:
   DHCP only) keeps answering installed nodes, from the install records,
   with the same address.
+- **IPv6 in the network's `prefix6`** (pinet: `fd00:10:3::/64`), if
+  `serve` advertises it: router advertisements with router lifetime 0, so
+  nodes form an address (EUI-64 on Alma, stable privacy on Raspberry Pi OS)
+  but take no default route. Sending them needs `CAP_NET_RAW`: run `serve`
+  and `install` from the copy in `/usr/local/bin` (see development.md);
+  without it `serve` logs a warning and runs the rest.
 - **IPv6 link-local:** a NetworkManager "stable privacy" address, new with
   every install, found on the wire; `./stage0 get address k52` repeats the
   lookup (an echo to `ff02::1` on the network's interface, then the

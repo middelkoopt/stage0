@@ -13,21 +13,7 @@ site's keys and its hostname, with or without a serial console. k52 runs
 Alma (`10.0.3.100`), k400 Raspberry Pi OS (`10.0.3.101`); both on.
 
 ## Open decisions
-- **WW1** How stage0 gets `CAP_NET_RAW` for router advertisements: a
-  setcap'd copy installed once, a small helper, or skip RAs. Your `sudo`
-  "ask" rule prompts for every setcap after a rebuild.
-- **WW2** What VLAN `install` should move a node's port to afterwards
-  (stage 0.5); the head also needs to stay reachable from stage0.
-
-- **XX1** How a QEMU VM boots stage0's agent, since Debian's UEFI firmware
-  can't netboot ([`docs/netboot.md`](docs/netboot.md#qemu-aarch64)):
-  (a) QEMU loads the agent's kernel and initramfs directly (`-kernel`,
-  `-initrd`), skipping firmware netboot in VMs (TFTP stays tested on the
-  Pis); (b) fetch a UEFI build with networking (e.g. upstream EDK2 or
-  Fedora's `edk2-aarch64`); (c) iPXE for arm64. Recommendation: (a) now,
-  (b) later. Either way the agent needs a generic arm64 kernel (the Pi
-  kernels don't run on QEMU's `virt`), e.g. from Rocky's or Alma's
-  aarch64 cloud image.
+(none)
 
 ## Next session
 1. Milestone 2, the QEMU test bed: the virtual switch is built

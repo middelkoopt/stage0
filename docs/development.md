@@ -24,6 +24,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/config` | `site.yaml` (committed: switches, nodes with console and install disk, networks with their VLAN) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
 | `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients, then the same MACs' kernels (`ip=dhcp`, no vendor class) with the same address; installed nodes get plain leases (24 h) and no answer to PXE; in-memory leases; the Pi's option 43 |
 | `internal/httpd` | HTTP (port 80) from the same root, every request logged; for images too big or slow for TFTP. Read-only except agents' `POST /stage0/report/<kind>`, when a listener is set |
+| `internal/radv` | IPv6 router advertisements of one prefix (lifetime 0, no default route), for SLAAC; needs `CAP_NET_RAW` |
 | `internal/reach` | Ping (unprivileged ICMP) and the SSH server's greeting |
 | `internal/tftpd` | Read-only TFTP from one directory (confined with `os.Root`), every request logged |
 | `internal/agent` | stage0 on the node (PID 1 of its initramfs): prints `STAGE0-REPORT {json}` (disks, interfaces, payload SHA-256); writes an xz image to a disk only when the kernel command line has `stage0.disk=` and a matching `stage0.sha256=`; fetches it first from `stage0.url=` (HTTP, with `ip=dhcp`) or uses `/payload`; then unpacks `stage0.seed=` (a cpio of first-boot files) over the image's first (FAT) partition |
@@ -67,6 +68,15 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
   `cap_net_bind_service` (lost on each rebuild). DHCP replies are broadcast,
   so no raw sockets are needed. The host's address on the network is the
   host's own config (systemd-networkd here), not stage0's.
+- **`CAP_NET_RAW` for router advertisements:** `/usr/local/bin/stage0` is a
+  copy with the capability; after a rebuild, refresh it with
+  `sudo install -m 0755 stage0 /usr/local/bin/stage0` and
+  `sudo setcap cap_net_raw=ep /usr/local/bin/stage0` (allowed in this repo's
+  `.claude/settings.local.json`; the global `ask` rule on `sudo` still
+  prompts). Run `serve` and `install` from it to advertise `prefix6`.
+- **The test bed's tap device** `stage0tap0` (owned by mtim, `10.0.9.1/24`,
+  connected to nothing real) comes from
+  `/etc/systemd/network/stage0tap0.netdev` and `.network`.
 - **Packet capture without sudo:** `/usr/bin/tcpdump` has
   `cap_net_raw,cap_net_admin`, so plain `tcpdump` works for every user, e.g.
   `tcpdump -i eth0.3 -n port 67 or port 69`; `sudo tcpdump` always prompts.

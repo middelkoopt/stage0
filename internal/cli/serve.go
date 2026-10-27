@@ -14,6 +14,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/dhcpd"
 	"github.com/middelkoopt/stage0/internal/httpd"
+	"github.com/middelkoopt/stage0/internal/radv"
 	"github.com/middelkoopt/stage0/internal/tftpd"
 )
 
@@ -105,6 +106,15 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 		"installed", len(leases.InstalledNodes()))
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return leases.Serve(ctx, socks.DHCP) })
+	if n.IPv6Prefix.IsValid() {
+		g.Go(func() error {
+			// Without CAP_NET_RAW, the rest still runs.
+			if err := radv.New(n.IPv6Prefix, log).Serve(ctx, n.Interface); err != nil {
+				log.Warn("router advertisements off (run the copy with CAP_NET_RAW: /usr/local/bin/stage0)", "err", err)
+			}
+			return nil
+		})
+	}
 	if root != "" {
 		g.Go(func() error { return files.Serve(ctx, socks.TFTP) })
 		g.Go(func() error { return web.Serve(ctx, socks.HTTP) })

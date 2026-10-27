@@ -272,3 +272,20 @@ nodes:
 		}
 	}
 }
+
+func TestLoadSitePrefix6(t *testing.T) {
+	ok := "networks:\n  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199, prefix6: 'fd00:10:3::/64'}\n"
+	s, err := LoadSite(write(t, "site.yaml", ok, 0o644))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if n, _ := s.Network("pinet"); n.IPv6Prefix.String() != "fd00:10:3::/64" {
+		t.Errorf("prefix %v", n.IPv6Prefix)
+	}
+	for _, bad := range []string{"fd00:10:3::/48", "10.0.3.0/24", "nonsense"} {
+		body := "networks:\n  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, pool: 10.0.3.100-10.0.3.199, prefix6: '" + bad + "'}\n"
+		if _, err := LoadSite(write(t, "site.yaml", body, 0o644)); err == nil {
+			t.Errorf("prefix6 %s: want error", bad)
+		}
+	}
+}

@@ -22,7 +22,7 @@ so different stage-1 provisioners can be CI-tested on real and virtual hardware.
 | 0.2 | The agent identifies the node and gets its plan | Built: the plan is the node's `cmdline.txt`, written by `install` |
 | 0.3 | Write the image to disk, then the first-boot files | Built |
 | 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" (console prompt, or lease plus ping and SSH) | Hostname and root's SSH key set (kernel command line); IPv4 lease from stage0 and IPv6 link-local, both printed; root filesystem not grown; "up" is the console's login prompt |
-| 0.5 | Mark the node installed (stop answering it), move its port to the cluster VLAN, stop | Stops answering (one node per run); no VLAN move |
+| 0.5 | Mark the node installed (stop answering its PXE), stop | Built; the port stays on the provisioning VLAN (the head provisions stage 1 on another VLAN; decided WW2) |
 
 Boot order stays **network first**: no answer means the node falls through to
 disk, which is safe for Pis and in general. Stage0 must therefore stop
@@ -34,9 +34,8 @@ reboot.
 1. **First-boot settings (stage 0.4), the rest:** hostname and root's SSH
    key are built (systemd settings on the kernel command line; see
    [`docs/install.md`](docs/install.md#first-boot-settings)). Installed
-   nodes keep their IPv4 lease from stage0 (OO1, built) and are found by
-   IPv6 link-local. Next: router advertisements, for a stable IPv6
-   address beyond link-local. Deferred:
+   nodes keep their IPv4 lease from stage0 (OO1, built) and get an IPv6
+   address from the network's prefix (router advertisements, built). Deferred:
    - **Growing the root filesystem (OO2):** left to stage 1 for now ("close
      to stock"); Rocky ships `rootfs-expand` and `growpart`.
    - **The seed's `root/` directory (GG2, decided):** for what the command
@@ -44,15 +43,9 @@ reboot.
    - cloud-init NoCloud served by `serve`'s HTTP
      (`ds=nocloud;s=http://…/`), for images that have cloud-init (Rocky Pi
      does not).
-2. **Moving ports after the install** (stage 0.5): to a cluster VLAN, once
-   decided what it is (the head needs stage0's network too). Moving to the
-   provisioning VLAN before is built (`install --set-port`).
-3. **More images:** Ubuntu for Pi. Built: Rocky 10.2 (Pi 5; doesn't boot
+2. **More images:** Ubuntu for Pi. Built: Rocky 10.2 (Pi 5; doesn't boot
    a Pi 4), AlmaLinux 10.1 and Raspberry Pi OS Lite trixie (both on Pi 5
    and Pi 400).
-4. **Router advertisements**, for a stable IPv6 address; needs
-   `CAP_NET_RAW` for stage0 (a decision for the human).
-
 ## Install routes
 
 The agent writes a stock disk image (xz, checked by SHA-256) to the disk and

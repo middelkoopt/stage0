@@ -61,15 +61,17 @@ type Console struct {
 // host's interface already carries Address; stage0 doesn't configure it.
 type Network struct {
 	Name      string `yaml:"name"`
-	Interface string `yaml:"interface"`      // e.g. eth0.3
-	Address   string `yaml:"address"`        // stage0's IPv4 address with prefix, e.g. 10.0.3.1/24
-	Pool      string `yaml:"pool"`           // addresses to lease: first-last
-	VLAN      string `yaml:"vlan,omitempty"` // the switch VLAN (name or ID) nodes must be on to install
+	Interface string `yaml:"interface"`         // e.g. eth0.3
+	Address   string `yaml:"address"`           // stage0's IPv4 address with prefix, e.g. 10.0.3.1/24
+	Pool      string `yaml:"pool"`              // addresses to lease: first-last
+	VLAN      string `yaml:"vlan,omitempty"`    // the switch VLAN (name or ID) nodes must be on to install
+	Prefix6   string `yaml:"prefix6,omitempty"` // IPv6 /64 to advertise for SLAAC, e.g. fd00:10:3::/64
 
 	// Parsed from the fields above.
 	Server              netip.Addr   `yaml:"-"`
 	Subnet              netip.Prefix `yaml:"-"`
 	PoolFirst, PoolLast netip.Addr   `yaml:"-"`
+	IPv6Prefix          netip.Prefix `yaml:"-"` // from Prefix6; invalid if none
 }
 
 var (
@@ -181,6 +183,13 @@ func (n *Network) parse() error {
 	}
 	n.Server, n.Subnet = p.Addr(), p.Masked()
 
+	if n.Prefix6 != "" {
+		p6, err := netip.ParsePrefix(n.Prefix6)
+		if err != nil || !p6.Addr().Is6() || p6.Bits() != 64 {
+			return fmt.Errorf("prefix6 %q: want an IPv6 /64, e.g. fd00:10:3::/64 (SLAAC needs a /64)", n.Prefix6)
+		}
+		n.IPv6Prefix = p6.Masked()
+	}
 	first, last, ok := strings.Cut(n.Pool, "-")
 	if !ok {
 		return fmt.Errorf("pool %q: want first-last, e.g. 10.0.3.100-10.0.3.199", n.Pool)
