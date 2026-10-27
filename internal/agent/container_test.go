@@ -1,10 +1,13 @@
 package agent
 
 import (
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
 	"testing"
+	"time"
 
 	"github.com/middelkoopt/stage0/internal/container"
 )
@@ -63,5 +66,27 @@ func TestSetupRoot(t *testing.T) {
 	}
 	if err := setupRoot(root, testSpec, map[string]string{"pi.provision.hosts": "not json"}); err == nil {
 		t.Error("bad hosts label: want error")
+	}
+}
+
+func TestClockEpoch(t *testing.T) {
+	root := t.TempDir()
+	os.MkdirAll(filepath.Join(root, "usr", "lib"), 0o755)
+	at := time.Date(2026, 10, 27, 16, 30, 0, 0, time.UTC)
+	if err := touchClockEpoch(root, at); err != nil {
+		t.Fatal(err)
+	}
+	fi, err := os.Stat(filepath.Join(root, "usr/lib/clock-epoch"))
+	if err != nil || !fi.ModTime().Equal(at) {
+		t.Errorf("clock-epoch %v, %v", fi, err)
+	}
+}
+
+func TestServerTime(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {}))
+	defer srv.Close()
+	got, err := serverTime(srv.URL + "/oci")
+	if err != nil || time.Since(got).Abs() > 5*time.Second {
+		t.Errorf("serverTime = %v, %v", got, err)
 	}
 }

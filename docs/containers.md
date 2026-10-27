@@ -84,7 +84,12 @@ Not yet: `--ipv6`, VMs, layouts other than the labels'.
 
 ## The installed system
 
-- **No clock:** a Pi has no clock battery and this container has no time
-  sync ("NTP service: n/a"), so k52 came up on 2026-06-10, and `rpm`
-  called 89 of 242 package signatures BAD (signed "in the future"); with
-  the clock set, none.
+- **The clock:** a Pi has no clock battery. Without help, k52 came up on
+  2026-06-10 (systemd's built-in floor) and `rpm` called 89 of 242
+  package signatures BAD ("signed in the future"). The agent sets its own
+  clock from the `Date:` header of stage0's HTTP server, then sets
+  `/usr/lib/clock-epoch` on the installed root to the install time:
+  systemd (PID 1) advances a clock that is behind that file's mtime. With
+  it, k52 booted about a minute behind pilab, and no signature was BAD
+  (2026-10-27). The container runs chrony, which finds no NTP server on
+  pinet ("Not synchronised"), so the clock drifts from there.

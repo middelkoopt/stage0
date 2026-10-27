@@ -22,15 +22,16 @@ LABEL pi.provision.resolv='"../run/NetworkManager/no-stub-resolv.conf"'
 ## Install tools
 RUN dnf install -y ca-certificates procps zstd jq yq && \
     dnf install -y initscripts-service cpio pigz && \
-    dnf install -y openssh openssh-clients openssh-server iproute iputils NetworkManager sudo && \
+    dnf install -y openssh openssh-clients openssh-server iproute iputils NetworkManager sudo chrony && \
     dnf install -y nano vim less bash-completion man
 
 ## Configure system. An empty root password opens the serial console
-## only: sshd refuses empty passwords.
+## only: sshd refuses empty passwords. A Pi has no clock battery: chrony
+## sets the time (stage0's agent sets /usr/lib/clock-epoch to start near it).
 ENV OS_RELEASE='el10'
 RUN passwd -d root && \
     sed -i '/alias/d' /root/.bashrc && \
-    systemctl enable sshd.service
+    systemctl enable sshd.service chronyd.service
 
 ## Installer initramfs: dracut brings the network up (NetworkManager);
 ## stage0 appends its agent and a hook. The partitioning tools come along.

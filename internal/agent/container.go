@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,7 @@ import (
 // them, and writes fstab, hosts and resolv.conf. Every blob is checked
 // against its digest, from the manifest's (plan.SHA256) down.
 func installContainer(out io.Writer, plan *Plan) (Result, error) {
+	setClock(out, plan.OCI+"/index.json")
 	start := time.Now()
 	dev := "/dev/" + plan.Disk
 	res := Result{Disk: dev, Checksum: plan.SHA256}
@@ -67,6 +69,12 @@ func installContainer(out io.Writer, plan *Plan) (Result, error) {
 		}
 	}
 	if err := setupRoot(mnt, spec, img.Labels); err != nil {
+		return res, err
+	}
+	// A Pi has no clock battery: systemd moves its clock at boot to at
+	// least this file's time, which the agent's clock (set from stage0's
+	// server) makes the install time.
+	if err := touchClockEpoch(mnt, time.Now()); err != nil {
 		return res, err
 	}
 	syscall.Sync()
@@ -210,4 +218,49 @@ func runTool(out io.Writer, name string, args ...string) error {
 		return fmt.Errorf("%s: %w", name, err)
 	}
 	return nil
+}
+
+// touchClockEpoch sets the time of root's /usr/lib/clock-epoch (made if
+// missing): systemd, as PID 1, advances a clock that is behind it.
+func touchClockEpoch(root string, at time.Time) error {
+	p := filepath.Join(root, "usr", "lib", "clock-epoch")
+	f, err := os.OpenFile(p, os.O_CREATE|os.O_WRONLY, 0o644)
+	if err != nil {
+		return err
+	}
+	if err := f.Close(); err != nil {
+		return err
+	}
+	return os.Chtimes(p, at, at)
+}
+
+// serverTime is the time stage0's HTTP server gives (its Date header) for
+// url.
+func serverTime(url string) (time.Time, error) {
+	resp, err := http.Head(url)
+	if err != nil {
+		return time.Time{}, err
+	}
+	resp.Body.Close()
+	return http.ParseTime(resp.Header.Get("Date"))
+}
+
+// setClock sets the node's clock from stage0's server when it is more
+// than a minute off (a Pi starts at its firmware's idea of the time), so
+// the files the agent writes, and the installed system, start near now.
+func setClock(out io.Writer, url string) {
+	t, err := serverTime(url)
+	if err != nil {
+		fmt.Fprintf(out, "stage0 agent: clock not set: %v\n", err)
+		return
+	}
+	if time.Since(t).Abs() < time.Minute {
+		return
+	}
+	tv := syscall.NsecToTimeval(t.UnixNano())
+	if err := syscall.Settimeofday(&tv); err != nil {
+		fmt.Fprintf(out, "stage0 agent: clock not set: %v\n", err)
+		return
+	}
+	fmt.Fprintf(out, "stage0 agent: clock set to %s from %s\n", t.UTC().Format(time.RFC3339), url)
 }
