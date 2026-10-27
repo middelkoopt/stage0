@@ -374,3 +374,49 @@ func TestLoadContainerRef(t *testing.T) {
 		t.Error("an upper-case repository: want error")
 	}
 }
+
+func TestFetchPodman(t *testing.T) {
+	// A fake podman: inspect prints an ID; save writes a layout and logs.
+	bin := t.TempDir()
+	log := filepath.Join(bin, "calls")
+	script := `#!/bin/sh
+echo "$@" >> ` + log + `
+case "$1 $2" in
+"image inspect") echo 0123abcd ;;
+"image save") out=""; while [ $# -gt 0 ]; do [ "$1" = -o ] && out=$2; shift; done
+  mkdir -p "$out/blobs/sha256" && echo '{}' > "$out/index.json" ;;
+esac
+`
+	os.WriteFile(filepath.Join(bin, "podman"), []byte(script), 0o755)
+	t.Setenv("PATH", bin+":"+os.Getenv("PATH"))
+
+	dir := t.TempDir()
+	writeConfig(t, dir, "local", "container: podman:localhost/stage0/rocky10-rpi\ncmdline: x\n")
+	c, err := Load(dir, "local")
+	if err != nil {
+		t.Fatal(err)
+	}
+	cache := t.TempDir()
+	p, err := Fetch(t.Context(), c, cache, io.Discard)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p != filepath.Join(cache, "oci", "podman", "0123abcd") {
+		t.Errorf("layout at %s", p)
+	}
+	if _, err := os.Stat(filepath.Join(p, "index.json")); err != nil {
+		t.Error(err)
+	}
+	// The same image ID again: no second save.
+	if _, err := Fetch(t.Context(), c, cache, io.Discard); err != nil {
+		t.Fatal(err)
+	}
+	calls, _ := os.ReadFile(log)
+	if n := strings.Count(string(calls), "image save"); n != 1 || !strings.Contains(string(calls), "--format oci-dir") {
+		t.Errorf("podman calls:\n%s", calls)
+	}
+	writeConfig(t, dir, "bad", "container: \"podman:\"\ncmdline: x\n")
+	if _, err := Load(dir, "bad"); err == nil {
+		t.Error("podman: without an image: want error")
+	}
+}

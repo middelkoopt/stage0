@@ -16,6 +16,7 @@ import (
 	"io/fs"
 	"net/http"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
 	"regexp"
@@ -38,10 +39,12 @@ type Config struct {
 	URL    string `yaml:"url"`    // an xz-compressed raw disk image
 	SHA256 string `yaml:"sha256"` // of the file at URL
 
-	// Container, instead of URL, installs a container image: a registry
-	// reference (with a "/": quay.io/org/image:tag, pulled into the cache),
-	// or the name of an OCI layout directory <cache>/oci/<Container>
-	// (podman save --format oci-dir). Its labels say how (docs/containers.md).
+	// Container, instead of URL, installs a container image: an image in
+	// podman's local store ("podman:<image>", saved into the cache by
+	// image ID), a registry reference (with a "/": quay.io/org/image:tag,
+	// pulled into the cache), or the name of an OCI layout directory
+	// <cache>/oci/<Container> (podman save --format oci-dir). Its labels
+	// say how (docs/containers.md).
 	Container string `yaml:"container,omitempty"`
 
 	// Partitions and Installer, for a container, override its labels
@@ -138,6 +141,10 @@ func Load(dir, name string) (Config, error) {
 	}
 	if c.Container != "" {
 		switch {
+		case strings.HasPrefix(c.Container, "podman:"):
+			if strings.TrimPrefix(c.Container, "podman:") == "" {
+				return c, fmt.Errorf("%s: container %q: name the image, e.g. podman:localhost/stage0/rocky10-rpi", p, c.Container)
+			}
 		case strings.Contains(c.Container, "/"):
 			if _, err := registry.ParseRef(c.Container); err != nil {
 				return c, fmt.Errorf("%s: container: %w", p, err)
@@ -281,6 +288,9 @@ func (c Config) File() string { return path.Base(c.URL) }
 // returns its OCI layout directory: pulled from its registry, or saved
 // there by hand.
 func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (string, error) {
+	if name, ok := strings.CutPrefix(c.Container, "podman:"); ok {
+		return podmanSave(ctx, name, filepath.Join(cacheDir, "oci", "podman"), progress)
+	}
 	if strings.Contains(c.Container, "/") {
 		ref, err := registry.ParseRef(c.Container)
 		if err != nil {
@@ -298,6 +308,35 @@ func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (
 		return dir, nil
 	}
 	return FetchFile(ctx, File{URL: c.URL, SHA256: c.SHA256}, cacheDir, progress)
+}
+
+// podmanSave saves the image from podman's local store as an OCI layout
+// under dir, named by its image ID (so a rebuild is saved anew, the same
+// image only once), and returns the layout's path.
+func podmanSave(ctx context.Context, name, dir string, progress io.Writer) (string, error) {
+	out, err := exec.CommandContext(ctx, "podman", "image", "inspect", "--format", "{{.Id}}", name).Output()
+	if err != nil {
+		return "", fmt.Errorf("podman image inspect %s: %w", name, err)
+	}
+	id := strings.TrimSpace(string(out))
+	if !regexp.MustCompile(`^[0-9a-f]+$`).MatchString(id) {
+		return "", fmt.Errorf("podman image inspect %s: image ID %q", name, id)
+	}
+	dst := filepath.Join(dir, id)
+	if _, err := os.Stat(filepath.Join(dst, "index.json")); err == nil {
+		return dst, nil
+	}
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	tmp := dst + ".tmp"
+	os.RemoveAll(tmp)
+	fmt.Fprintf(progress, "saving %s from podman\n", name)
+	cmd := exec.CommandContext(ctx, "podman", "image", "save", "--format", "oci-dir", "-o", tmp, name)
+	if out, err := cmd.CombinedOutput(); err != nil {
+		return "", fmt.Errorf("podman image save %s: %w: %s", name, err, bytes.TrimSpace(out))
+	}
+	return dst, os.Rename(tmp, dst)
 }
 
 // FetchDebFile makes sure the file name (an absolute path) from the
