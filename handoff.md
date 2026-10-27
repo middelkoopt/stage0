@@ -24,8 +24,11 @@ Alma (`10.0.3.100`), k400 Raspberry Pi OS (`10.0.3.101`); both on.
      raw (or recompressed) image;
    - the agent on Rocky's pxeboot `vmlinuz` + `initrd.img`
      (`/BaseOS/aarch64/os/images/pxeboot/`): stage0's cpio appended after
-     the initrd, and the agent loads the modules the hardware asks for with
-     the initrd's `modprobe` (EL builds virtio as modules);
+     the initrd. If EL builds virtio as modules (likely; unverified), the
+     agent must load them (the initrd's `modprobe`, for each `modalias`
+     under `/sys`) and then bring up the network itself, since the
+     kernel's `ip=dhcp` runs before modules load: a DHCP client (the
+     insomniacslk library has one) and address setup over netlink;
    - QEMU boots it with `-kernel`/`-initrd`, NIC on the vswitch; installs a
      cloud image to a virtual disk, which then boots with UEFI (AAVMF; no
      netboot needed for a disk).
