@@ -16,9 +16,9 @@ boot server), IPv4 and IPv6 ([`docs/network-modes.md`](docs/network-modes.md)).
 serial console. Nothing is pushed.
 
 ## Open decisions
-- **BK3:** a test-bed container for CI (QEMU and stage0 in podman,
-  self-hosted on pilab, TCG fallback)? — leaning yes; open: whether
-  stage0 serves through a userspace network stack instead of a tap.
+- **BO2:** the container route's OS configuration written by the agent
+  (network as systemd-networkd or NetworkManager files, hostname, keys,
+  per-node identity) — shape under discussion.
 
 ## Next session
 1. Refactor (BK1), step 3: committed test scenarios (`tests/sites/*.yaml`,
@@ -26,7 +26,8 @@ serial console. Nothing is pushed.
    kinds (disk image, container, VM) so each route checks its own fields.
    Steps 1 and 2 are done, and the lab commands moved to `labctl` (BM1,
    BM4); `netswitch`, `ipmi` and `console` are importable packages.
-   Then BN1 and the switch lock ([`ROADMAP.md`](ROADMAP.md#next)).
+   Then BN1, the switch lock and the test-bed container
+   ([`ROADMAP.md`](ROADMAP.md#next)).
 2. Nodes: k52 runs the Rocky container; k400 Raspberry Pi OS, EEPROM
    `USE_IPV6=0` (no static settings); vm1 stopped. Nothing serves DHCP on
    pinet now. k53's port has PoE on but no link (2026-10-28); it may be

@@ -41,6 +41,15 @@ reboot.
    **Switch lock (BL2 dropped):** `install` keeps driving the switch
    itself; it and `labctl bmc` take a file lock around each switch
    session, as the switch allows few.
+0. **Test-bed container for CI (BK3):** QEMU, the firmware and stage0 in
+   one podman image (`containers/testbed/`), run with `--device
+   /dev/kvm --device /dev/net/tun`: stage0 makes its tap inside the
+   container's own network namespace and the VMs live there too. Nothing
+   joins a host network: no veth, bridge or macvlan into podman's rootless
+   namespace, which proved unsustainable in `../lab` (piconfig). Pis stay
+   with the host binary (`tools/lab-matrix.sh`). Self-hosted on pilab
+   (KVM); TCG where there is no KVM. The userspace stack (gVisor) stays
+   deferred (YY1).
 1. **First-boot settings (stage 0.4), the rest:** hostname and root's SSH
    key are built (systemd settings on the kernel command line; see
    [`docs/install.md`](docs/install.md#first-boot-settings)). Installed
