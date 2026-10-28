@@ -14,7 +14,18 @@ in `site.yaml`.
 - **none**: no DHCP, DHCPv6 or router advertisements from stage0 at all;
   firmware is set up with the boot server (a Pi's EEPROM `TFTP_IP` and
   static `CLIENT_IP`; a UEFI boot entry), and stage0 serves TFTP and HTTP.
-  Built and unit-tested, **not yet verified live**.
+
+## none
+
+**Works** on k400 (2026-10-28), its EEPROM given `TFTP_IP=10.0.3.1`,
+`CLIENT_IP=10.0.3.60`, `SUBNET=255.255.255.0` for the test (removed
+again after): the bootloader skipped DHCP (`NET 10.0.3.60 … tftp
+10.0.3.1`) and fetched from stage0's TFTP; the agent took its address from
+the stand-in DHCP server; up on link-local in 186 s. With no DHCP to
+withhold, the reboot first netbooted the installer again: now `install`
+closes its TFTP server once the node reports INSTALLED (every request
+"not found"), and the bootloader goes on to the SD card. IPv6 netboot is
+off in this mode (it starts with DHCPv6).
 
 ## proxy
 
@@ -28,7 +39,7 @@ Pi:
 - k400 (Pi 400, `USE_IPV6=0`): its bootloader took `10.0.3.86` from
   dnsmasq and option 43 from stage0's proxy offer, then fetched over
   stage0's TFTP; installed, up in 235 s. (It aborted a size probe after
-  the first block, which serve logs as a failed transfer: harmless.)
+  the first block, which serve now logs as a size probe.)
 
 How it works:
 

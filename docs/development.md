@@ -32,7 +32,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/initrd` | Builds that initramfs: the static stage0 binary as `/init`, `/dev/console`, optional `/payload`; seeds (`build seed`); and the archive appended to a container's dracut installer (`/usr/bin/stage0`, a pre-mount hook running `stage0 agent`, and a drop-in ordering it after Ignition's disks stage) |
 | `internal/uki` | Builds a Unified Kernel Image: systemd's EFI stub plus `.osrel`, `.cmdline`, `.initrd`, `.linux` sections; unwraps arm64 zboot kernels |
 | `internal/deb` | Reads one file out of a `.deb` (ar, then `data.tar.{xz,zst,gz}`), for the VMs' UEFI firmware and the UKI stub |
-| `internal/registry` | Pulls a container from an OCI registry (anonymous bearer tokens; linux/arm64 from an index) into an OCI layout in the cache, every blob checked by digest |
+| `internal/registry` | Pulls a container from an OCI registry (anonymous or with credentials: Basic, or bearer tokens; linux/arm64 from an index) into an OCI layout in the cache, every blob checked by digest |
 | `internal/ipmi` | A small IPMI 2.0 BMC over the LAN (RMCP+, cipher suites 3 and 17) for `stage0 bmc`: chassis power and SOL backed by a node's PoE port and console ([bmc](bmc.md)) |
 | `internal/oci` | Reads an OCI image layout (from a directory or over HTTP, every blob checked by digest): labels, named files, a directory tree, or the whole image unpacked (whiteouts, links, modes, xattrs) |
 | `internal/container` | How to install a container: partitions and installer kernel/initramfs, resolved from the node, the image config and the container's `pi.provision.*` labels (a partition list or an Ignition config), and checked ([containers](containers.md)) |

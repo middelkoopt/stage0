@@ -30,7 +30,12 @@ without `enable_uart=1`, now in the image config.
      quay.io, and k52 installed from a local `registry:2` the Rocky Pi
      container was pushed to (`podman push --tls-verify=false … 
      localhost:5000/stage0/rocky10-rpi:latest`). Nodes never reach the
-     registry: stage0 serves what it pulled.
+     registry: stage0 serves what it pulled. **Private repositories:** a
+     login per registry host in `.secrets`, `registries: {<host>: {user:
+     …, password: …}}`, sent as Basic authentication or to the token
+     service (verified 2026-10-28: k52 installed from a local `registry:2`
+     with an htpasswd login; without the login the pull fails saying what
+     to add).
    - **An image in podman's local store**, `podman:<image>`, e.g.
      `podman:localhost/stage0/rocky10-rpi`: stage0 runs `podman image save
      --format oci-dir` into `~/.cache/stage0/oci/podman/<image ID>/`, so
@@ -71,7 +76,7 @@ without `enable_uart=1`, now in the image config.
    ([first boot](firstboot.md)), then seeds the boot partition as for disk
    images.
 
-Not yet: VMs, private registries (credentials).
+Not yet: VMs.
 
 ## Partitioning by Ignition
 

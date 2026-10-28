@@ -71,7 +71,7 @@ IPv6 ([containers](docs/containers.md)). A container comes from a
 registry, podman's local store (`podman:<image>`) or a saved layout; its
 layout from the node, the image config or the labels (BB1), as a
 partition list or an Ignition config that the installer's Ignition
-applies. Next for it: private registries. Later, bootc (E) for UEFI machines,
+applies; private registries with logins in `.secrets`. Later, bootc (E) for UEFI machines,
 testable in QEMU with Ubuntu's firmware
 ([netboot](docs/netboot.md#qemu-aarch64)).
 
@@ -137,8 +137,8 @@ HTTP), the agent, initramfs and seed builders (see
 6. UEFI and x86_64: aarch64 VMs netboot the agent as a UKI by UEFI HTTP
    boot, or PXE (done, [test bed](docs/testbed.md)); next x86_64, the
    installer ISO route, an IPMI client against real BMCs (in another lab).
-7. Network modes beyond *own* (BH1): proxy done, IPv4 and IPv6 (VM and
-   Pis, [network modes](docs/network-modes.md)); none built, to verify.
+7. Network modes beyond *own* (BH1): done — proxy (IPv4 and IPv6, VM and
+   Pis) and none (k400) ([network modes](docs/network-modes.md)).
 
 Dropped (BE1): install-once state and workflow plans (nothing needs
 them); state export is `stage0 get nodes -o json`, above.
