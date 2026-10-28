@@ -51,6 +51,12 @@ func installContainer(out io.Writer, plan *Plan) (Result, error) {
 		}
 	} else {
 		fmt.Fprintf(out, "stage0 agent: partitioning %s\n", dev)
+		// Zap first, on its own: given an old MBR table (k52 after Ubuntu),
+		// sgdisk complains about it and exits 2 even when it goes on to
+		// write the new one. Then the new table must succeed.
+		if err := runTool(out, "sgdisk", "--zap-all", dev); err != nil {
+			fmt.Fprintf(out, "stage0 agent: zapping the old table: %v (going on)\n", err)
+		}
 		if err := runTool(out, "sgdisk", sgdiskArgs(spec, dev)...); err != nil {
 			return res, err
 		}
@@ -174,7 +180,7 @@ func mountOrder(spec container.Spec) []int {
 // sgdiskArgs makes a fresh GPT with the spec's partitions, in order, the
 // last filling the disk.
 func sgdiskArgs(spec container.Spec, dev string) []string {
-	args := []string{"--zap-all", "--clear"}
+	args := []string{"--clear"}
 	for i, p := range spec.Partitions {
 		n := i + 1
 		size := "0"

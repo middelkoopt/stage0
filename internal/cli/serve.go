@@ -84,7 +84,7 @@ func (a *App) newLeases(n config.Network, installed map[string]netip.Addr, log *
 		Server: n.Server, Subnet: n.Subnet,
 		PoolFirst: n.PoolFirst, PoolLast: n.PoolLast, LeaseTime: leaseTime, NTP: n.NTPServers,
 		Installed: installed, InstalledLeaseTime: installedLeaseTime,
-		Proxy: n.Mode == "proxy",
+		Proxy: n.Mode != "own", // proxy and none: another server leases
 	}, log)
 }
 
@@ -112,11 +112,13 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 	log.Info("serving", "interface", n.Interface, "address", n.Server, "pool", n.Pool, "root", root,
 		"installed", len(leases.InstalledNodes()))
 	g, ctx := errgroup.WithContext(ctx)
-	g.Go(func() error { return leases.Serve(ctx, socks.DHCP) })
+	if socks.DHCP != nil { // none in mode none
+		g.Go(func() error { return leases.Serve(ctx, socks.DHCP) })
+	}
 	if socks.DHCPProxy != nil {
 		g.Go(func() error { return leases.ServeProxy(ctx, socks.DHCPProxy) })
 	}
-	if n.IPv6Prefix.IsValid() {
+	if n.IPv6Prefix.IsValid() && n.Mode == "own" { // else the network's router advertises
 		g.Go(func() error {
 			// Without CAP_NET_RAW, the rest still runs.
 			if err := radv.New(n.IPv6Prefix, log).Serve(ctx, n.Interface); err != nil {
@@ -133,7 +135,7 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 		}
 		// The Bootfile-URL names the global address: with the link-local
 		// one the Pi took the reply but didn't go on to TFTP (docs/netboot.md).
-		leases6 := dhcp6d.New(dhcp6d.Config{Server: n.Server6, Prefix: n.IPv6Prefix, MAC: mac}, log)
+		leases6 := dhcp6d.New(dhcp6d.Config{Server: n.Server6, Prefix: n.IPv6Prefix, MAC: mac, NoAddresses: n.Mode != "own"}, log)
 		// A Pi's bootloader doesn't answer neighbour solicitations for its
 		// DHCPv6 address, so the host is told where it is.
 		leases6.IsInstalled = leases.IsInstalled
@@ -182,26 +184,35 @@ func openNetwork(ctx context.Context, n config.Network) (Sockets, error) {
 		return s, fmt.Errorf("network %q: %w", n.Name, err)
 	}
 	var err error
-	if s.DHCP, err = dhcpd.Listen(ctx, n.Interface); err != nil {
-		return s, err
+	closeAll := func() {
+		for _, c := range []net.PacketConn{s.DHCP, s.DHCPProxy, s.TFTP} {
+			if c != nil {
+				c.Close()
+			}
+		}
+	}
+	if n.Mode != "none" { // in mode none stage0 answers no DHCP
+		if s.DHCP, err = dhcpd.Listen(ctx, n.Interface); err != nil {
+			return s, err
+		}
 	}
 	if n.Mode == "proxy" {
 		if s.DHCPProxy, err = dhcpd.ListenProxy(ctx, n.Interface, n.Server); err != nil {
-			s.DHCP.Close()
+			closeAll()
 			return s, err
 		}
 	}
 	if s.TFTP, err = tftpd.Listen(ctx, n.Interface, n.Server); err != nil {
-		s.DHCP.Close()
+		closeAll()
 		return s, err
 	}
 	if s.HTTP, err = httpd.Listen(ctx, n.Interface, n.Server); err != nil {
-		s.DHCP.Close()
-		s.TFTP.Close()
+		closeAll()
 		return s, err
 	}
-	// IPv6 netboot, if the interface carries <prefix>::1.
-	if n.Server6.IsValid() && checkInterfaceAddr(n.Interface, n.Server6) {
+	// IPv6 netboot, if the interface carries <prefix>::1 (not in mode
+	// none: it starts with DHCPv6).
+	if n.Server6.IsValid() && n.Mode != "none" && checkInterfaceAddr(n.Interface, n.Server6) {
 		if s.DHCP6, err = dhcp6d.Listen(ctx, n.Interface); err == nil {
 			// [::], pinned to the interface: the library can't listen on an
 			// address with a zone (fe80::…%eth0.3).

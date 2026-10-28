@@ -425,7 +425,7 @@ waitReady:
 	if res.MAC == "" && quiet {
 		return fmt.Errorf("%s: no MAC with a lease in the agent's report, so no way to tell it's up", node.Name)
 	}
-	if n.Mode == "proxy" && res.MAC != "" {
+	if n.Mode != "own" && res.MAC != "" {
 		// Another server leases its address; reach it on its IPv6
 		// link-local address, found by MAC.
 		actx, cancel := context.WithTimeout(ctx, leaseWait)

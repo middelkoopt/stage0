@@ -409,9 +409,13 @@ func TestLoadSiteProxy(t *testing.T) {
 	if n, _ := s.Network("pinet"); n.Mode != "proxy" {
 		t.Errorf("mode %q", n.Mode)
 	}
+	if _, err := LoadSite(write(t, "site.yaml", "networks:\n  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, mode: none}\n", 0o644)); err != nil {
+		t.Errorf("mode none: %v", err)
+	}
 	for _, bad := range []string{
 		"networks:\n  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, mode: proxy, pool: 10.0.3.100-10.0.3.199}\n",
 		"networks:\n  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, mode: relay, pool: 10.0.3.100-10.0.3.199}\n",
+		"networks:\n  - {name: pinet, interface: eth0.3, address: 10.0.3.1/24, mode: none, pool: 10.0.3.100-10.0.3.199}\n",
 	} {
 		if _, err := LoadSite(write(t, "site.yaml", bad, 0o644)); err == nil {
 			t.Errorf("%q: want error", bad)

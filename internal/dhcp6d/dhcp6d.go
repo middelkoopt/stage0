@@ -29,6 +29,10 @@ type Config struct {
 	Server netip.Addr       // stage0's address in Prefix: the TFTP server
 	Prefix netip.Prefix     // a /64; leases come from <prefix>::100 on
 	MAC    net.HardwareAddr // stage0's, for its server DUID
+
+	// NoAddresses: another router hands out addresses (SLAAC); boot
+	// requests get the Bootfile-URL only (network mode proxy).
+	NoAddresses bool
 }
 
 const (
@@ -138,11 +142,19 @@ func (s *Server) Reply(m *dhcpv6.Message) *dhcpv6.Message {
 	if ia := m.Options.OneIANA(); ia != nil {
 		iaid = ia.IaId
 	}
-	ip := s.lease(cid.String())
-	if s.OnLease != nil {
-		if mac := duidMAC(cid); mac != nil {
-			s.OnLease(ip, mac)
+	var ip netip.Addr
+	if !s.cfg.NoAddresses {
+		ip = s.lease(cid.String())
+		if s.OnLease != nil {
+			if mac := duidMAC(cid); mac != nil {
+				s.OnLease(ip, mac)
+			}
 		}
+	} else if mac := duidMAC(cid); mac != nil && s.OnLease != nil {
+		// Its address comes from the router's SLAAC: the prefix and its
+		// MAC's EUI-64 (a Pi 5 bootloader's is), which it won't answer
+		// neighbour solicitations for either (k52).
+		s.OnLease(EUI64(s.cfg.Prefix, mac), mac)
 	}
 	mods := []dhcpv6.Modifier{dhcpv6.WithServerID(s.duid)}
 	if slices.Contains(m.Options.ArchTypes(), iana.EFI_ARM64_HTTP) {
@@ -154,7 +166,7 @@ func (s *Server) Reply(m *dhcpv6.Message) *dhcpv6.Message {
 	} else {
 		mods = append(mods, dhcpv6.WithOption(dhcpv6.OptBootFileURL("tftp://["+s.cfg.Server.String()+"]/")))
 	}
-	if m.Options.OneIANA() != nil {
+	if m.Options.OneIANA() != nil && ip.IsValid() {
 		mods = append(mods, dhcpv6.WithOption(&dhcpv6.OptIANA{IaId: iaid, T1: preferred / 2, T2: preferred * 4 / 5,
 			Options: dhcpv6.IdentityOptions{Options: dhcpv6.Options{&dhcpv6.OptIAAddress{
 				IPv6Addr: ip.AsSlice(), PreferredLifetime: preferred, ValidLifetime: valid}}}}))
@@ -201,4 +213,14 @@ func duidMAC(d dhcpv6.DUID) net.HardwareAddr {
 		return d.LinkLayerAddr
 	}
 	return nil
+}
+
+// EUI64 is the SLAAC address a host with mac takes in prefix (a /64): the
+// MAC with ff:fe in the middle and the universal/local bit flipped.
+func EUI64(prefix netip.Prefix, mac net.HardwareAddr) netip.Addr {
+	a := prefix.Masked().Addr().As16()
+	a[8], a[9], a[10] = mac[0]^0x02, mac[1], mac[2]
+	a[11], a[12] = 0xff, 0xfe
+	a[13], a[14], a[15] = mac[3], mac[4], mac[5]
+	return netip.AddrFrom16(a)
 }

@@ -111,9 +111,11 @@ type Network struct {
 	Pool      string `yaml:"pool"`              // addresses to lease: first-last
 	VLAN      string `yaml:"vlan,omitempty"`    // the switch VLAN (name or ID) nodes must be on to install
 	Prefix6   string `yaml:"prefix6,omitempty"` // IPv6 /64 to advertise for SLAAC, e.g. fd00:10:3::/64
-	// Mode: "own" (default: stage0 hands out the addresses) or "proxy"
-	// (another DHCP server does; stage0 answers boot requests only, as
-	// ProxyDHCP, and needs no pool). docs/network-modes.md.
+	// Mode: "own" (default: stage0 hands out the addresses), "proxy"
+	// (another server does; stage0 answers boot requests only: ProxyDHCP,
+	// DHCPv6 without addresses, no router advertisements) or "none" (no
+	// DHCP from stage0 at all: firmware knows the boot server). No pool
+	// but in own. docs/network-modes.md.
 	Mode string `yaml:"mode,omitempty"`
 	// NTP servers (IPv4 addresses) DHCP hands out: installed Pis have no
 	// clock battery. stage0 doesn't serve NTP; e.g. chrony on its host.
@@ -317,13 +319,13 @@ func (n *Network) parse() error {
 	switch n.Mode {
 	case "":
 		n.Mode = "own"
-	case "own", "proxy":
+	case "own", "proxy", "none":
 	default:
-		return fmt.Errorf("mode %q: own or proxy", n.Mode)
+		return fmt.Errorf("mode %q: own, proxy or none", n.Mode)
 	}
-	if n.Mode == "proxy" {
+	if n.Mode != "own" {
 		if n.Pool != "" {
-			return errors.New("pool: in proxy mode the other DHCP server hands out addresses")
+			return fmt.Errorf("pool: in %s mode stage0 hands out no addresses", n.Mode)
 		}
 		return nil
 	}

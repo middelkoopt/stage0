@@ -19,7 +19,7 @@ var testSpec = container.Spec{Partitions: []container.Partition{
 
 func TestSgdiskArgs(t *testing.T) {
 	got := sgdiskArgs(testSpec, "/dev/mmcblk0")
-	want := []string{"--zap-all", "--clear",
+	want := []string{"--clear",
 		"--new=1:0:+524288K", "--typecode=1:0700", "--change-name=1:piboot",
 		"--new=2:0:0", "--typecode=2:8300", "--change-name=2:piroot",
 		"/dev/mmcblk0"}

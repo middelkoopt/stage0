@@ -127,3 +127,20 @@ func TestAdvertiseUEFIHTTP(t *testing.T) {
 		t.Errorf("vendor class %v", vc)
 	}
 }
+
+func TestNoAddresses(t *testing.T) {
+	// Proxy mode: the boot URL, no address (the router's SLAAC gives one).
+	mac, _ := net.ParseMAC("d8:3a:dd:98:09:77")
+	s := New(Config{Server: netip.MustParseAddr("fd00:10:3::1"), Prefix: netip.MustParsePrefix("fd00:10:3::/64"), MAC: mac, NoAddresses: true},
+		slog.New(slog.NewTextHandler(io.Discard, nil)))
+	var got netip.Addr
+	s.OnLease = func(ip netip.Addr, _ net.HardwareAddr) { got = ip }
+	r := s.Reply(solicit(t, "d8:3a:dd:c5:c1:f3", true))
+	if r == nil || r.Options.BootFileURL() != "tftp://[fd00:10:3::1]/" || r.Options.OneIANA() != nil {
+		t.Errorf("reply %v", r)
+	}
+	// Its SLAAC address, for the neighbour entry (k52's, seen).
+	if got.String() != "fd00:10:3:0:da3a:ddff:fec5:c1f3" {
+		t.Errorf("neighbour for %v", got)
+	}
+}
