@@ -38,6 +38,22 @@ func (c *countWriter) Write(p []byte) (int, error) {
 	return n, err
 }
 
+// Append writes base to w, then what then writes, as one initramfs: the
+// kernel unpacks archives one after another. Between them it skips zeros
+// but takes an uncompressed cpio only at a 4-byte boundary (k52: a
+// 37,939,845-byte dracut image followed directly by one was "not
+// initramfs"), so base is padded to one.
+func Append(w io.Writer, base io.Reader, then func(io.Writer) error) error {
+	n, err := io.Copy(w, base)
+	if err != nil {
+		return err
+	}
+	if _, err := w.Write(make([]byte, (4-n%4)%4)); err != nil {
+		return err
+	}
+	return then(w)
+}
+
 // Build writes the initramfs to w. payloadPath may be empty.
 func Build(w io.Writer, agentPath, payloadPath string) (Summary, error) {
 	var s Summary

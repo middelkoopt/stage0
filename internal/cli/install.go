@@ -531,26 +531,16 @@ func (a *App) stage(run, imgPath string, img image.Config, fb firstBoot, install
 		return err
 	}
 	if err := writeFile(filepath.Join(run, img.BootDir, initrdName), func(w io.Writer) error {
-		if distroInitrd != "" {
-			distro, err := os.Open(filepath.Join(run, distroInitrd))
-			if err != nil {
-				return fmt.Errorf("image %s: the agent needs its %s: %w", img.Name, distroInitrd, err)
-			}
-			defer distro.Close()
-			n, err := io.Copy(w, distro)
-			if err != nil {
-				return err
-			}
-			// The kernel skips zeros between archives and takes an
-			// uncompressed cpio only at a 4-byte boundary (k52: a
-			// 37,939,845-byte dracut image followed directly by one was
-			// "not initramfs").
-			if _, err := w.Write(make([]byte, (4-n%4)%4)); err != nil {
-				return err
-			}
+		agent := func(w io.Writer) error { _, err := initrd.Build(w, exe, ""); return err }
+		if distroInitrd == "" {
+			return agent(w)
 		}
-		_, err := initrd.Build(w, exe, "")
-		return err
+		distro, err := os.Open(filepath.Join(run, distroInitrd))
+		if err != nil {
+			return fmt.Errorf("image %s: the agent needs its %s: %w", img.Name, distroInitrd, err)
+		}
+		defer distro.Close()
+		return initrd.Append(w, distro, agent)
 	}); err != nil {
 		return err
 	}
@@ -630,20 +620,15 @@ func (a *App) stageVM(ctx context.Context, run string, img image.Config, imgPath
 		return err
 	}
 	// The UKI the firmware netboots: the distro's kernel, its initrd with
-	// the agent appended (padded: the kernel takes an appended archive at
-	// a 4-byte boundary), and the agent's command line.
+	// the agent appended, and the agent's command line.
 	var rd bytes.Buffer
 	f, err := os.Open(distroInitrd)
 	if err != nil {
 		return err
 	}
-	n, err := io.Copy(&rd, f)
+	err = initrd.Append(&rd, f, func(w io.Writer) error { _, err := initrd.Build(w, exe, ""); return err })
 	f.Close()
 	if err != nil {
-		return err
-	}
-	rd.Write(make([]byte, (4-n%4)%4))
-	if _, err := initrd.Build(&rd, exe, ""); err != nil {
 		return err
 	}
 	k, err := os.ReadFile(kernel)
@@ -836,11 +821,7 @@ func (a *App) stageContainer(run, layout string, img image.Config, node config.N
 	}
 	installer := files[spec.Installer.Initramfs]
 	if err := writeFile(filepath.Join(run, initrdName), func(w io.Writer) error {
-		// Padded: the kernel takes an appended archive at a 4-byte boundary.
-		if _, err := w.Write(append(installer, make([]byte, (4-len(installer)%4)%4)...)); err != nil {
-			return err
-		}
-		return initrd.BuildHook(w, exe)
+		return initrd.Append(w, bytes.NewReader(installer), func(w io.Writer) error { return initrd.BuildHook(w, exe) })
 	}); err != nil {
 		return err
 	}

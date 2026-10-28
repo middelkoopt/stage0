@@ -154,3 +154,17 @@ func TestBuildHook(t *testing.T) {
 		t.Errorf("hook %q", hook)
 	}
 }
+
+func TestAppend(t *testing.T) {
+	for _, base := range []string{"", "a", "abcd", "abcde"} {
+		var buf bytes.Buffer
+		err := Append(&buf, strings.NewReader(base), func(w io.Writer) error {
+			_, err := io.WriteString(w, "NEXT")
+			return err
+		})
+		want := base + strings.Repeat("\x00", (4-len(base)%4)%4) + "NEXT"
+		if err != nil || buf.String() != want {
+			t.Errorf("base %q: %q, %v; want %q", base, buf.String(), err, want)
+		}
+	}
+}
