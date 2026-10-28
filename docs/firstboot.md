@@ -11,7 +11,7 @@ keys of its own, so two tools never write the same files.
 | --- | --- | --- | --- |
 | `stage0` (default) | stage0: `systemd.hostname=` and root's keys as a systemd credential on the installed `cmdline.txt`; cloud-init images' `user-data` gets the hostname | nothing in the image | every install so far |
 | `ignition` | the installer's Ignition applies the config's `passwd` (users, keys), `storage.files` and `systemd` units | a container with Ignition in its installer and an SELinux policy | k52, 2026-10-28 |
-| `cloud-init` | cloud-init on first boot, from the user's `user-data` (and `network-config`) and stage0's `meta-data` | cloud-init in the image | k400 (container), k52 (Ubuntu disk image), 2026-10-28 |
+| `cloud-init` | cloud-init on first boot, from the user's `user-data` (and `network-config`) and stage0's `meta-data` | cloud-init in the image | k400 (container), k52 (Ubuntu disk image), vm1 (Rocky cloud image), 2026-10-28 |
 
 ## ignition
 
@@ -49,6 +49,8 @@ hostname and motd from its files; root refused.
 - **Disk images:** the seed goes on the boot partition, replacing the
   image's own `user-data` and `meta-data`; Ubuntu, Raspberry Pi OS and Alma
   read NoCloud from there.
+- **VMs:** stage0 serves the files for the NoCloud pointer in the SMBIOS
+  serial, the user's `user-data` in place of the one stage0 writes.
 
 Verified (k400, Rocky container): user `cloud` in `wheel` logged in with
 its key; hostname `k400` from stage0's meta-data; motd from `write_files`;
@@ -57,7 +59,7 @@ image, seed on the boot partition): the same, with no `ubuntu` user (the
 image's user-data replaced). Ubuntu's own `network-config`, left in place
 without the user's, asks DHCP on `eth0`, which a Pi 5 calls `end0`, so it
 got no IPv4 address (as in stage0 mode); give a `networkConfig` to fix
-that. VMs with cloud-init: untested.
+that. And (vm1, Rocky 10.2 cloud image): the same, hostname `vm1`.
 
 ## SELinux labels on container installs
 

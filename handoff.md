@@ -4,26 +4,25 @@ Stage0 installs a head node from this repo alone. Read
 for how an install works and [`docs/development.md`](docs/development.md)
 for code.
 
-## Status (2026-10-27)
-**Pis:** four disk images install and come up with SSH (Rocky 10.2: Pi 5
-only; Ubuntu 26.04: Pi 5 tried). **Containers:** the Rocky container
-installs on the Pi 5 and Pi 400 from podman's local store, a registry or
-a saved layout (`container:`). **VMs:** `stage0 install vm1 --image rocky-10.2-vm`
-netboots the agent as a UKI by UEFI HTTP boot (128 s;
-[`docs/testbed.md`](docs/testbed.md)). **IPv6:** `install --ipv6` runs
-over IPv6 alone for disk images, containers and VMs. k52 runs the Rocky
-container (installed over IPv6), k400 Rocky from the container.
+## Status (2026-10-28)
+**Installs:** four disk images on the Pis; the Rocky container from
+podman's store, a (private) registry or a saved layout, partitioned by
+the agent or Ignition; VMs by UEFI HTTP boot of a UKI. **First boot:**
+stage0, Ignition or cloud-init, verified on Pis, containers and VMs
+([`docs/firstboot.md`](docs/firstboot.md)). **Networks:** own, proxy
+(beside another DHCP server and router) and none (firmware knows the
+boot server), IPv4 and IPv6 ([`docs/network-modes.md`](docs/network-modes.md)).
 **BMC:** `stage0 bmc` answers IPMI for the Pis: power by PoE, SOL by the
-serial console.
+serial console. Nothing is pushed.
 
 ## Open decisions
 (none)
 
 ## Next session
-1. VMs with `firstBoot: cloud-init`: untested.
-2. Choose the next arc ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)):
+1. Choose the next arc ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)):
    x86_64 and real BMCs (another lab), or what the roadmap lists later.
-3. Nodes: k52 runs the Rocky container (from the private-registry test); k400 Raspberry Pi OS, EEPROM `USE_IPV6=0` (no static settings).
-   Nothing serves DHCP on pinet now. k53 is powered off; it may be powered
+2. Nodes: k52 runs the Rocky container (from the private-registry test);
+   k400 Raspberry Pi OS, EEPROM `USE_IPV6=0` (no static settings); vm1
+   stopped. Nothing serves DHCP on pinet now. k53 is powered off; it may be powered
    and used as root, stopping (not disabling) its services. Its `sudo`
    needs a password stage0 doesn't have.
