@@ -290,17 +290,6 @@ func mount(dev, dir, fstype string) error {
 	return nil
 }
 
-// waitDev waits for a device node (a new partition) to appear.
-func waitDev(p string) error {
-	for i := 0; i < 100; i++ {
-		if _, err := os.Stat(p); err == nil {
-			return nil
-		}
-		time.Sleep(100 * time.Millisecond)
-	}
-	return fmt.Errorf("%s did not appear", p)
-}
-
 // runTool runs one of the installer's tools, its output to out.
 func runTool(out io.Writer, name string, args ...string) error {
 	cmd := exec.Command(name, args...)

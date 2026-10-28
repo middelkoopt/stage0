@@ -9,7 +9,6 @@ import (
 	"path/filepath"
 	"strings"
 	"syscall"
-	"time"
 
 	"github.com/middelkoopt/stage0/internal/cpio"
 )
@@ -99,14 +98,8 @@ func seedDisk(disk, seedPath string) ([]string, error) {
 		return nil, fmt.Errorf("re-reading the partition table of %s: %w", disk, errno)
 	}
 	part := "/dev/" + partition(disk, 1)
-	for i := 0; ; i++ {
-		if _, err := os.Stat(part); err == nil {
-			break
-		}
-		if i == 50 {
-			return nil, fmt.Errorf("%s did not appear", part)
-		}
-		time.Sleep(100 * time.Millisecond)
+	if err := waitDev(part); err != nil {
+		return nil, err
 	}
 	const mnt = "/mnt/boot"
 	if err := os.MkdirAll(mnt, 0o755); err != nil {

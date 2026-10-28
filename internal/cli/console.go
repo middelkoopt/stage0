@@ -87,9 +87,10 @@ func (a *App) consoleCommand() *cobra.Command {
 			}
 			defer cancel()
 
-			var dst io.Writer = io.MultiWriter(a.Stdout, log)
+			// The log is plain text; the terminal gets the colours.
+			var dst io.Writer = io.MultiWriter(a.Stdout, console.Plain(log))
 			if a.output == "json" {
-				dst = log
+				dst = console.Plain(log)
 			}
 			match, err := console.Capture(ctx, port, dst, pattern)
 			if err != nil {

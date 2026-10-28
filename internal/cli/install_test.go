@@ -37,6 +37,9 @@ import (
 	"github.com/middelkoopt/stage0/internal/vswitch"
 )
 
+// The fakes answer at once: look for installed systems often.
+func init() { upPoll = 50 * time.Millisecond }
+
 func gunzipFile(t *testing.T, path string) []byte {
 	t.Helper()
 	f, err := os.Open(path)
@@ -254,7 +257,7 @@ func TestInstall(t *testing.T) {
 		t.Fatalf("%v\n%s", err, out)
 	}
 	if res.Node != "k53" || res.Disk != "mmcblk0" || !strings.Contains(string(res.Installed), "3508535296") ||
-		res.Ready != "login: " || res.Address != "fe80::5662:976b:2c19:7e38%eth0.3" ||
+		res.Address != "fe80::5662:976b:2c19:7e38%eth0.3" ||
 		res.IPv4 != "10.0.3.100" || res.Network != "pinet" || res.Reach.Address != "10.0.3.100" || res.Reach.SSH == "" {
 		t.Errorf("result %+v", res)
 	}
@@ -492,7 +495,7 @@ func TestInstallWithoutConsole(t *testing.T) {
 
 func TestInstallSilentConsole(t *testing.T) {
 	// The console goes quiet after the agent (a Pi 4 without enable_uart):
-	// the lease and ping and SSH still show the node is up.
+	// SSH at its lease still shows the node is up.
 	env := newInstallEnv(t, []string{
 		"<dhcp-pxe>",
 		`STAGE0-REPORT {"interfaces":[{"name":"eth0","mac":"d8:3a:dd:c5:c1:f3"}]}` + "\r\n",
@@ -507,7 +510,7 @@ func TestInstallSilentConsole(t *testing.T) {
 	if err != nil {
 		t.Fatalf("%v\n%s", err, out)
 	}
-	if !strings.Contains(out, "no \"login: \" on the console") || !strings.Contains(out, "answers ping and ssh") {
+	if strings.Contains(out, "on the console") || !strings.Contains(out, "answers ping and ssh") {
 		t.Errorf("output:\n%s", out)
 	}
 }
@@ -607,7 +610,7 @@ func TestInstallVM(t *testing.T) {
 	if strings.Join(boots, ",") != "agent,disk" {
 		t.Errorf("boots %v", boots)
 	}
-	for _, want := range []string{"vm1 (VM): powered on", "wrote 10.7 GB", "up (\"login: \"", "10.0.9.100 answers ping and ssh"} {
+	for _, want := range []string{"vm1 (VM): powered on", "wrote 10.7 GB", "\"login: \" on the console", "10.0.9.100 answers ping and ssh"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}

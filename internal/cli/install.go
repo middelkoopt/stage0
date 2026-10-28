@@ -38,13 +38,19 @@ import (
 
 // Time limits for the waits, unless --timeout is given for the whole.
 const (
-	reachWait = time.Minute      // lease to answering ping and SSH
 	agentWait = 20 * time.Minute // power on to STAGE0-INSTALLED
+	reachTry  = 15 * time.Second // one ping-and-SSH try at an address
 )
 
-// readyWait is the time from the power cycle to the installed system's
-// prompt (a variable so tests can shorten it).
-var readyWait = 10 * time.Minute
+// readyWait is the time from the power cycle to the installed system
+// answering SSH; leaseGrace how long, in mode own, its lease is waited for
+// before its link-local address will do (variables so tests can shorten
+// them).
+var (
+	readyWait  = 10 * time.Minute
+	leaseGrace = time.Minute
+	upPoll     = 3 * time.Second // between looks for the installed system
+)
 
 // initrdName is stage0's initramfs in the served boot files, named so it
 // can't clash with the image's own.
@@ -270,9 +276,8 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	follow := func(c io.ReadWriteCloser) {
 		consoles = append(consoles, c)
 		fmt.Fprintf(consoleLog, "\n=== stage0 install %s %s %s ===\n", node.Name, img.Name, time.Now().Format(time.RFC3339))
-		go console.Capture(cctx, c, io.MultiWriter(consoleLog, w), nil)
+		go console.Capture(cctx, c, console.Plain(io.MultiWriter(consoleLog, w)), nil)
 	}
-	hasConsole := node.Console != nil || node.VM != nil
 	if node.Console != nil {
 		portIO, err := a.OpenConsole(node.Console.Device, node.Console.Baud)
 		if err != nil {
@@ -416,84 +421,17 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		return err
 	}
 	say("%s: rebooting from %s", node.Name, disk)
-	rctx, cancel := context.WithTimeout(ctx, readyWait)
-	defer cancel()
-waitReady:
-	for hasConsole && res.Ready == "" {
-		select {
-		case <-rctx.Done():
-			if ctx.Err() != nil {
-				return ctx.Err()
-			}
-			// A quiet console isn't a failed install: the lease and ping
-			// and SSH decide, as for a node without a console.
-			say("%s: no %q on the console (console: %s); checking the network instead", node.Name, img.Ready, res.Log)
-			break waitReady
-		case e := <-w.events:
-			if e.kind == readyEvent {
-				res.Ready = e.text
-			}
-		}
-	}
-	quiet := !hasConsole || res.Ready == "" // up only if the network says so
-	res.Seconds = time.Since(start).Round(time.Second).Seconds()
-	if !quiet {
-		say("%s: up (%q on the console) after %.0f s", node.Name, res.Ready, res.Seconds)
-	}
-	// Without a console, the lease and ping and SSH are how it shows it's up.
-	leaseWait := addressWait
-	if quiet {
-		leaseWait = readyWait
-	}
-	if res.MAC == "" && quiet {
-		return fmt.Errorf("%s: no MAC with a lease in the agent's report, so no way to tell it's up", node.Name)
-	}
-	if n.Mode != "own" && res.MAC != "" {
-		// Another server leases its address; reach it on its IPv6
-		// link-local address, found by MAC.
-		actx, cancel := context.WithTimeout(ctx, leaseWait)
-		addr, err := a.waitAddress(actx, res, n)
-		if err == nil {
-			r := a.Reach(actx, addr)
-			res.Reach, res.Address = &r, addr
-			if r.OK() {
-				say("%s: %s answers ping and ssh (%s)\n  ssh root@%s", node.Name, addr, r.SSH, addr)
-			} else if quiet {
-				err = fmt.Errorf("not reachable: %s", r.Err)
-			}
-		}
-		cancel()
-		if err != nil && quiet {
-			return fmt.Errorf("%s: installed, but not reachable on IPv6 link-local: %w", node.Name, err)
-		}
-	} else if res.MAC != "" {
-		hw, _ := net.ParseMAC(res.MAC)
-		if waitAcked(ctx, leases, hw, leaseWait) {
-			// The goal: it answers ping and SSH.
-			rctx, cancel := context.WithTimeout(ctx, reachWait)
-			r := a.Reach(rctx, res.IPv4)
-			cancel()
-			res.Reach = &r
-			if r.OK() {
-				say("%s: %s answers ping and ssh (%s); keep `stage0 serve %s` running to keep the address\n  ssh root@%s",
-					node.Name, res.IPv4, r.SSH, n.Name, res.IPv4)
-			} else if quiet {
-				return fmt.Errorf("%s: installed and leased %s, but not reachable: %s", node.Name, res.IPv4, r.Err)
-			} else {
-				say("%s: %s is leased but not reachable yet: %s", node.Name, res.IPv4, r.Err)
-			}
-		} else if quiet {
-			return fmt.Errorf("%s: installed, but its system never asked stage0 for its address %s", node.Name, res.IPv4)
-		} else {
-			say("%s: its system has not asked stage0 for its address %s yet", node.Name, res.IPv4)
-		}
+	if err := a.waitUp(ctx, &res, node, n, leases, w, start, say); err != nil {
+		return err
 	}
 	if err := a.saveRecord(res); err != nil {
 		return err
 	}
 	fctx, cancel := context.WithTimeout(ctx, addressWait)
 	defer cancel()
-	if addr, err := a.address(fctx, res, n); err != nil {
+	if res.Address != "" {
+		// found while waiting for it
+	} else if addr, err := a.address(fctx, res, n); err != nil {
 		say("%s: no IPv6 address found yet (%v); try: stage0 get address %s", node.Name, err, node.Name)
 	} else {
 		res.Address = addr
@@ -516,22 +454,6 @@ waitReady:
 		}
 	}
 	return nil
-}
-
-// waitAcked waits until leases has acknowledged mac's address.
-func waitAcked(ctx context.Context, leases *dhcpd.Server, mac net.HardwareAddr, limit time.Duration) bool {
-	ctx, cancel := context.WithTimeout(ctx, limit)
-	defer cancel()
-	for {
-		if _, ok := leases.Acked(mac); ok {
-			return true
-		}
-		select {
-		case <-ctx.Done():
-			return false
-		case <-time.After(100 * time.Millisecond):
-		}
-	}
 }
 
 // oneNetwork returns the named network, or the only one.
@@ -1115,4 +1037,70 @@ func (fb firstBoot) noCloud() map[string][]byte {
 		files["network-config"] = fb.CloudInit.NetworkConfigBytes
 	}
 	return files
+}
+
+// waitUp waits for the installed system: up is SSH answering at the best
+// address known: in mode own its IPv4 lease from stage0, else (modes proxy
+// and none, or no lease after leaseGrace: Ubuntu's eth0 config on a Pi 5)
+// its IPv6 link-local address, found by its MAC. The console's ready
+// pattern is progress only.
+func (a *App) waitUp(ctx context.Context, res *installResult, node config.Node, n config.Network, leases *dhcpd.Server,
+	w *watcher, start time.Time, say func(string, ...any)) error {
+	if res.MAC == "" {
+		return fmt.Errorf("%s: no MAC in the agent's report, so no way to find its system", node.Name)
+	}
+	hw, _ := net.ParseMAC(res.MAC)
+	uctx, cancel := context.WithTimeout(ctx, readyWait)
+	defer cancel()
+	booted := time.Now()
+	next := time.After(0) // look at once, then every upPoll
+	last := "no address yet"
+	for {
+		select {
+		case <-uctx.Done():
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
+			return fmt.Errorf("%s: installed, but its system isn't reachable after %s: %s (console: %s)", node.Name, readyWait, last, res.Log)
+		case e := <-w.events:
+			if e.kind == readyEvent && res.Ready == "" {
+				res.Ready = e.text
+				say("%s: %q on the console after %.0f s", node.Name, e.text, time.Since(start).Seconds())
+			}
+			continue
+		case <-next:
+			next = time.After(upPoll)
+		}
+		addr := ""
+		if ip, ok := leases.Acked(hw); ok && n.Mode == "own" {
+			addr, res.IPv4 = ip.String(), ip.String()
+		} else if n.Mode == "own" && time.Since(booted) < leaseGrace {
+			last = "no lease yet"
+			continue // its lease is the address to give; link-local is the fallback
+		} else {
+			actx, acancel := context.WithTimeout(uctx, upPoll)
+			a6, err := a.address(actx, *res, n)
+			acancel()
+			if err != nil {
+				last = err.Error()
+				continue
+			}
+			addr, res.Address = a6, a6
+		}
+		rctx, rcancel := context.WithTimeout(uctx, reachTry)
+		r := a.Reach(rctx, addr)
+		rcancel()
+		if !r.OK() {
+			last = fmt.Sprintf("%s: %s", addr, r.Err)
+			continue
+		}
+		res.Reach = &r
+		res.Seconds = time.Since(start).Round(time.Second).Seconds()
+		hint := ""
+		if addr == res.IPv4 {
+			hint = fmt.Sprintf("; keep `stage0 serve %s` running to keep the address", n.Name)
+		}
+		say("%s: up after %.0f s: %s answers ping and ssh (%s)%s\n  ssh root@%s", node.Name, res.Seconds, addr, r.SSH, hint, addr)
+		return nil
+	}
 }

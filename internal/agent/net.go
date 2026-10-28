@@ -34,7 +34,7 @@ func bringUpNetwork(out io.Writer, ipv6 bool) error {
 	// A driver loaded by coldplug may still be probing: wait a little for
 	// an interface to appear.
 	var ifs []net.Interface
-	for deadline := time.Now().Add(10 * time.Second); ; time.Sleep(250 * time.Millisecond) {
+	for deadline := time.Now().Add(ifaceWait); ; time.Sleep(pollInterval) {
 		var err error
 		if ifs, err = net.Interfaces(); err != nil {
 			return err
@@ -81,12 +81,12 @@ func bringUpNetwork(out io.Writer, ipv6 bool) error {
 
 // dhcp asks for an address on ifname, as stage0's agent.
 func dhcp(ifname string) (netip.Prefix, error) {
-	c, err := nclient4.New(ifname, nclient4.WithTimeout(3*time.Second), nclient4.WithRetry(5))
+	c, err := nclient4.New(ifname, nclient4.WithTimeout(dhcpTry), nclient4.WithRetry(5))
 	if err != nil {
 		return netip.Prefix{}, err
 	}
 	defer c.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), dhcpWait)
 	defer cancel()
 	lease, err := c.Request(ctx, dhcpv4.WithOption(dhcpv4.OptClassIdentifier(dhcpd.AgentClass)))
 	if err != nil {
@@ -215,7 +215,7 @@ func bringUpIPv6(out io.Writer) error {
 			}
 		}
 	}
-	for deadline := time.Now().Add(60 * time.Second); time.Now().Before(deadline); time.Sleep(time.Second) {
+	for deadline := time.Now().Add(slaacWait); time.Now().Before(deadline); time.Sleep(time.Second) {
 		ifs, _ := net.Interfaces()
 		for _, ifc := range ifs {
 			if ifc.Flags&net.FlagLoopback != 0 {

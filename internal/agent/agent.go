@@ -21,6 +21,30 @@ import (
 	"time"
 )
 
+// Time limits for the agent's waits, in one place; each was set by what
+// a node needed.
+const (
+	diskWait     = 15 * time.Second // the target disk to appear (drivers may still load)
+	deviceWait   = 10 * time.Second // a new partition's device node
+	ifaceWait    = 10 * time.Second // an Ethernet interface to appear
+	dhcpWait     = 30 * time.Second // a DHCP lease, all tries
+	dhcpTry      = 3 * time.Second  // one DHCP exchange (5 tries)
+	slaacWait    = 60 * time.Second // a global IPv6 address by SLAAC
+	reportPost   = 10 * time.Second // posting one report to stage0
+	pollInterval = 250 * time.Millisecond
+
+	// The report is taken once the devices settle: quiet for settleQuiet,
+	// after at least settleMin, at most settleMax.
+	settleQuiet = 500 * time.Millisecond
+	settleMin   = 3 * time.Second
+	settleMax   = 30 * time.Second
+
+	// Drivers load in passes, coldplugSettle apart, until no new device
+	// appears (at most coldplugPasses).
+	coldplugSettle = 500 * time.Millisecond
+	coldplugPasses = 8
+)
+
 // ReportPrefix starts the report line on the console.
 const ReportPrefix = "STAGE0-REPORT "
 
@@ -100,7 +124,7 @@ func Hook() {
 // run reports, installs as the command line says, then waits.
 func run(out io.Writer, cmdline string) {
 	e := emitter{out: out, url: reportURL(cmdline)}
-	r, err := settle("/", 500*time.Millisecond, 3*time.Second, 30*time.Second)
+	r, err := settle("/", settleQuiet, settleMin, settleMax)
 	if err != nil {
 		e.emit(kindError, fmt.Appendf(nil, "report: %v", err))
 	} else {
@@ -129,7 +153,7 @@ func install(e emitter, cmdline string) {
 	// A card can be found after the first driver pass (a Pi 5's SD card
 	// on Ubuntu's kernel, whose mmc_block is a module): load drivers again
 	// until the disk is there.
-	waitFor("/dev/"+plan.Disk, 15*time.Second, func() { loadModules(io.Discard) })
+	waitFor("/dev/"+plan.Disk, diskWait, func() { loadModules(io.Discard) })
 	var res Result
 	if plan.OCI != "" {
 		res, err = installContainer(out, plan)
@@ -291,9 +315,18 @@ func payload(path string) (*Payload, error) {
 	return &Payload{Bytes: n, SHA256: hex.EncodeToString(h.Sum(nil))}, nil
 }
 
+// waitDev waits for a device node (a new partition) to appear.
+func waitDev(p string) error {
+	waitFor(p, deviceWait, func() {})
+	if _, err := os.Stat(p); err != nil {
+		return fmt.Errorf("%s did not appear", p)
+	}
+	return nil
+}
+
 // waitFor calls try until path exists or d has passed.
 func waitFor(path string, d time.Duration, try func()) {
-	for deadline := time.Now().Add(d); ; time.Sleep(250 * time.Millisecond) {
+	for deadline := time.Now().Add(d); ; time.Sleep(pollInterval) {
 		if _, err := os.Stat(path); err == nil || time.Now().After(deadline) {
 			return
 		}

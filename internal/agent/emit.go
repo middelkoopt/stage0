@@ -6,7 +6,6 @@ import (
 	"io"
 	"net/http"
 	"strings"
-	"time"
 )
 
 // What the agent tells stage0: on the console, as lines stage0 console
@@ -35,7 +34,7 @@ func (e emitter) emit(kind string, body []byte) {
 	if e.url == "" {
 		return
 	}
-	c := http.Client{Timeout: 10 * time.Second}
+	c := http.Client{Timeout: reportPost}
 	resp, err := c.Post(e.url+"/"+kind, "application/octet-stream", bytes.NewReader(body))
 	if err == nil {
 		resp.Body.Close()

@@ -87,7 +87,7 @@ func loadModules(out io.Writer) {
 			fmt.Fprintf(out, "stage0 agent: modprobe: %v\n", err)
 		}
 	}
-	if n := coldplug(scan, load, func() { time.Sleep(500 * time.Millisecond) }); n > 0 {
+	if n := coldplug(scan, load, func() { time.Sleep(coldplugSettle) }); n > 0 {
 		fmt.Fprintf(out, "stage0 agent: loaded drivers for %d devices\n", n)
 	}
 }
@@ -98,7 +98,7 @@ func loadModules(out io.Writer) {
 // how many devices it asked for.
 func coldplug(scan func() []string, load func([]string), settle func()) int {
 	seen := map[string]bool{}
-	for range 8 {
+	for range coldplugPasses {
 		var add []string
 		for _, a := range scan() {
 			if !seen[a] {
