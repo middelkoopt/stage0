@@ -17,14 +17,20 @@ container (installed over IPv6), k400 Rocky from the container.
 serial console.
 
 ## Open decisions
-(none)
+- BJ1: a live test of proxy mode needs the stand-in DHCP server
+  (`tools/standin-dhcp.sh`, sudo) on the VM test network's tap
+  `stage0tap0` (approval so far covers pinet's `eth0.3`), or k400's EEPROM
+  set to `USE_IPV6=0` (its bootloader tries IPv6 only now) — recommended:
+  the tap; turns on how proxy mode gets verified.
 
 ## Next session
-1. Choose the next arc ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)):
-   x86_64 and real BMCs (another lab), network modes, Ignition's files
-   and users on the installed system, private registries.
-2. k52 runs Rocky from the container partitioned by Ignition (separate
-   `/var`); k400 Rocky from the container, its console working.
-   `stage0 bmc` serves both ([`docs/bmc.md`](docs/bmc.md)).
-3. k53 is powered off; it may be powered and used as root, stopping (not
-   disabling) its services. Its `sudo` needs a password stage0 doesn't have.
+1. First-boot configuration (BI1, agreed): per node or image, exclusive —
+   stage0's own (credentials, seed), Ignition's files/users/units applied
+   by the installer's Ignition, or cloud-init's NoCloud seed written to
+   the disk.
+2. Network modes: verify proxy live (BJ1), then boot-only and none
+   ([`docs/network-modes.md`](docs/network-modes.md)).
+3. k52 runs Rocky from the container partitioned by Ignition; k400 Rocky
+   from the container. k53 is powered off; it may be powered and used as
+   root, stopping (not disabling) its services. Its `sudo` needs a
+   password stage0 doesn't have.
