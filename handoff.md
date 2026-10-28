@@ -20,13 +20,18 @@ serial console.
 (none)
 
 ## Next session
-1. Network modes: proxy works (VM, k400); next boot-only (IPv6) and none
-   ([`docs/network-modes.md`](docs/network-modes.md)).
+1. Network mode none: verify live on k400 — set its EEPROM `TFTP_IP=10.0.3.1`,
+   `CLIENT_IP` (e.g. 10.0.3.60), `SUBNET=255.255.255.0` (approved), run the
+   stand-in for the agent's DHCP, install with pinet `mode: none` from a
+   scratch site; then remove those EEPROM settings again
+   ([`docs/network-modes.md`](docs/network-modes.md)). Proxy works over
+   IPv4 and IPv6.
 2. First-boot configuration is built ([`docs/firstboot.md`](docs/firstboot.md)):
    stage0, Ignition or cloud-init per node or image. VMs with cloud-init
    untested.
-3. Nodes: k52 runs Ubuntu (cloud-init first boot test); k400 the Rocky
-   container, installed in proxy mode, EEPROM now `USE_IPV6=0`. The Rocky container
+3. Nodes: k52 runs the Rocky container (installed over IPv6 in proxy
+   mode); k400 the Rocky container (proxy mode), EEPROM now `USE_IPV6=0`.
+   Neither has an IPv4 lease now (nothing serves DHCP on pinet). The Rocky container
    now has SELinux (enforcing), cloud-init and Ignition. k53 is powered
    off; it may be powered and used as root, stopping (not disabling) its
    services. Its `sudo` needs a password stage0 doesn't have.

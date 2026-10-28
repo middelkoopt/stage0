@@ -59,7 +59,9 @@ without `enable_uart=1`, now in the image config.
    carries the manifest's digest; the agent checks every blob against its
    digest from there down.
 4. **The agent**, run by the hook once dracut's network is up, partitions
-   with the installer's `sgdisk` (GPT, partitions named as labelled),
+   with the installer's `sgdisk` (GPT, partitions named as labelled; the
+   old table zapped in a call of its own, as an old MBR one makes sgdisk
+   exit 2 even when it writes the new table),
    formats with `mkfs.vfat`/`mkfs.ext4`, mounts the ext4 ones in the
    root's tree, unpacks the layers onto it (owners, modes, links, xattrs;
    whiteouts applied), copies the FAT partitions' files onto them (FAT
