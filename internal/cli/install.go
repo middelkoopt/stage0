@@ -131,113 +131,31 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 			fmt.Fprintf(a.Stdout, format+"\n", v...)
 		}
 	}
-
-	// Everything is checked before anything is downloaded or powered.
-	site, err := config.LoadSite(a.sitePath)
+	p, err := a.planInstall(o)
 	if err != nil {
 		return err
 	}
-	node, err := site.Node(o.node)
-	if err != nil {
-		return err
-	}
-	disk := o.disk
-	if disk == "" {
-		disk = node.Disk
-	}
-	if disk == "" {
-		return fmt.Errorf("no disk for %s: give --disk or set disk: in %s", node.Name, a.sitePath)
-	}
-	network := cmp.Or(o.network, node.Network)
-	n, err := oneNetwork(site, network)
-	if err != nil {
-		return err
-	}
-	img, err := image.Load(o.images, o.image)
-	if err != nil {
-		return err
-	}
-	switch {
-	case node.VM != nil && !img.VM():
-		return fmt.Errorf("%s is a VM, but image %s has no agent kernel for VMs", node.Name, img.Name)
-	case node.VM == nil && img.VM():
-		return fmt.Errorf("image %s is for VMs, but %s is not one", img.Name, node.Name)
-	}
-	switch {
-	case o.ipv6 && !n.Server6.IsValid():
-		return fmt.Errorf("--ipv6: network %q has no prefix6", n.Name)
-	case node.VM != nil && img.Container != "":
-		return errors.New("containers install on Pis only, for now")
-	}
-	fb := resolveFirstBoot(node, img)
-	if fb.Mode == "ignition" && img.Container == "" {
-		return fmt.Errorf("%s: firstBoot: ignition is for containers", node.Name)
-	}
-	ready, _ := regexp.Compile(img.Ready) // checked by Load
-	var installed string
-	if !img.VM() {
-		if fb.Mode != "stage0" { // the chosen tool sets hostname and keys
-			installed = strings.TrimSpace(img.Cmdline)
-		} else if installed, err = installedCmdline(img.Cmdline, node.Hostname, site.SSHKeys); err != nil {
-			return err
-		}
-	}
+	node, n := p.node, p.n
 	var poe *poeMachine
 	if node.VM == nil {
 		if poe, err = a.newPoEMachine(ctx, node, n, o.setPort, say); err != nil {
 			return err
 		}
 	}
-
-	// Stage the boot files.
 	progress := io.Discard // -o json prints only the result
 	if a.output == "text" {
 		progress = a.Stdout
 	}
-	secrets, err := config.LoadSecrets(a.secretsPath)
+	run, err := a.stageFiles(ctx, p, o.cache, progress, say)
 	if err != nil {
 		return err
 	}
-	creds := map[string]registry.Credentials{}
-	for host, r := range secrets.Registries {
-		creds[host] = registry.Credentials{User: r.User, Password: r.Password}
-	}
-	imgPath, err := image.FetchWith(ctx, img, o.cache, progress, creds)
-	if err != nil {
-		return err
-	}
-	say("stage0 %s; image %s: %s", version(), img.Name, imgPath)
-	run := filepath.Join(o.cache, "run", node.Name)
-	if img.VM() {
-		// Over IPv6 the agent takes its address by SLAAC itself.
-		base := "http://" + n.Server.String()
-		if o.ipv6 {
-			base = "http://[" + n.Server6.String() + "]"
-		}
-		cmdline := "console=ttyAMA0 " + bootplan.Plan{Disk: disk, SHA256: img.SHA256,
-			URL: base + "/images/" + img.File(), Report: base + "/stage0/report"}.Encode()
-		err = a.stageVM(ctx, run, img, imgPath, node, site.SSHKeys, fb, cmdline, o.cache, progress)
-	} else {
-		server := n.Server.String()
-		if o.ipv6 {
-			server = "[" + n.Server6.String() + "]"
-		}
-		if img.Container != "" {
-			err = a.stageContainer(run, imgPath, img, node, fb, installed, disk, server, filepath.Join(o.cache, "boot"))
-		} else {
-			err = a.stage(run, imgPath, img, fb, installed, disk, server, filepath.Join(o.cache, "boot", img.SHA256))
-		}
-	}
-	if err != nil {
-		return err
-	}
-	say("staged boot files in %s", run)
 
 	// Logs.
 	if err := os.MkdirAll("logs", 0o755); err != nil {
 		return err
 	}
-	res := installResult{Node: node.Name, Image: img.Name, Disk: disk, Network: n.Name,
+	res := installResult{Node: node.Name, Image: p.img.Name, Disk: p.disk, Network: n.Name,
 		Log: filepath.Join("logs", node.Name+".log"), ServeLog: filepath.Join("logs", node.Name+"-serve.log")}
 	consoleLog, err := os.OpenFile(res.Log, os.O_CREATE|os.O_APPEND|os.O_WRONLY, 0o644)
 	if err != nil {
@@ -254,7 +172,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	// from the console too, followed from before power-on to the end.
 	cctx, stopConsole := context.WithCancel(ctx)
 	defer stopConsole()
-	w := newWatcher(cctx, ready)
+	w := newWatcher(cctx, p.ready)
 	var consoles []io.Closer
 	defer func() {
 		for _, c := range consoles {
@@ -263,7 +181,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	}()
 	follow := func(c io.ReadWriteCloser) {
 		consoles = append(consoles, c)
-		fmt.Fprintf(consoleLog, "\n=== stage0 install %s %s %s ===\n", node.Name, img.Name, time.Now().Format(time.RFC3339))
+		fmt.Fprintf(consoleLog, "\n=== stage0 install %s %s %s ===\n", node.Name, p.img.Name, time.Now().Format(time.RFC3339))
 		go console.Capture(cctx, c, console.Plain(io.MultiWriter(consoleLog, w)), nil)
 	}
 	if node.Console != nil {
@@ -295,30 +213,9 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	// which install runs while it works.
 	var m machine = poe
 	if node.VM != nil {
-		vmDir := filepath.Join(o.cache, "vm")
-		sock := filepath.Join(vmDir, n.Name+".sock")
-		if err := os.MkdirAll(vmDir, 0o755); err != nil {
-			return err
-		}
-		if err := a.runSwitch(cctx, sock, n.Interface, slog); err != nil {
-			return err
-		}
-		firmware := node.VM.Firmware
-		if firmware == "" {
-			if firmware, err = image.FetchDebFile(ctx, uefiFirmware, uefiFirmwareCode, filepath.Join(o.cache, "firmware"), progress); err != nil {
-				return err
-			}
-			if _, err = image.FetchDebFile(ctx, uefiFirmware, uefiFirmwareVars, filepath.Join(o.cache, "firmware"), progress); err != nil {
-				return err
-			}
-		}
-		vm, err := newVMMachine(a, node, firmware, vmDir, sock, serveLog)
+		vm, err := a.vmMachine(ctx, cctx, p, o.cache, slog, serveLog, progress)
 		if err != nil {
 			return err
-		}
-		base := "http://" + n.Server.String()
-		if img.NoCloud {
-			vm.serial = "ds=nocloud;s=" + base + "/nocloud/" + node.Name + "/"
 		}
 		m = vm
 		defer vm.off(ctx)
@@ -331,28 +228,205 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		return err
 	}
 	sctx, stopServe := context.WithCancel(ctx)
-	serveDone := make(chan struct{})
-	var serveErr error
+	srv := &serving{done: make(chan struct{}), log: res.ServeLog}
 	go func() {
-		serveErr = a.serve(sctx, n, run, leases, files, report, slog)
-		close(serveDone)
+		srv.err = a.serve(sctx, n, run, leases, files, report, slog)
+		close(srv.done)
 	}()
-	defer func() { stopServe(); <-serveDone }()
+	defer func() { stopServe(); <-srv.done }()
 
 	if err := m.bootAgent(ctx, follow); err != nil {
 		return err
 	}
 	say("%s: powered on, booting stage0's agent", m.name())
+	if err := waitInstalled(ctx, &res, m, w, srv, say); err != nil {
+		return err
+	}
+	files.Close()
+	markInstalled(&res, leases, o.ipv6)
+	w.armReady()
+	if err := m.bootDisk(ctx, follow); err != nil {
+		return err
+	}
+	say("%s: rebooting from %s", node.Name, p.disk)
+	if err := a.waitUp(ctx, &res, node, n, leases, w, start, say); err != nil {
+		return err
+	}
+	if err := a.saveRecord(res); err != nil {
+		return err
+	}
+	if err := a.findAddress(ctx, &res, n, say); err != nil {
+		return err
+	}
+	if a.output == "json" {
+		if err := a.writeJSON(res); err != nil {
+			return err
+		}
+	}
+	if o.keep {
+		say("%s: keeping it served%s until interrupted", node.Name, map[bool]string{true: " and running", false: ""}[node.VM != nil])
+		select {
+		case <-ctx.Done(): // interrupted, or --timeout: the install itself succeeded
+		case <-srv.done:
+			return srv.stopped()
+		}
+	}
+	return nil
+}
 
+// installPlan is an install checked against the site and image configs.
+type installPlan struct {
+	site      *config.Site
+	node      config.Node
+	n         config.Network
+	img       image.Config
+	disk      string
+	fb        firstBoot
+	ready     *regexp.Regexp
+	installed string // the installed system's cmdline.txt (Pis)
+	server    string // stage0 in the agent's URLs: 10.0.3.1, or [fd00:10:3::1] with --ipv6
+}
+
+// planInstall checks everything before anything is downloaded or powered.
+func (a *App) planInstall(o installOptions) (installPlan, error) {
+	var p installPlan
+	var err error
+	if p.site, err = config.LoadSite(a.sitePath); err != nil {
+		return p, err
+	}
+	if p.node, err = p.site.Node(o.node); err != nil {
+		return p, err
+	}
+	node := p.node
+	if p.disk = cmp.Or(o.disk, node.Disk); p.disk == "" {
+		return p, fmt.Errorf("no disk for %s: give --disk or set disk: in %s", node.Name, a.sitePath)
+	}
+	if p.n, err = oneNetwork(p.site, cmp.Or(o.network, node.Network)); err != nil {
+		return p, err
+	}
+	if p.img, err = image.Load(o.images, o.image); err != nil {
+		return p, err
+	}
+	img := p.img
+	switch {
+	case node.VM != nil && !img.VM():
+		return p, fmt.Errorf("%s is a VM, but image %s has no agent kernel for VMs", node.Name, img.Name)
+	case node.VM == nil && img.VM():
+		return p, fmt.Errorf("image %s is for VMs, but %s is not one", img.Name, node.Name)
+	case o.ipv6 && !p.n.Server6.IsValid():
+		return p, fmt.Errorf("--ipv6: network %q has no prefix6", p.n.Name)
+	case node.VM != nil && img.Container != "":
+		return p, errors.New("containers install on Pis only, for now")
+	}
+	p.fb = resolveFirstBoot(node, img)
+	if p.fb.Mode == "ignition" && img.Container == "" {
+		return p, fmt.Errorf("%s: firstBoot: ignition is for containers", node.Name)
+	}
+	p.ready, _ = regexp.Compile(img.Ready) // checked by Load
+	if !img.VM() {
+		if p.fb.Mode != "stage0" { // the chosen tool sets hostname and keys
+			p.installed = strings.TrimSpace(img.Cmdline)
+		} else if p.installed, err = installedCmdline(img.Cmdline, node.Hostname, p.site.SSHKeys); err != nil {
+			return p, err
+		}
+	}
+	// Over IPv6 the agent takes its address by SLAAC itself.
+	p.server = p.n.Server.String()
+	if o.ipv6 {
+		p.server = "[" + p.n.Server6.String() + "]"
+	}
+	return p, nil
+}
+
+// stageFiles fetches the image and stages the node's boot files by the
+// image's route, returning their directory.
+func (a *App) stageFiles(ctx context.Context, p installPlan, cache string, progress io.Writer, say func(string, ...any)) (string, error) {
+	secrets, err := config.LoadSecrets(a.secretsPath)
+	if err != nil {
+		return "", err
+	}
+	creds := map[string]registry.Credentials{}
+	for host, r := range secrets.Registries {
+		creds[host] = registry.Credentials{User: r.User, Password: r.Password}
+	}
+	img := p.img
+	imgPath, err := image.FetchWith(ctx, img, cache, progress, creds)
+	if err != nil {
+		return "", err
+	}
+	say("stage0 %s; image %s: %s", version(), img.Name, imgPath)
+	run := filepath.Join(cache, "run", p.node.Name)
+	switch {
+	case img.VM():
+		base := "http://" + p.server
+		cmdline := "console=ttyAMA0 " + bootplan.Plan{Disk: p.disk, SHA256: img.SHA256,
+			URL: base + "/images/" + img.File(), Report: base + "/stage0/report"}.Encode()
+		err = a.stageVM(ctx, run, img, imgPath, p.node, p.site.SSHKeys, p.fb, cmdline, cache, progress)
+	case img.Container != "":
+		err = a.stageContainer(run, imgPath, img, p.node, p.fb, p.installed, p.disk, p.server, filepath.Join(cache, "boot"))
+	default:
+		err = a.stage(run, imgPath, img, p.fb, p.installed, p.disk, p.server, filepath.Join(cache, "boot", img.SHA256))
+	}
+	if err != nil {
+		return "", err
+	}
+	say("staged boot files in %s", run)
+	return run, nil
+}
+
+// vmMachine starts the test bed's switch for the node's network (it runs
+// until cctx is done) and returns the node's VM, firmware fetched.
+func (a *App) vmMachine(ctx, cctx context.Context, p installPlan, cache string, log *slog.Logger, serveLog io.Writer, progress io.Writer) (*vmMachine, error) {
+	node, n := p.node, p.n
+	vmDir := filepath.Join(cache, "vm")
+	sock := filepath.Join(vmDir, n.Name+".sock")
+	if err := os.MkdirAll(vmDir, 0o755); err != nil {
+		return nil, err
+	}
+	if err := a.runSwitch(cctx, sock, n.Interface, log); err != nil {
+		return nil, err
+	}
+	firmware := node.VM.Firmware
+	if firmware == "" {
+		var err error
+		if firmware, err = image.FetchDebFile(ctx, uefiFirmware, uefiFirmwareCode, filepath.Join(cache, "firmware"), progress); err != nil {
+			return nil, err
+		}
+		if _, err = image.FetchDebFile(ctx, uefiFirmware, uefiFirmwareVars, filepath.Join(cache, "firmware"), progress); err != nil {
+			return nil, err
+		}
+	}
+	vm, err := newVMMachine(a, node, firmware, vmDir, sock, serveLog)
+	if err != nil {
+		return nil, err
+	}
+	if p.img.NoCloud {
+		vm.serial = "ds=nocloud;s=http://" + n.Server.String() + "/nocloud/" + node.Name + "/"
+	}
+	return vm, nil
+}
+
+// serving is serve running for an install.
+type serving struct {
+	done chan struct{} // closed when serve returns
+	err  error         // what it returned
+	log  string
+}
+
+func (s *serving) stopped() error { return fmt.Errorf("serve stopped: %v (log: %s)", s.err, s.log) }
+
+// waitInstalled waits for the agent's STAGE0-INSTALLED, keeping its report
+// and result in res; on the agent's error it powers the node off.
+func waitInstalled(ctx context.Context, res *installResult, m machine, w *watcher, srv *serving, say func(string, ...any)) error {
 	actx, cancel := context.WithTimeout(ctx, agentWait)
 	defer cancel()
 	reportByHTTP := false
-	for done := false; !done; {
+	for {
 		select {
 		case <-actx.Done():
-			return fmt.Errorf("%s: the agent did not report STAGE0-INSTALLED (logs: %s, %s): %w", node.Name, res.Log, res.ServeLog, actx.Err())
-		case <-serveDone:
-			return fmt.Errorf("serve stopped: %v (log: %s)", serveErr, res.ServeLog)
+			return fmt.Errorf("%s: the agent did not report STAGE0-INSTALLED (logs: %s, %s): %w", res.Node, res.Log, res.ServeLog, actx.Err())
+		case <-srv.done:
+			return srv.stopped()
 		case e := <-w.events:
 			switch e.kind {
 			// The report and the result come by HTTP and by console. HTTP
@@ -365,7 +439,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 					continue
 				}
 				if res.Report == nil {
-					say("%s: agent running", node.Name)
+					say("%s: agent running", res.Node)
 				}
 				res.Report, reportByHTTP = json.RawMessage(e.text), reportByHTTP || e.http
 			case agent.InstalledPrefix:
@@ -375,73 +449,57 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 				res.Installed = json.RawMessage(e.text)
 				var r agent.Result
 				json.Unmarshal(res.Installed, &r)
-				say("%s: wrote %.1f GB to %s in %.0f s", node.Name, float64(r.Bytes)/1e9, r.Disk, r.Seconds)
-				done = true
+				say("%s: wrote %.1f GB to %s in %.0f s", res.Node, float64(r.Bytes)/1e9, r.Disk, r.Seconds)
+				return nil
 			case errorPrefix:
 				if err := m.off(ctx); err != nil {
-					say("%s: powering off: %v", node.Name, err)
+					say("%s: powering off: %v", res.Node, err)
 				}
-				return fmt.Errorf("%s: agent: %s (node powered off; logs: %s, %s)", node.Name, e.text, res.Log, res.ServeLog)
+				return fmt.Errorf("%s: agent: %s (node powered off; logs: %s, %s)", res.Node, e.text, res.Log, res.ServeLog)
 			}
 		}
 	}
+}
 
-	files.Close()
-	// From now on its PXE requests get no answer, so it boots from its
-	// disk; its installed system's DHCP gets the same address.
-	if macs, err := res.macs(); err == nil {
-		for _, m := range macs {
-			ip, ok := leases.Install(m)
-			if !ok && o.ipv6 { // it netbooted over IPv6: no IPv4 lease yet
-				ip, ok = leases.Reserve(m)
+// markInstalled records the node as installed in leases, by the MAC it
+// netbooted on: from now on its PXE requests get no answer, so it boots
+// from its disk, and its installed system's DHCP gets the same address.
+func markInstalled(res *installResult, leases *dhcpd.Server, ipv6 bool) {
+	macs, err := res.macs()
+	if err != nil {
+		return
+	}
+	for _, m := range macs {
+		ip, ok := leases.Install(m)
+		if !ok && ipv6 { // it netbooted over IPv6: no IPv4 lease yet
+			ip, ok = leases.Reserve(m)
+		}
+		if ok {
+			res.MAC = m.String()
+			if ip.IsValid() { // none in proxy mode: the other server leases
+				res.IPv4 = ip.String()
 			}
-			if ok {
-				res.MAC = m.String()
-				if ip.IsValid() { // none in proxy mode: the other server leases
-					res.IPv4 = ip.String()
-				}
-				break
-			}
+			return
 		}
 	}
-	w.armReady()
-	if err := m.bootDisk(ctx, follow); err != nil {
-		return err
-	}
-	say("%s: rebooting from %s", node.Name, disk)
-	if err := a.waitUp(ctx, &res, node, n, leases, w, start, say); err != nil {
-		return err
-	}
-	if err := a.saveRecord(res); err != nil {
-		return err
+}
+
+// findAddress finds the installed system's IPv6 address, unless waitUp
+// already did, and records it.
+func (a *App) findAddress(ctx context.Context, res *installResult, n config.Network, say func(string, ...any)) error {
+	if res.Address != "" {
+		return nil
 	}
 	fctx, cancel := context.WithTimeout(ctx, addressWait)
 	defer cancel()
-	if res.Address != "" {
-		// found while waiting for it
-	} else if addr, err := a.address(fctx, res, n); err != nil {
-		say("%s: no IPv6 address found yet (%v); try: stage0 get address %s", node.Name, err, node.Name)
-	} else {
-		res.Address = addr
-		say("%s: %s\n  ssh root@%s", node.Name, addr, addr)
-		if err := a.saveRecord(res); err != nil { // now with the address
-			return err
-		}
+	addr, err := a.address(fctx, *res, n)
+	if err != nil {
+		say("%s: no IPv6 address found yet (%v); try: stage0 get address %s", res.Node, err, res.Node)
+		return nil
 	}
-	if a.output == "json" {
-		if err := a.writeJSON(res); err != nil {
-			return err
-		}
-	}
-	if o.keep {
-		say("%s: keeping it served%s until interrupted", node.Name, map[bool]string{true: " and running", false: ""}[node.VM != nil])
-		select {
-		case <-ctx.Done(): // interrupted, or --timeout: the install itself succeeded
-		case <-serveDone:
-			return fmt.Errorf("serve stopped: %v (log: %s)", serveErr, res.ServeLog)
-		}
-	}
-	return nil
+	res.Address = addr
+	say("%s: %s\n  ssh root@%s", res.Node, addr, addr)
+	return a.saveRecord(*res) // now with the address
 }
 
 // oneNetwork returns the named network, or the only one.
