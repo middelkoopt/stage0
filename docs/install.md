@@ -12,7 +12,7 @@ also the agent. It runs from the repo root (`site.yaml`, `images/`, `logs/`).
 Platform facts are in [`netboot.md`](netboot.md), image facts in
 [`images.md`](images.md), code layout in [`development.md`](development.md).
 
-> Last verified: 2026-10-27
+> Last verified: 2026-10-28
 
 ## What it needs
 
@@ -80,17 +80,19 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
    and on: the bootloader's network attempt gets no answer and it falls
    through to the disk (about 45 s on k52), the installed OS boots, and
    NetworkManager's default connection gets the same address for 24 h.
-   `install` waits for the image's `ready` pattern on the console, then for
-   that lease.
+   The node is **up when SSH answers** at the best address known: in mode
+   own its IPv4 lease, else (modes proxy and none, or no lease within a
+   minute) its IPv6 link-local address, found by MAC. The image's `ready`
+   pattern on the console is reported as progress only.
 
 The agent reports to `install` over HTTP (`stage0.report=`: POSTs of its
 report, result or error to `serve`'s `/stage0/report/<kind>`, the one
-write `serve` accepts) and on the serial console. With a console,
-`install` follows it throughout (`logs/<node>.log`) and waits for the
-image's `ready` pattern after the reboot; without one, or if the console
-stays quiet (a Pi 4 without `enable_uart=1`), the node is up when its
-installed system takes its lease and answers ping and SSH. serve's log
-is `logs/<node>-serve.log`. On an agent error `install` powers the node off
+write `serve` accepts) and on the serial console. HTTP is the authority:
+a console copy of the report counts only until an HTTP copy arrives, and
+never replaces it (other console output can garble it); only valid JSON
+counts. With a console, `install` follows it throughout
+(`logs/<node>.log`, written as plain text: terminal escape sequences
+removed). serve's log is `logs/<node>-serve.log`. On an agent error `install` powers the node off
 and stops. The steps can also be run by hand with `build initrd`, `build
 seed`, `serve`, `power` and `console`.
 
