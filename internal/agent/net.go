@@ -1,6 +1,7 @@
 package agent
 
 import (
+	"cmp"
 	"context"
 	"encoding/binary"
 	"errors"
@@ -8,6 +9,7 @@ import (
 	"io"
 	"net"
 	"net/netip"
+	"net/url"
 	"os"
 	"os/exec"
 	"slices"
@@ -223,4 +225,27 @@ func bringUpIPv6(out io.Writer) error {
 		}
 	}
 	return errors.New("no IPv6 address from a router advertisement within 60 s")
+}
+
+// waitRoute waits until the host has a route to server (a URL), up to
+// limit.
+func waitRoute(server string, limit time.Duration) error {
+	u, err := url.Parse(server)
+	if err != nil {
+		return err
+	}
+	host := net.JoinHostPort(u.Hostname(), cmp.Or(u.Port(), "80"))
+	deadline := time.Now().Add(limit)
+	for {
+		// UDP: nothing is sent; the kernel only looks up the route.
+		c, err := net.Dial("udp", host)
+		if err == nil {
+			c.Close()
+			return nil
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("no route to %s after %s: %w", u.Hostname(), limit, err)
+		}
+		time.Sleep(pollInterval)
+	}
 }

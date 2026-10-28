@@ -120,6 +120,13 @@ func Hook() {
 	out := os.Stdout // the hook points it at /dev/console
 	fmt.Fprintln(out, "stage0 agent: started from the installer's initramfs")
 	cmdline, _ := os.ReadFile("/proc/cmdline")
+	// "Online" can mean another address family: systemd-networkd's counts
+	// an IPv6 address from a router advertisement before its DHCPv4 lease.
+	if plan, _ := bootplan.Parse(string(cmdline)); plan.Report != "" {
+		if err := waitRoute(plan.Report, dhcpWait); err != nil {
+			fmt.Fprintf(out, "stage0 agent: network: %v\n", err)
+		}
+	}
 	run(out, string(cmdline))
 }
 

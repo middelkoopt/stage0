@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"net/netip"
 	"testing"
+	"time"
 )
 
 func TestNewAddrMessage(t *testing.T) {
@@ -35,5 +36,14 @@ func TestGlobalIPv6(t *testing.T) {
 	}
 	if _, ok := firstGlobal6(addrs[:2]); ok {
 		t.Error("link-local taken as global")
+	}
+}
+
+func TestWaitRoute(t *testing.T) {
+	if err := waitRoute("http://127.0.0.1/stage0/report", time.Second); err != nil {
+		t.Error(err)
+	}
+	if err := waitRoute("http://[::1]:8080/x", time.Second); err != nil {
+		t.Error(err)
 	}
 }

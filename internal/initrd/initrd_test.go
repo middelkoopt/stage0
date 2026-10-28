@@ -149,6 +149,10 @@ func TestBuildHook(t *testing.T) {
 	if d := got["etc/systemd/system/dracut-pre-mount.service.d/90-stage0.conf"]; !strings.Contains(d, "After=ignition-disks.service") {
 		t.Errorf("drop-in %q", d)
 	}
+	// A networkd installer asks DHCP as the agent.
+	if d := got["etc/systemd/network/zzzz-dracut-default.network.d/90-stage0.conf"]; !strings.Contains(d, "VendorClassIdentifier=stage0-agent") {
+		t.Errorf("networkd drop-in %q", d)
+	}
 	hook := got["var/lib/dracut/hooks/pre-mount/90-stage0.sh"]
 	if !strings.HasPrefix(hook, "-rwxr-xr-x #!/bin/sh\n") || !strings.Contains(hook, "/usr/bin/stage0 agent") {
 		t.Errorf("hook %q", hook)

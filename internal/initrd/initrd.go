@@ -17,6 +17,7 @@ import (
 
 	"github.com/middelkoopt/stage0/internal/agent"
 	"github.com/middelkoopt/stage0/internal/cpio"
+	"github.com/middelkoopt/stage0/internal/dhcpd"
 )
 
 // Summary describes a built initramfs.
@@ -106,6 +107,13 @@ const hookOrder = `[Unit]
 After=ignition-disks.service
 `
 
+// networkdClass is a drop-in for dracut's default systemd-networkd
+// network, so an installer whose dracut uses networkd asks DHCP as the
+// agent (as rd.net.dhcp.vendor-class= does with NetworkManager): stage0
+// answers no unknown client otherwise, e.g. a Pi that netbooted over IPv6.
+// Installers with another network module ignore it.
+var networkdClass = "[DHCPv4]\nVendorClassIdentifier=" + dhcpd.AgentClass + "\n"
+
 // BuildHook writes, as a gzip'd cpio for appending to a dracut initramfs
 // (an installer's, docs/containers.md), the stage0 binary and the dracut
 // hook that runs it as the agent.
@@ -116,7 +124,8 @@ func BuildHook(w io.Writer, agentPath string) error {
 	}
 	a := cpio.NewWriter(z)
 	for _, d := range []string{"usr", "usr/bin", "var", "var/lib", "var/lib/dracut", "var/lib/dracut/hooks", "var/lib/dracut/hooks/pre-mount",
-		"etc", "etc/systemd", "etc/systemd/system", "etc/systemd/system/dracut-pre-mount.service.d"} {
+		"etc", "etc/systemd", "etc/systemd/system", "etc/systemd/system/dracut-pre-mount.service.d",
+		"etc/systemd/network", "etc/systemd/network/zzzz-dracut-default.network.d"} {
 		if err := a.Dir(d, 0o755); err != nil {
 			return err
 		}
@@ -128,6 +137,9 @@ func BuildHook(w io.Writer, agentPath string) error {
 		return err
 	}
 	if err := a.File("etc/systemd/system/dracut-pre-mount.service.d/90-stage0.conf", 0o644, int64(len(hookOrder)), strings.NewReader(hookOrder)); err != nil {
+		return err
+	}
+	if err := a.File("etc/systemd/network/zzzz-dracut-default.network.d/90-stage0.conf", 0o644, int64(len(networkdClass)), strings.NewReader(networkdClass)); err != nil {
 		return err
 	}
 	return errors.Join(a.Close(), z.Close())

@@ -62,10 +62,22 @@ func configureSystem(out io.Writer, root string, sys osconfig.System, server str
 				return nil, err
 			}
 		}
+		// ssh-keygen needs /dev (/dev/null) in the root.
+		dev := filepath.Join(root, "dev")
+		if err := os.MkdirAll(dev, 0o755); err != nil {
+			return nil, err
+		}
+		if err := syscall.Mount("/dev", dev, "", syscall.MS_BIND, ""); err != nil {
+			return nil, fmt.Errorf("binding /dev into the installed root: %w", err)
+		}
 		cmd := exec.Command("/usr/bin/ssh-keygen", "-A")
 		cmd.SysProcAttr = &syscall.SysProcAttr{Chroot: root}
 		cmd.Dir = "/"
-		if b, err := cmd.CombinedOutput(); err != nil {
+		b, err := cmd.CombinedOutput()
+		if uerr := syscall.Unmount(dev, 0); uerr != nil && err == nil {
+			return nil, fmt.Errorf("unmounting %s: %w", dev, uerr)
+		}
+		if err != nil {
 			return nil, fmt.Errorf("new SSH host keys (ssh-keygen -A in the installed root): %v: %s", err, b)
 		}
 		written = append(written, "/etc/ssh/ssh_host_*")
