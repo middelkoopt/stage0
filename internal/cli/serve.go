@@ -68,7 +68,7 @@ func (a *App) serveCommand() *cobra.Command {
 			report := func(from, kind string, body []byte) {
 				log.Info("agent: "+kind, "from", from, "body", string(body))
 			}
-			return a.serve(ctx, n, root, a.newLeases(n, installed, log), report, log)
+			return a.serve(ctx, n, root, a.newLeases(n, installed, log), nil, report, log)
 		},
 	}
 	cmd.Flags().StringVar(&root, "root", "", "directory of boot files to serve over TFTP and HTTP (none: DHCP only)")
@@ -88,17 +88,18 @@ func (a *App) newLeases(n config.Network, installed map[string]netip.Addr, log *
 	}, log)
 }
 
-// serve answers DHCPv4 with leases, and TFTP and HTTP from root (if
-// any), on network n until ctx is done. report, if set, receives what
+// serve answers DHCPv4 with leases, and TFTP (files, or a server for
+// root) and HTTP from root (if any), on network n until ctx is done. report, if set, receives what
 // agents POST.
-func (a *App) serve(ctx context.Context, n config.Network, root string, leases *dhcpd.Server,
+func (a *App) serve(ctx context.Context, n config.Network, root string, leases *dhcpd.Server, files *tftpd.Server,
 	report func(from, kind string, body []byte), log *slog.Logger) error {
-	var files *tftpd.Server
 	var web *httpd.Server
 	if root != "" {
 		var err error
-		if files, err = tftpd.New(root, log); err != nil {
-			return err
+		if files == nil {
+			if files, err = tftpd.New(root, log); err != nil {
+				return err
+			}
 		}
 		if web, err = httpd.New(root, log); err != nil {
 			return err

@@ -15,6 +15,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"syscall"
 	"time"
 
@@ -23,9 +24,15 @@ import (
 
 // Server serves files from a root directory.
 type Server struct {
-	root *os.Root // confines every open to the directory, symlinks included
-	log  *slog.Logger
+	root   *os.Root // confines every open to the directory, symlinks included
+	log    *slog.Logger
+	closed atomic.Bool
 }
+
+// Close stops offering files: every request is "not found" from now on,
+// so a node that netboots by a fixed server (no DHCP to withhold, network
+// mode none) boots from its disk once installed.
+func (s *Server) Close() { s.closed.Store(true) }
 
 // New returns a server for the files under dir.
 func New(dir string, log *slog.Logger) (*Server, error) {
@@ -79,6 +86,9 @@ func (s *Server) Serve(ctx context.Context, conn net.PacketConn) error {
 	return err
 }
 
+// maxBlock is the largest block a client asks for (a Pi: 1468 bytes).
+const maxBlock = 1468
+
 // read sends one file. Names are taken relative to the root whether or not
 // they start with "/" (a Pi asks for both).
 func (s *Server) read(name string, rf io.ReaderFrom) error {
@@ -88,6 +98,10 @@ func (s *Server) read(name string, rf io.ReaderFrom) error {
 		log = log.With("from", addr.IP.String())
 	}
 
+	if s.closed.Load() {
+		log.Info("tftp: not found", "reason", "closed: the node is installed")
+		return fmt.Errorf("%s: not found", name)
+	}
 	rel := filepath.Clean(strings.TrimLeft(name, "/"))
 	if !filepath.IsLocal(rel) {
 		log.Warn("tftp: refused, outside the root")
@@ -111,9 +125,10 @@ func (s *Server) read(name string, rf io.ReaderFrom) error {
 	start := time.Now()
 	n, err := rf.ReadFrom(f)
 	d := time.Since(start)
-	if err != nil && n == 0 && (strings.Contains(err.Error(), "Early terminate") || strings.Contains(err.Error(), "User aborted")) {
+	if err != nil && n <= maxBlock && (strings.Contains(err.Error(), "Early terminate") || strings.Contains(err.Error(), "User aborted")) {
 		// A Pi ("Early terminate") and UEFI (edk2: "User aborted the
-		// transfer") ask for the size first, abort, then ask for the data.
+		// transfer") ask for the size first, abort, then ask for the data;
+		// a Pi 400 aborts after the first block (k400, proxy mode).
 		log.Info("tftp: size probe")
 		return nil
 	}

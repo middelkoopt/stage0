@@ -47,6 +47,7 @@ type fakeRegistry struct {
 	arm64     string // manifest digest
 	blobGets  int
 	tokenSeen bool
+	tokenUser string // "user:password" the token service wants, if any
 }
 
 func newFakeRegistry(t *testing.T) (*fakeRegistry, *httptest.Server) {
@@ -77,6 +78,12 @@ func newFakeRegistry(t *testing.T) (*fakeRegistry, *httptest.Server) {
 	var srv *httptest.Server
 	srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.URL.Path == "/token" {
+			if f.tokenUser != "" {
+				if u, p, ok := r.BasicAuth(); !ok || u+":"+p != f.tokenUser {
+					w.WriteHeader(http.StatusUnauthorized)
+					return
+				}
+			}
 			if r.URL.Query().Get("scope") != "repository:org/img:pull" {
 				t.Errorf("token scope %q", r.URL.Query().Get("scope"))
 			}
@@ -175,4 +182,51 @@ func hex8(t *testing.T, s string) string {
 	t.Helper()
 	h := sha256.Sum256([]byte(s))
 	return hex.EncodeToString(h[:])
+}
+
+func TestPullBasicAuth(t *testing.T) {
+	// A registry:2 with htpasswd: Basic challenge, credentials on every request.
+	f, _ := newFakeRegistry(t)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if u, p, ok := r.BasicAuth(); !ok || u != "ci" || p != "pw" {
+			w.Header().Set("WWW-Authenticate", `Basic realm="Registry Realm"`)
+			w.WriteHeader(http.StatusUnauthorized)
+			return
+		}
+		switch {
+		case r.URL.Path == "/v2/org/img/manifests/1":
+			w.Header().Set("Content-Type", "application/vnd.oci.image.index.v1+json")
+			w.Write(f.blobs[f.index])
+		case strings.HasPrefix(r.URL.Path, "/v2/org/img/manifests/"):
+			w.Header().Set("Content-Type", "application/vnd.oci.image.manifest.v1+json")
+			w.Write(f.blobs[strings.TrimPrefix(r.URL.Path, "/v2/org/img/manifests/")])
+		case strings.HasPrefix(r.URL.Path, "/v2/org/img/blobs/"):
+			w.Write(f.blobs[strings.TrimPrefix(r.URL.Path, "/v2/org/img/blobs/")])
+		}
+	}))
+	defer srv.Close()
+	ref, _ := ParseRef(strings.TrimPrefix(srv.URL, "http://") + "/org/img:1")
+	if _, err := (&Client{}).Pull(t.Context(), ref, "arm64", t.TempDir()); err == nil {
+		t.Error("no credentials: want error")
+	}
+	c := &Client{Credentials: map[string]Credentials{ref.Host: {User: "ci", Password: "pw"}}}
+	if _, err := c.Pull(t.Context(), ref, "arm64", t.TempDir()); err != nil {
+		t.Errorf("with credentials: %v", err)
+	}
+}
+
+func TestPullTokenWithCredentials(t *testing.T) {
+	// A private repository behind a token service: the token request
+	// carries the credentials.
+	f, srv := newFakeRegistry(t)
+	defer srv.Close()
+	f.tokenUser = "ci:pw"
+	ref, _ := ParseRef(strings.TrimPrefix(srv.URL, "http://") + "/org/img:1")
+	if _, err := (&Client{}).Pull(t.Context(), ref, "arm64", t.TempDir()); err == nil {
+		t.Error("anonymous token for a private repository: want error")
+	}
+	c := &Client{Credentials: map[string]Credentials{ref.Host: {User: "ci", Password: "pw"}}}
+	if _, err := c.Pull(t.Context(), ref, "arm64", t.TempDir()); err != nil {
+		t.Errorf("with credentials: %v", err)
+	}
 }

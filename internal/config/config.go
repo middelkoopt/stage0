@@ -406,6 +406,15 @@ type Secrets struct {
 	Switches map[string]SwitchSecret `yaml:"switches"`
 	// BMC is the login of the nodes' virtual BMCs (stage0 bmc).
 	BMC *BMCSecret `yaml:"bmc,omitempty"`
+	// Registries are container registry logins by host (e.g. quay.io,
+	// localhost:5000), for private repositories.
+	Registries map[string]RegistrySecret `yaml:"registries,omitempty"`
+}
+
+// RegistrySecret is a container registry login.
+type RegistrySecret struct {
+	User     string `yaml:"user"`
+	Password string `yaml:"password"`
 }
 
 // BMCSecret is an IPMI user; the password at most 20 bytes (IPMI 2.0).

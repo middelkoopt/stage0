@@ -3,6 +3,7 @@ package tftpd
 import (
 	"bytes"
 	"context"
+	"io"
 	"log/slog"
 	"net"
 	"os"
@@ -161,9 +162,10 @@ func TestSizeProbe(t *testing.T) {
 	// (tsize), then abort and ask again for the data. That is routine, not
 	// a failure. Each aborts its own way: ERROR code and message.
 	for _, abort := range []struct {
-		code byte
-		msg  string
-	}{{0, "Early terminate"}, {8, "User aborted the transfer"}} {
+		code       byte
+		msg        string
+		afterBlock bool // a Pi 400 takes the first block, then aborts
+	}{{0, "Early terminate", false}, {8, "User aborted the transfer", false}, {0, "Early terminate", true}} {
 		conn, err := net.ListenPacket("udp4", "127.0.0.1:0")
 		if err != nil {
 			t.Fatal(err)
@@ -189,6 +191,15 @@ func TestSizeProbe(t *testing.T) {
 		if buf[1] != 6 {
 			t.Fatalf("got opcode %d, want an OACK (6)", buf[1])
 		}
+		if abort.afterBlock {
+			// ACK the OACK (block 0), take block 1.
+			if _, err := cli.WriteTo([]byte{0, 4, 0, 0}, from); err != nil {
+				t.Fatal(err)
+			}
+			if _, _, err := cli.ReadFrom(buf); err != nil || buf[1] != 3 {
+				t.Fatalf("no data block: %v", err)
+			}
+		}
 		// The ERROR, to the transfer's own port.
 		if _, err := cli.WriteTo(append([]byte{0, 5, 0, abort.code}, abort.msg+"\x00"...), from); err != nil {
 			t.Fatal(err)
@@ -202,3 +213,26 @@ func TestSizeProbe(t *testing.T) {
 		}
 	}
 }
+
+func TestClose(t *testing.T) {
+	// After Close every file is "not found".
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "config.txt"), []byte("x"), 0o644)
+	s, err := New(dir, slog.New(slog.NewTextHandler(io.Discard, nil)))
+	if err != nil {
+		t.Fatal(err)
+	}
+	var buf bytes.Buffer
+	if err := s.read("config.txt", readerFrom{&buf}); err != nil || buf.String() != "x" {
+		t.Fatalf("before Close: %q, %v", buf.String(), err)
+	}
+	s.Close()
+	if err := s.read("config.txt", readerFrom{&buf}); err == nil {
+		t.Error("after Close: a file was sent")
+	}
+}
+
+// readerFrom is an io.ReaderFrom into a buffer.
+type readerFrom struct{ b *bytes.Buffer }
+
+func (r readerFrom) ReadFrom(src io.Reader) (int64, error) { return r.b.ReadFrom(src) }

@@ -375,6 +375,12 @@ func (c Config) File() string { return path.Base(c.URL) }
 // returns its OCI layout directory: pulled from its registry, or saved
 // there by hand.
 func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (string, error) {
+	return FetchWith(ctx, c, cacheDir, progress, nil)
+}
+
+// FetchWith is Fetch with registry credentials by host, for containers
+// in private repositories.
+func FetchWith(ctx context.Context, c Config, cacheDir string, progress io.Writer, creds map[string]registry.Credentials) (string, error) {
 	if name, ok := strings.CutPrefix(c.Container, "podman:"); ok {
 		return podmanSave(ctx, name, filepath.Join(cacheDir, "oci", "podman"), progress)
 	}
@@ -385,7 +391,7 @@ func Fetch(ctx context.Context, c Config, cacheDir string, progress io.Writer) (
 		}
 		fmt.Fprintf(progress, "pulling %s\n", ref)
 		// Pis and the test bed's VMs are arm64.
-		return (&registry.Client{}).Pull(ctx, ref, "arm64", filepath.Join(cacheDir, "oci", "registry"))
+		return (&registry.Client{Credentials: creds}).Pull(ctx, ref, "arm64", filepath.Join(cacheDir, "oci", "registry"))
 	}
 	if c.Container != "" {
 		dir := filepath.Join(cacheDir, "oci", c.Container)

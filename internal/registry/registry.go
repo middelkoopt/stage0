@@ -2,13 +2,15 @@
 // distribution API: Docker Hub, quay.io, ghcr.io, a local registry) into
 // an OCI image layout directory, the same as `podman save --format
 // oci-dir` writes, so stage0 can serve it to nodes that never reach the
-// registry themselves. Pulls are anonymous, with the bearer token most
-// public registries ask for; every blob is checked against its digest.
+// registry themselves. Pulls are anonymous (with the bearer token most
+// public registries ask for) or with credentials; every blob is checked
+// against its digest.
 package registry
 
 import (
 	"context"
 	"crypto/sha256"
+	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
@@ -90,8 +92,17 @@ func (r Ref) scheme() string {
 
 // Client pulls images.
 type Client struct {
-	HTTP  *http.Client // default http.DefaultClient
-	token string
+	HTTP *http.Client // default http.DefaultClient
+	// Credentials by registry host, for private repositories: sent as
+	// Basic authentication, or to the token service. Anonymous without.
+	Credentials map[string]Credentials
+
+	auth string // the Authorization header once logged in
+}
+
+// Credentials are a registry login.
+type Credentials struct {
+	User, Password string
 }
 
 const (
@@ -237,8 +248,8 @@ func (c *Client) do(ctx context.Context, ref Ref, path, accept string) (*http.Re
 		if accept != "" {
 			req.Header.Set("Accept", accept)
 		}
-		if c.token != "" {
-			req.Header.Set("Authorization", "Bearer "+c.token)
+		if c.auth != "" {
+			req.Header.Set("Authorization", c.auth)
 		}
 		resp, err := hc.Do(req)
 		if err != nil {
@@ -247,7 +258,7 @@ func (c *Client) do(ctx context.Context, ref Ref, path, accept string) (*http.Re
 		if resp.StatusCode == http.StatusUnauthorized && try == 0 {
 			challenge := resp.Header.Get("WWW-Authenticate")
 			resp.Body.Close()
-			if c.token, err = c.login(ctx, hc, challenge); err != nil {
+			if c.auth, err = c.login(ctx, hc, challenge, ref.Host); err != nil {
 				return nil, fmt.Errorf("%s: %w", ref, err)
 			}
 			continue
@@ -262,11 +273,20 @@ func (c *Client) do(ctx context.Context, ref Ref, path, accept string) (*http.Re
 
 var challengeParam = regexp.MustCompile(`(\w+)="([^"]*)"`)
 
-// login gets an anonymous token from the realm a Bearer challenge names.
-func (c *Client) login(ctx context.Context, hc *http.Client, challenge string) (string, error) {
+// login answers a challenge with the Authorization header to use: Basic
+// with the host's credentials, or Bearer with a token from the realm the
+// challenge names (asked with the credentials, if any, else anonymously).
+func (c *Client) login(ctx context.Context, hc *http.Client, challenge, host string) (string, error) {
+	cred, haveCred := c.Credentials[host]
 	scheme, params, _ := strings.Cut(challenge, " ")
-	if !strings.EqualFold(scheme, "Bearer") {
-		return "", fmt.Errorf("registry wants %q authentication; only anonymous bearer tokens are supported", scheme)
+	switch {
+	case strings.EqualFold(scheme, "Basic"):
+		if !haveCred {
+			return "", fmt.Errorf("registry wants a login: add registries: {%s: {user: …, password: …}} to .secrets", host)
+		}
+		return "Basic " + base64.StdEncoding.EncodeToString([]byte(cred.User+":"+cred.Password)), nil
+	case !strings.EqualFold(scheme, "Bearer"):
+		return "", fmt.Errorf("registry wants %q authentication; Basic and Bearer are supported", scheme)
 	}
 	p := map[string]string{}
 	for _, m := range challengeParam.FindAllStringSubmatch(params, -1) {
@@ -285,12 +305,18 @@ func (c *Client) login(ctx context.Context, hc *http.Client, challenge string) (
 	if err != nil {
 		return "", err
 	}
+	if haveCred {
+		req.SetBasicAuth(cred.User, cred.Password)
+	}
 	resp, err := hc.Do(req)
 	if err != nil {
 		return "", err
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode != http.StatusOK {
+		if !haveCred {
+			return "", fmt.Errorf("token: %s (a private repository? add registries: {%s: {user: …, password: …}} to .secrets)", resp.Status, host)
+		}
 		return "", fmt.Errorf("token: %s", resp.Status)
 	}
 	var t struct {
@@ -303,7 +329,7 @@ func (c *Client) login(ctx context.Context, hc *http.Client, challenge string) (
 	if t.Token == "" {
 		t.Token = t.AccessToken
 	}
-	return t.Token, nil
+	return "Bearer " + t.Token, nil
 }
 
 func sum(b []byte) string {

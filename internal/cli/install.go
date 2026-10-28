@@ -31,6 +31,8 @@ import (
 	"github.com/middelkoopt/stage0/internal/initrd"
 	"github.com/middelkoopt/stage0/internal/oci"
 	"github.com/middelkoopt/stage0/internal/reach"
+	"github.com/middelkoopt/stage0/internal/registry"
+	"github.com/middelkoopt/stage0/internal/tftpd"
 	"github.com/middelkoopt/stage0/internal/uki"
 )
 
@@ -195,7 +197,15 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	if a.output == "text" {
 		progress = a.Stdout
 	}
-	imgPath, err := image.Fetch(ctx, img, o.cache, progress)
+	secrets, err := config.LoadSecrets(a.secretsPath)
+	if err != nil {
+		return err
+	}
+	creds := map[string]registry.Credentials{}
+	for host, r := range secrets.Registries {
+		creds[host] = registry.Credentials{User: r.User, Password: r.Password}
+	}
+	imgPath, err := image.FetchWith(ctx, img, o.cache, progress, creds)
 	if err != nil {
 		return err
 	}
@@ -318,11 +328,17 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		defer vm.off(ctx)
 	}
 	res.Port = m.port()
+	// TFTP stops offering files once the node is installed (mode none
+	// leaves no DHCP to withhold, so its netboot would find them again).
+	files, err := tftpd.New(run, slog)
+	if err != nil {
+		return err
+	}
 	sctx, stopServe := context.WithCancel(ctx)
 	serveDone := make(chan struct{})
 	var serveErr error
 	go func() {
-		serveErr = a.serve(sctx, n, run, leases, report, slog)
+		serveErr = a.serve(sctx, n, run, leases, files, report, slog)
 		close(serveDone)
 	}()
 	defer func() { stopServe(); <-serveDone }()
@@ -371,6 +387,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		}
 	}
 
+	files.Close()
 	// From now on its PXE requests get no answer, so it boots from its
 	// disk; its installed system's DHCP gets the same address.
 	if macs, err := res.macs(); err == nil {
