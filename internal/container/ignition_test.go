@@ -127,3 +127,21 @@ func TestForDiskKeepsType(t *testing.T) {
 		t.Errorf("a given type was replaced: %s, %v", b, err)
 	}
 }
+
+func TestResolveFirstBootIgnition(t *testing.T) {
+	// A node's Ignition config without storage configures first boot only:
+	// the layout still comes from the labels.
+	files := `{"ignition": {"version": "3.4.0"}, "passwd": {"users": [{"name": "admin"}]}}`
+	s, ig, err := Resolve(testLabels, Layout{}, nil, Layout{Ignition: []byte(files)})
+	if err != nil || s.Ignition || len(s.Partitions) != 2 || string(ig) != files {
+		t.Errorf("Resolve = %+v, %q, %v", s, ig, err)
+	}
+	// With a partitioning config winning too, two configs: refused.
+	if _, _, err := Resolve(map[string]string{"pi.provision.ignition": testIgnition, "pi.provision.installer": testLabels["pi.provision.installer"]},
+		Layout{}, nil, Layout{Ignition: []byte(files)}); err == nil || !strings.Contains(err.Error(), "one") {
+		t.Errorf("two Ignition configs: err = %v", err)
+	}
+	if b, err := ForDisk([]byte(files), "/dev/sda"); err != nil || string(b) != files {
+		t.Errorf("ForDisk changed a config without disks: %s, %v", b, err)
+	}
+}

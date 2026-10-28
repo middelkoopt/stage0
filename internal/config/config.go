@@ -21,6 +21,7 @@ import (
 	"go.yaml.in/yaml/v3"
 
 	"github.com/middelkoopt/stage0/internal/container"
+	"github.com/middelkoopt/stage0/internal/image"
 )
 
 // Default file names, relative to the working directory.
@@ -70,6 +71,10 @@ type Node struct {
 	// relative to site.yaml) whose storage section gives the layout.
 	Ignition       string `yaml:"ignition,omitempty"`
 	IgnitionConfig []byte `yaml:"-"` // its contents
+
+	// FirstBoot and CloudInit override the image config's (docs/firstboot.md).
+	FirstBoot string          `yaml:"firstBoot,omitempty"`
+	CloudInit image.CloudInit `yaml:"cloudInit,omitempty"`
 
 	// BMC makes `stage0 bmc` answer IPMI for the node (docs/bmc.md).
 	BMC *BMC `yaml:"bmc,omitempty"`
@@ -205,6 +210,12 @@ func (s *Site) normalize(dir string) error {
 				return fmt.Errorf("node %q: bmc port %d is %s's too", n.Name, b.Port, bmcPorts[b.Port])
 			}
 			bmcPorts[b.Port] = n.Name
+		}
+		if err := image.CheckFirstBoot(n.FirstBoot, n.CloudInit); err != nil {
+			return fmt.Errorf("node %q: %w", n.Name, err)
+		}
+		if err := n.CloudInit.Load(dir); err != nil {
+			return fmt.Errorf("node %q: %w", n.Name, err)
 		}
 		if n.Ignition != "" {
 			if len(n.Partitions) > 0 {

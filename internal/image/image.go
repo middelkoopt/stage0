@@ -97,12 +97,74 @@ type Config struct {
 	// their drivers built in).
 	Initramfs string `yaml:"initramfs,omitempty"`
 
+	// FirstBoot is how the installed system is configured on first boot
+	// (a node's overrides it): "stage0" (default: hostname and root's
+	// keys as systemd settings on the kernel command line), "ignition"
+	// (the Ignition config's files, users and units, applied by the
+	// installer's Ignition; containers only) or "cloud-init" (CloudInit's
+	// user-data, with meta-data from stage0). docs/firstboot.md.
+	FirstBoot string    `yaml:"firstBoot,omitempty"`
+	CloudInit CloudInit `yaml:"cloudInit,omitempty"`
+
 	// NoCloud: the image's cloud-init takes its hostname and keys from
 	// NoCloud data that stage0 serves.
 	NoCloud bool `yaml:"nocloud,omitempty"`
 }
 
 // File is a file to download, pinned by its checksum.
+// CloudInit is cloud-init's input for first boot: files (paths relative
+// to the config's directory) and, once loaded, their contents.
+type CloudInit struct {
+	UserData      string `yaml:"userData,omitempty"`
+	NetworkConfig string `yaml:"networkConfig,omitempty"`
+
+	UserDataBytes      []byte `yaml:"-"`
+	NetworkConfigBytes []byte `yaml:"-"`
+}
+
+// Load reads the files, relative to dir.
+func (c *CloudInit) Load(dir string) error {
+	for _, f := range []struct {
+		name string
+		dst  *[]byte
+	}{{c.UserData, &c.UserDataBytes}, {c.NetworkConfig, &c.NetworkConfigBytes}} {
+		if f.name == "" {
+			continue
+		}
+		p := f.name
+		if !filepath.IsAbs(p) {
+			p = filepath.Join(dir, p)
+		}
+		b, err := os.ReadFile(p)
+		if err != nil {
+			return fmt.Errorf("cloudInit: %w", err)
+		}
+		*f.dst = b
+	}
+	return nil
+}
+
+// CheckFirstBoot checks a firstBoot setting against what it needs.
+func CheckFirstBoot(mode string, ci CloudInit) error {
+	switch mode {
+	case "", "stage0":
+		if ci.UserData != "" || ci.NetworkConfig != "" {
+			return errors.New("cloudInit is for firstBoot: cloud-init")
+		}
+	case "cloud-init":
+		if ci.UserData == "" {
+			return errors.New("firstBoot: cloud-init needs cloudInit: {userData: <file>}")
+		}
+	case "ignition":
+		if ci.UserData != "" || ci.NetworkConfig != "" {
+			return errors.New("cloudInit is for firstBoot: cloud-init")
+		}
+	default:
+		return fmt.Errorf("firstBoot %q: stage0, ignition or cloud-init", mode)
+	}
+	return nil
+}
+
 type File struct {
 	URL    string `yaml:"url"`
 	SHA256 string `yaml:"sha256"`
@@ -144,6 +206,15 @@ func Load(dir, name string) (Config, error) {
 	}
 	if c.Ready == "" {
 		c.Ready = "login: "
+	}
+	if err := CheckFirstBoot(c.FirstBoot, c.CloudInit); err != nil {
+		return c, fmt.Errorf("%s: %w", p, err)
+	}
+	if err := c.CloudInit.Load(dir); err != nil {
+		return c, fmt.Errorf("%s: %w", p, err)
+	}
+	if c.FirstBoot == "ignition" && c.Container == "" {
+		return c, fmt.Errorf("%s: firstBoot: ignition is for containers (their installer runs Ignition)", p)
 	}
 	if c.Container != "" {
 		switch {

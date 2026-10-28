@@ -121,3 +121,42 @@ func TestMountOrder(t *testing.T) {
 		t.Errorf("mount order %v, want /var then /var/log", got)
 	}
 }
+
+func TestWriteNoCloud(t *testing.T) {
+	root := t.TempDir()
+	ci := &container.CloudInit{UserData: "#cloud-config\n", MetaData: "instance-id: k52-1\n"}
+	if err := writeNoCloud(root, ci); err != nil {
+		t.Fatal(err)
+	}
+	dir := filepath.Join(root, "var/lib/cloud/seed/nocloud")
+	for name, want := range map[string]string{"user-data": "#cloud-config\n", "meta-data": "instance-id: k52-1\n"} {
+		b, err := os.ReadFile(filepath.Join(dir, name))
+		fi, _ := os.Stat(filepath.Join(dir, name))
+		if err != nil || string(b) != want || fi.Mode().Perm() != 0o600 {
+			t.Errorf("%s = %q (%v), %v", name, b, fi.Mode(), err)
+		}
+	}
+	if _, err := os.Stat(filepath.Join(dir, "network-config")); err == nil {
+		t.Error("network-config written without one")
+	}
+}
+
+func TestSELinux(t *testing.T) {
+	root := t.TempDir()
+	if _, ok := selinuxType(root); ok || selinuxOn(root) {
+		t.Error("no config: want no SELinux")
+	}
+	os.MkdirAll(filepath.Join(root, "etc/selinux/targeted/contexts/files"), 0o755)
+	os.WriteFile(filepath.Join(root, "etc/selinux/config"), []byte("# x\nSELINUX=enforcing\nSELINUXTYPE=targeted\n"), 0o644)
+	if _, ok := selinuxType(root); ok {
+		t.Error("no file_contexts: want no policy")
+	}
+	os.WriteFile(filepath.Join(root, "etc/selinux/targeted/contexts/files/file_contexts"), nil, 0o644)
+	if typ, ok := selinuxType(root); !ok || typ != "targeted" || !selinuxOn(root) {
+		t.Errorf("policy: %q %v on=%v", typ, ok, selinuxOn(root))
+	}
+	os.WriteFile(filepath.Join(root, "etc/selinux/config"), []byte("SELINUX=disabled\nSELINUXTYPE=targeted\n"), 0o644)
+	if selinuxOn(root) {
+		t.Error("disabled: want off")
+	}
+}

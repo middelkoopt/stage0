@@ -170,10 +170,16 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	case node.VM != nil && img.Container != "":
 		return errors.New("containers install on Pis only, for now")
 	}
+	fb := resolveFirstBoot(node, img)
+	if fb.Mode == "ignition" && img.Container == "" {
+		return fmt.Errorf("%s: firstBoot: ignition is for containers", node.Name)
+	}
 	ready, _ := regexp.Compile(img.Ready) // checked by Load
 	var installed string
 	if !img.VM() {
-		if installed, err = installedCmdline(img.Cmdline, node.Hostname, site.SSHKeys); err != nil {
+		if fb.Mode != "stage0" { // the chosen tool sets hostname and keys
+			installed = strings.TrimSpace(img.Cmdline)
+		} else if installed, err = installedCmdline(img.Cmdline, node.Hostname, site.SSHKeys); err != nil {
 			return err
 		}
 	}
@@ -203,16 +209,16 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		}
 		cmdline := fmt.Sprintf("console=ttyAMA0 stage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.report=%s/stage0/report",
 			disk, img.SHA256, base, img.File(), base)
-		err = a.stageVM(ctx, run, img, imgPath, node, site.SSHKeys, cmdline, o.cache, progress)
+		err = a.stageVM(ctx, run, img, imgPath, node, site.SSHKeys, fb, cmdline, o.cache, progress)
 	} else {
 		server := n.Server.String()
 		if o.ipv6 {
 			server = "[" + n.Server6.String() + "]"
 		}
 		if img.Container != "" {
-			err = a.stageContainer(run, imgPath, img, node, installed, disk, server, filepath.Join(o.cache, "boot"))
+			err = a.stageContainer(run, imgPath, img, node, fb, installed, disk, server, filepath.Join(o.cache, "boot"))
 		} else {
-			err = a.stage(run, imgPath, img, installed, node.Hostname, disk, server, filepath.Join(o.cache, "boot", img.SHA256))
+			err = a.stage(run, imgPath, img, fb, installed, disk, server, filepath.Join(o.cache, "boot", img.SHA256))
 		}
 	}
 	if err != nil {
@@ -519,7 +525,7 @@ func oneNetwork(site *config.Site, name string) (config.Network, error) {
 // stage builds the directory serve offers the node: the image's boot files
 // with stage0's initramfs added to config.txt, a cmdline.txt carrying the
 // agent's plan, the seed, and the image itself under images/.
-func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, disk, server, bootCache string) error {
+func (a *App) stage(run, imgPath string, img image.Config, fb firstBoot, installed, disk, server, bootCache string) error {
 	if _, err := os.Stat(bootCache); err != nil {
 		tmp := bootCache + ".tmp"
 		os.RemoveAll(tmp)
@@ -603,7 +609,7 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 		return err
 	}
 
-	if err := writeSeed(run, img, cfg, installed, hostname, bootCache); err != nil {
+	if err := writeSeed(run, img, cfg, fb, installed, bootCache); err != nil {
 		return err
 	}
 
@@ -632,7 +638,7 @@ func (a *App) stage(run, imgPath string, img image.Config, installed, hostname, 
 // image's kernel, and its initrd with stage0's initramfs appended (the
 // kernel unpacks both; stage0's /init wins).
 func (a *App) stageVM(ctx context.Context, run string, img image.Config, imgPath string, node config.Node, keys []string,
-	cmdline, cache string, progress io.Writer) error {
+	fb firstBoot, cmdline, cache string, progress io.Writer) error {
 	agentCache := filepath.Join(cache, "agent", img.Name)
 	kernel, err := image.FetchFile(ctx, *img.Kernel, agentCache, progress)
 	if err != nil {
@@ -660,10 +666,14 @@ func (a *App) stageVM(ctx context.Context, run string, img image.Config, imgPath
 	if err := os.MkdirAll(nc, 0o755); err != nil {
 		return err
 	}
-	meta := fmt.Sprintf("instance-id: %s-%d\nlocal-hostname: %s\n", node.Name, time.Now().Unix(), node.Hostname)
-	if err := errors.Join(os.WriteFile(filepath.Join(nc, "meta-data"), []byte(meta), 0o644),
-		os.WriteFile(filepath.Join(nc, "user-data"), []byte(nocloudUserData(node.Hostname, keys)), 0o644)); err != nil {
-		return err
+	files := map[string][]byte{"user-data": []byte(nocloudUserData(node.Hostname, keys)), "meta-data": fb.noCloud()["meta-data"]}
+	if fb.Mode == "cloud-init" {
+		files = fb.noCloud()
+	}
+	for name, body := range files {
+		if err := os.WriteFile(filepath.Join(nc, name), body, 0o644); err != nil {
+			return err
+		}
 	}
 
 	exe, err := a.Executable()
@@ -725,7 +735,7 @@ func nocloudUserData(hostname string, keys []string) string {
 // directory), config.txt with the image's lines ensured (cfg is the
 // shipped one), its bootFiles, and cloud-init user-data with the hostname
 // when the boot partition (bootCache) has user-data.
-func writeSeed(run string, img image.Config, cfg []byte, installed, hostname, bootCache string) error {
+func writeSeed(run string, img image.Config, cfg []byte, fb firstBoot, installed, bootCache string) error {
 	seed := filepath.Join(run, ".seed")
 	if err := os.MkdirAll(seed, 0o755); err != nil {
 		return err
@@ -750,11 +760,22 @@ func writeSeed(run string, img image.Config, cfg []byte, installed, hostname, bo
 			return err
 		}
 	}
-	// cloud-init images (user-data on the boot partition) would otherwise
-	// set their own hostname at first boot.
-	if ud, err := os.ReadFile(filepath.Join(bootCache, "user-data")); err == nil {
-		if err := os.WriteFile(filepath.Join(seed, "user-data"), image.SetCloudInitHostname(ud, hostname), 0o644); err != nil {
-			return err
+	switch {
+	case fb.Mode == "cloud-init" && img.Container == "":
+		// The image's cloud-init reads NoCloud from the boot partition
+		// (Ubuntu, Raspberry Pi OS, Alma): the user's data replaces its own.
+		for name, body := range fb.noCloud() {
+			if err := os.WriteFile(filepath.Join(seed, name), body, 0o644); err != nil {
+				return err
+			}
+		}
+	case fb.Mode == "stage0":
+		// cloud-init images (user-data on the boot partition) would
+		// otherwise set their own hostname at first boot.
+		if ud, err := os.ReadFile(filepath.Join(bootCache, "user-data")); err == nil {
+			if err := os.WriteFile(filepath.Join(seed, "user-data"), image.SetCloudInitHostname(ud, fb.Hostname), 0o644); err != nil {
+				return err
+			}
 		}
 	}
 	if err := writeFile(filepath.Join(run, "seed.cpio"), func(w io.Writer) error {
@@ -771,7 +792,7 @@ func writeSeed(run string, img image.Config, cfg []byte, installed, hostname, bo
 // kernel and its installer initramfs (stage0's agent and dracut hook
 // appended) in config.txt, a cmdline.txt carrying the agent's plan, the
 // seed, and the OCI layout under oci/ for the agent to pull.
-func (a *App) stageContainer(run, layout string, img image.Config, node config.Node, installed, disk, server, bootCaches string) error {
+func (a *App) stageContainer(run, layout string, img image.Config, node config.Node, fb firstBoot, installed, disk, server, bootCaches string) error {
 	ci, err := oci.Open(layout)
 	if err != nil {
 		return err
@@ -782,7 +803,18 @@ func (a *App) stageContainer(run, layout string, img image.Config, node config.N
 	if err != nil {
 		return fmt.Errorf("container %s for %s: %w", img.Container, node.Name, err)
 	}
-	hostname := node.Hostname
+	if fb.Mode == "ignition" && ign == nil {
+		return fmt.Errorf("container %s for %s: firstBoot: ignition needs an Ignition config (ignition: on the node or image, or the pi.provision.ignition label)", img.Container, node.Name)
+	}
+	switch fb.Mode {
+	case "ignition":
+		spec.FirstBoot = fb.Mode
+	case "cloud-init":
+		nc := fb.noCloud()
+		spec.FirstBoot = fb.Mode
+		spec.CloudInit = &container.CloudInit{UserData: string(nc["user-data"]), MetaData: string(nc["meta-data"]),
+			NetworkConfig: string(nc["network-config"])}
+	}
 	digest := strings.TrimPrefix(ci.Digest, "sha256:")
 	bootCache := filepath.Join(bootCaches, digest)
 	if _, err := os.Stat(bootCache); err != nil {
@@ -829,7 +861,7 @@ func (a *App) stageContainer(run, layout string, img image.Config, node config.N
 	// With an Ignition config, the installer's Ignition partitions and
 	// formats the disk first (docs/containers.md).
 	ignition := ""
-	if ign != nil {
+	if spec.Ignition || fb.Mode == "ignition" {
 		ignition = "ignition.firstboot ignition.platform.id=metal ignition.config.url=" + base + "/ignition.ign "
 		b, err := container.ForDisk(ign, "/dev/"+disk)
 		if err != nil {
@@ -867,7 +899,7 @@ func (a *App) stageContainer(run, layout string, img image.Config, node config.N
 		return err
 	}
 
-	if err := writeSeed(run, img, cfg, installed, hostname, bootCache); err != nil {
+	if err := writeSeed(run, img, cfg, fb, installed, bootCache); err != nil {
 		return err
 	}
 	// The resolved layout, which the agent partitions by.
@@ -1015,4 +1047,40 @@ func (w *watcher) Write(p []byte) (int, error) {
 		w.send(e)
 	}
 	return len(p), nil
+}
+
+// firstBoot is how the installed system is configured on first boot
+// (docs/firstboot.md): the node's choice, else the image config's.
+type firstBoot struct {
+	Mode      string // stage0, ignition or cloud-init
+	CloudInit image.CloudInit
+	Node      string
+	Hostname  string
+}
+
+func resolveFirstBoot(node config.Node, img image.Config) firstBoot {
+	fb := firstBoot{Mode: "stage0", Node: node.Name, Hostname: node.Hostname}
+	switch {
+	case node.FirstBoot != "":
+		fb.Mode, fb.CloudInit = node.FirstBoot, node.CloudInit
+	case img.FirstBoot != "":
+		fb.Mode, fb.CloudInit = img.FirstBoot, img.CloudInit
+	}
+	return fb
+}
+
+// noCloud is the NoCloud seed's files: the user's user-data and
+// network-config, and stage0's meta-data (a new instance per install, the
+// node's hostname).
+func (fb firstBoot) noCloud() map[string][]byte {
+	files := map[string][]byte{
+		"meta-data": fmt.Appendf(nil, "instance-id: %s-%d\nlocal-hostname: %s\n", fb.Node, time.Now().Unix(), fb.Hostname),
+	}
+	if fb.CloudInit.UserDataBytes != nil {
+		files["user-data"] = fb.CloudInit.UserDataBytes
+	}
+	if fb.CloudInit.NetworkConfigBytes != nil {
+		files["network-config"] = fb.CloudInit.NetworkConfigBytes
+	}
+	return files
 }

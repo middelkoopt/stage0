@@ -109,11 +109,40 @@ func installContainer(out io.Writer, plan *Plan) (Result, error) {
 	if err := setupRoot(mnt, spec, img.Labels); err != nil {
 		return res, err
 	}
+
 	// A Pi has no clock battery: systemd moves its clock at boot to at
 	// least this file's time, which the agent's clock (set from stage0's
 	// server) makes the install time.
 	if err := touchClockEpoch(mnt, time.Now()); err != nil {
 		return res, err
+	}
+	switch spec.FirstBoot {
+	case "cloud-init":
+		fmt.Fprintln(out, "stage0 agent: writing the cloud-init seed")
+		if err := writeNoCloud(mnt, spec.CloudInit); err != nil {
+			return res, err
+		}
+	case "ignition":
+		if err := ignitionFiles(out, mnt, spec, parts); err != nil {
+			return res, err
+		}
+	}
+	// Layers built without SELinux carry no labels, and an enforcing
+	// system with unlabelled files can't even start systemd (k52; a
+	// first-boot /.autorelabel never gets to run): label everything now,
+	// with the system's own policy.
+	if typ, ok := selinuxType(mnt); ok && selinuxOn(mnt) {
+		fmt.Fprintln(out, "stage0 agent: SELinux: labelling the installed files")
+		fc := filepath.Join(mnt, "etc", "selinux", typ, "contexts", "files", "file_contexts")
+		// Each ext4 filesystem by name: setfiles left a /var mounted inside
+		// the root unlabelled (k52: NetworkManager then failed).
+		args := []string{"-F", "-r", mnt, fc, mnt}
+		for _, i := range mountOrder(spec) {
+			args = append(args, filepath.Join(mnt, spec.Partitions[i].Path))
+		}
+		if err := runTool(io.Discard, "setfiles", args...); err != nil {
+			return res, fmt.Errorf("SELinux labelling (the installer needs setfiles): %w", err)
+		}
 	}
 	syscall.Sync()
 	if err := unmountAll(); err != nil {
@@ -339,4 +368,97 @@ func fetchLayout(url string) (container.Spec, error) {
 		return s, fmt.Errorf("%s: %w", url, err)
 	}
 	return s, nil
+}
+
+// writeNoCloud writes cloud-init's NoCloud seed into the installed root
+// (/var/lib/cloud/seed/nocloud, which cloud-init always looks at), for
+// root only: user-data may hold secrets.
+func writeNoCloud(root string, ci *container.CloudInit) error {
+	if ci == nil {
+		return errors.New("firstBoot cloud-init without its data")
+	}
+	dir := filepath.Join(root, "var", "lib", "cloud", "seed", "nocloud")
+	if err := os.MkdirAll(dir, 0o700); err != nil {
+		return err
+	}
+	for name, body := range map[string]string{"user-data": ci.UserData, "meta-data": ci.MetaData, "network-config": ci.NetworkConfig} {
+		if body == "" {
+			continue
+		}
+		if err := os.WriteFile(filepath.Join(dir, name), []byte(body), 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+// ignitionFiles has the installer's Ignition apply its config's files,
+// users and units to the installed system at root: its files stage, with
+// every partition mounted where it belongs (the FAT ones too), from the
+// config Ignition fetched at boot.
+func ignitionFiles(out io.Writer, root string, spec container.Spec, parts []string) error {
+	last := len(spec.Partitions) - 1
+	var mounted []string
+	defer func() {
+		for _, d := range slices.Backward(mounted) {
+			syscall.Unmount(d, 0)
+		}
+	}()
+	for i, p := range spec.Partitions[:last] {
+		if p.Type != "vfat" { // the ext4 ones are mounted already
+			continue
+		}
+		d := filepath.Join(root, p.Path)
+		if err := mount(parts[i], d, p.Type); err != nil {
+			return err
+		}
+		mounted = append(mounted, d)
+	}
+	// Rocky's Ignition always relabels what it wrote with the system's
+	// SELinux policy (SELINUX=disabled doesn't stop it), so the image
+	// needs one.
+	if _, ok := selinuxType(root); !ok {
+		return errors.New("firstBoot: ignition: the image has no SELinux policy (/etc/selinux/config and its file_contexts), which Rocky's Ignition needs to relabel the files it writes")
+	}
+	fmt.Fprintln(out, "stage0 agent: Ignition: files, users and units")
+	if err := runTool(out, "ignition", "--root="+root, "--platform=metal", "--stage=files", "--log-to-stdout"); err != nil {
+		return err
+	}
+	syscall.Sync()
+	return nil
+}
+
+// selinuxType returns the SELinux policy type the root's
+// /etc/selinux/config names, when that policy's file contexts are there.
+func selinuxType(root string) (string, bool) {
+	b, err := os.ReadFile(filepath.Join(root, "etc", "selinux", "config"))
+	if err != nil {
+		return "", false
+	}
+	typ := ""
+	for l := range strings.Lines(string(b)) {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(l), "SELINUXTYPE="); ok {
+			typ = strings.TrimSpace(v)
+		}
+	}
+	if typ == "" {
+		return "", false
+	}
+	_, err = os.Stat(filepath.Join(root, "etc", "selinux", typ, "contexts", "files", "file_contexts"))
+	return typ, err == nil
+}
+
+// selinuxOn reports whether the root's SELinux is on (a policy, and
+// SELINUX enforcing or permissive).
+func selinuxOn(root string) bool {
+	if _, ok := selinuxType(root); !ok {
+		return false
+	}
+	b, _ := os.ReadFile(filepath.Join(root, "etc", "selinux", "config"))
+	for l := range strings.Lines(string(b)) {
+		if v, ok := strings.CutPrefix(strings.TrimSpace(l), "SELINUX="); ok {
+			return strings.TrimSpace(v) != "disabled"
+		}
+	}
+	return false
 }

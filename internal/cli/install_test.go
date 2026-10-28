@@ -692,7 +692,7 @@ func TestStageBootDir(t *testing.T) {
 	img := image.Config{Name: "u", URL: "https://e.org/u.img.xz", SHA256: "ab", BootDir: "current", Initramfs: "current/initrd.img"}
 	os.WriteFile(filepath.Join(dir, "u.img.xz"), []byte("IMG"), 0o644)
 	run := filepath.Join(dir, "run")
-	if err := a.stage(run, filepath.Join(dir, "u.img.xz"), img, "root=LABEL=writable", "k52", "mmcblk0", "10.0.3.1", boot); err != nil {
+	if err := a.stage(run, filepath.Join(dir, "u.img.xz"), img, firstBoot{Mode: "stage0", Node: "k52", Hostname: "k52"}, "root=LABEL=writable", "mmcblk0", "10.0.3.1", boot); err != nil {
 		t.Fatal(err)
 	}
 	if b, err := os.ReadFile(filepath.Join(run, "current", "cmdline.txt")); err != nil || !strings.Contains(string(b), "stage0.disk=mmcblk0") {
@@ -725,7 +725,7 @@ func TestStageContainer(t *testing.T) {
 	// k52's own layout wins over the labels'.
 	node := config.Node{Name: "k52", Hostname: "k52", Partitions: []container.Partition{
 		{Name: "fw", Size: "256MiB", Type: "vfat", Path: "/boot/efi"}, {Name: "root", Type: "ext4", Path: "/"}}}
-	if err := a.stageContainer(run, layout, img, node, "root=PARTLABEL=root", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err != nil {
+	if err := a.stageContainer(run, layout, img, node, firstBoot{Mode: "stage0", Node: "k52", Hostname: "k52"}, "root=PARTLABEL=root", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err != nil {
 		t.Fatal(err)
 	}
 	var spec container.Spec
@@ -769,7 +769,7 @@ func TestStageContainerIPv6(t *testing.T) {
 	os.WriteFile(agent, []byte("AGENT"), 0o755)
 	a := &App{Executable: func() (string, error) { return agent, nil }, CheckStatic: func(string) error { return nil }}
 	run := filepath.Join(dir, "run")
-	if err := a.stageContainer(run, layout, image.Config{Name: "ct", Container: "rocky"}, config.Node{Name: "k52", Hostname: "k52"},
+	if err := a.stageContainer(run, layout, image.Config{Name: "ct", Container: "rocky"}, config.Node{Name: "k52", Hostname: "k52"}, firstBoot{Mode: "stage0", Node: "k52", Hostname: "k52"},
 		"root=PARTLABEL=piroot", "mmcblk0", "[fd00:10:3::1]", filepath.Join(dir, "boot")); err != nil {
 		t.Fatal(err)
 	}
@@ -801,7 +801,7 @@ func TestStageContainerIgnition(t *testing.T) {
 	}
 	node := config.Node{Name: "k52", Hostname: "k52", Partitions: ps, IgnitionConfig: ign}
 	run := filepath.Join(dir, "run")
-	if err := a.stageContainer(run, layout, image.Config{Name: "ct", Container: "rocky"}, node,
+	if err := a.stageContainer(run, layout, image.Config{Name: "ct", Container: "rocky"}, node, firstBoot{Mode: "stage0", Node: "k52", Hostname: "k52"},
 		"root=PARTLABEL=piroot", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err != nil {
 		t.Fatal(err)
 	}

@@ -445,3 +445,28 @@ func TestLoadContainerIgnition(t *testing.T) {
 		t.Error("a missing ignition file: want error")
 	}
 }
+
+func TestLoadFirstBoot(t *testing.T) {
+	dir := t.TempDir()
+	os.WriteFile(filepath.Join(dir, "user-data"), []byte("#cloud-config\nusers: []\n"), 0o644)
+	writeConfig(t, dir, "ci", "url: https://e.org/u.img.xz\nsha256: "+strings.Repeat("ab", 32)+"\ncmdline: x\nfirstBoot: cloud-init\ncloudInit: {userData: user-data}\n")
+	c, err := Load(dir, "ci")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if c.FirstBoot != "cloud-init" || string(c.CloudInit.UserDataBytes) != "#cloud-config\nusers: []\n" {
+		t.Errorf("config %+v", c)
+	}
+	for name, body := range map[string]string{
+		"no-userdata":  "firstBoot: cloud-init\n",
+		"bad-mode":     "firstBoot: puppet\n",
+		"stray":        "cloudInit: {userData: user-data}\n",
+		"ign-diskimg":  "firstBoot: ignition\n",
+		"missing-file": "firstBoot: cloud-init\ncloudInit: {userData: nope}\n",
+	} {
+		writeConfig(t, dir, name, "url: https://e.org/u.img.xz\nsha256: "+strings.Repeat("ab", 32)+"\ncmdline: x\n"+body)
+		if _, err := Load(dir, name); err == nil {
+			t.Errorf("%s: want error", name)
+		}
+	}
+}

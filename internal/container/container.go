@@ -35,6 +35,20 @@ type Spec struct {
 	// Ignition: the installer's Ignition makes the partitions and
 	// filesystems (from the config stage0 serves); the agent only mounts.
 	Ignition bool `json:"ignition,omitempty"`
+
+	// FirstBoot: "ignition" (the agent has the installer's Ignition apply
+	// the config's files, users and units to the installed system) or
+	// "cloud-init" (it writes CloudInit as a NoCloud seed); else stage0's
+	// own (docs/firstboot.md).
+	FirstBoot string     `json:"firstBoot,omitempty"`
+	CloudInit *CloudInit `json:"cloudInit,omitempty"`
+}
+
+// CloudInit is a NoCloud seed's files.
+type CloudInit struct {
+	UserData      string `json:"userData"`
+	MetaData      string `json:"metaData"`
+	NetworkConfig string `json:"networkConfig,omitempty"`
 }
 
 // Layout is one level's say on the partitions: a list, or an Ignition
@@ -44,13 +58,16 @@ type Layout struct {
 	Ignition   []byte // the Ignition config, JSON
 }
 
-func (l Layout) given() bool { return len(l.Partitions) > 0 || len(l.Ignition) > 0 }
+// given reports whether the level gives a layout: a partition list, or an
+// Ignition config with storage (one without only configures first boot).
+func (l Layout) given() bool { return len(l.Partitions) > 0 || hasDisks(l.Ignition) }
 
 // Resolve settles the spec: the container's labels (a partition list, or
 // an Ignition config), overridden by the image config's layout and
 // installer, the layout overridden in turn by the node's. Any of them may
-// be missing; the result is checked. When the winning layout is an
-// Ignition config, it is returned too, for the installer's Ignition.
+// be missing; the result is checked. It also returns the Ignition config
+// for the installer's Ignition: the winning layout's when it is one, else
+// the most specific one without storage (first boot only); nil if none.
 func Resolve(labels map[string]string, image Layout, imageInstaller *Installer, node Layout) (Spec, []byte, error) {
 	var s Spec
 	var layout Layout
@@ -63,12 +80,21 @@ func Resolve(labels map[string]string, image Layout, imageInstaller *Installer, 
 		if err := json.Unmarshal([]byte(pl), &layout.Partitions); err != nil {
 			return s, nil, fmt.Errorf("label pi.provision.partition: %w", err)
 		}
-	case hasIgnition:
+	case hasIgnition && hasDisks([]byte(il)):
 		ps, err := FromIgnition([]byte(il))
 		if err != nil {
 			return s, nil, fmt.Errorf("label pi.provision.ignition: %w", err)
 		}
 		layout = Layout{Partitions: ps, Ignition: []byte(il)}
+	}
+	// An Ignition config for first boot only: the most specific one
+	// without storage (one with storage that lost the layout must not
+	// reach Ignition, which would partition by it).
+	var ign []byte
+	for _, c := range [][]byte{[]byte(il), image.Ignition, node.Ignition} {
+		if len(c) > 0 && !hasDisks(c) {
+			ign = c
+		}
 	}
 	if v, ok := labels["pi.provision.installer"]; ok {
 		if err := json.Unmarshal([]byte(v), &s.Installer); err != nil {
@@ -93,7 +119,13 @@ func Resolve(labels map[string]string, image Layout, imageInstaller *Installer, 
 	}
 	s.Partitions = append([]Partition(nil), layout.Partitions...) // Validate sets Bytes; leave the callers' alone
 	s.Ignition = len(layout.Ignition) > 0
-	return s, layout.Ignition, s.Validate()
+	if s.Ignition {
+		if ign != nil {
+			return s, nil, errors.New("one Ignition config partitions and another configures first boot: Ignition takes one, so put both in one")
+		}
+		ign = layout.Ignition
+	}
+	return s, ign, s.Validate()
 }
 
 // Validate checks the spec and sets each partition's Bytes.

@@ -103,6 +103,9 @@ func ForDisk(config []byte, dev string) ([]byte, error) {
 	}
 	st, _ := c["storage"].(map[string]any)
 	disks, _ := st["disks"].([]any)
+	if len(disks) == 0 { // first boot only: nothing to install on
+		return config, nil
+	}
 	if len(disks) != 1 {
 		return nil, fmt.Errorf("ignition: want one disk in storage.disks, have %d", len(disks))
 	}
@@ -137,4 +140,10 @@ func ForDisk(config []byte, dev string) ([]byte, error) {
 		}
 	}
 	return json.MarshalIndent(c, "", "  ")
+}
+
+// hasDisks reports whether an Ignition config partitions a disk.
+func hasDisks(config []byte) bool {
+	var ig ignition
+	return len(config) > 0 && json.Unmarshal(config, &ig) == nil && len(ig.Storage.Disks) > 0
 }

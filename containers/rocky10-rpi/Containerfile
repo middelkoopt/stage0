@@ -23,13 +23,17 @@ LABEL pi.provision.resolv='"../run/NetworkManager/no-stub-resolv.conf"'
 RUN dnf install -y ca-certificates procps zstd jq yq && \
     dnf install -y initscripts-service cpio pigz && \
     dnf install -y openssh openssh-clients openssh-server iproute iputils NetworkManager sudo chrony && \
+    dnf install -y cloud-init selinux-policy-targeted && \
     dnf install -y nano vim less bash-completion man
 
 ## Configure system. An empty root password opens the serial console
 ## only: sshd refuses empty passwords. A Pi has no clock battery: chrony
 ## sets the time (stage0's agent sets /usr/lib/clock-epoch to start near it).
 ENV OS_RELEASE='el10'
+## Ignition writes users' keys to ~/.ssh/authorized_keys.d/ignition: let
+## sshd read that file too (it takes no wildcards there).
 RUN passwd -d root && \
+    echo 'AuthorizedKeysFile .ssh/authorized_keys .ssh/authorized_keys.d/ignition' > /etc/ssh/sshd_config.d/40-ignition-keys.conf && \
     sed -i '/alias/d' /root/.bashrc && \
     systemctl enable sshd.service chronyd.service
 
