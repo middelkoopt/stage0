@@ -1,3 +1,4 @@
 .secrets
 /stage0
+/labctl
 /logs

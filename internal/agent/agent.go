@@ -1,6 +1,6 @@
 // Package agent is stage0 running on the node, as PID 1 of the initramfs
 // stage0 builds. So far it reports what the node has: one line on the
-// console, "STAGE0-REPORT {json}", that stage0 console --until can wait for.
+// console, "STAGE0-REPORT {json}", that labctl console --until can wait for.
 package agent
 
 import (

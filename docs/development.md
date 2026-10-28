@@ -6,6 +6,7 @@
 
 ```bash
 go build ./cmd/stage0          # binary in the repo root (git-ignored)
+go build ./cmd/labctl          # the lab tool, likewise
 go test ./...                  # unit tests; no network or hardware needed
 go vet ./... && gofmt -l .     # must be clean
 ```
@@ -20,7 +21,8 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | Path | What |
 | --- | --- |
 | `cmd/stage0` | `main`: signal handling, exit code; runs the agent instead when it is PID 1 |
-| `internal/cli` | Commands, verb first (`get ports`, `power on k53`, `set port`, `console`, `serve`, `build initrd`, `build seed`, `install`, `get address`, `get nodes`, `check`, `vswitch`, `bmc`); every command supports `-o json`, write commands `--dry-run` |
+| `cmd/labctl` | `main` of the lab tool |
+| `internal/cli` | Commands of both binaries, verb first. stage0: `install`, `serve`, `build initrd`, `build seed`, `get address`, `get nodes`, `check`, `vswitch`. labctl: `get ports`, `get vlans`, `power on k53`, `set port`, `console`, `bmc`; every command supports `-o json`, write commands `--dry-run` |
 | `internal/config` | `site.yaml` (committed: switches; nodes with console, install disk, network, or `vm:` for test bed VMs; networks with their VLAN, IPv6 prefix and NTP servers; a node may give a container layout) and `.secrets` (git-ignored, must be mode 600); unknown fields are errors |
 | `internal/dhcpd` | DHCPv4 for network-booting nodes: answers PXE clients, then the same MACs' kernels (`ip=dhcp`, no vendor class) with the same address; stage0's agent asking itself (vendor class `stage0-agent`, a VM booted with `-kernel`); installed nodes get plain leases (24 h) and no answer to PXE; in-memory leases; the Pi's option 43, or `uki.efi` (TFTP) or its URL (UEFI HTTP boot) for aarch64 UEFI clients; in proxy mode, ProxyDHCP offers without addresses and port 4011 ([network modes](network-modes.md)); the network's NTP servers (option 42) |
 | `internal/httpd` | HTTP (port 80) from the same root, every request logged; for images too big or slow for TFTP. Read-only except agents' `POST /stage0/report/<kind>`, when a listener is set |
@@ -34,7 +36,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/uki` | Builds a Unified Kernel Image: systemd's EFI stub plus `.osrel`, `.cmdline`, `.initrd`, `.linux` sections; unwraps arm64 zboot kernels |
 | `internal/deb` | Reads one file out of a `.deb` (ar, then `data.tar.{xz,zst,gz}`), for the VMs' UEFI firmware and the UKI stub |
 | `internal/registry` | Pulls a container from an OCI registry (anonymous or with credentials: Basic, or bearer tokens; linux/arm64 from an index) into an OCI layout in the cache, every blob checked by digest |
-| `ipmi` | A small IPMI 2.0 BMC over the LAN (RMCP+, cipher suites 3 and 17) for `stage0 bmc`: chassis power and SOL backed by a node's PoE port and console ([bmc](bmc.md)) |
+| `ipmi` | A small IPMI 2.0 BMC over the LAN (RMCP+, cipher suites 3 and 17) for `labctl bmc`: chassis power and SOL backed by a node's PoE port and console ([bmc](bmc.md)) |
 | `internal/oci` | Reads an OCI image layout (from a directory or over HTTP, every blob checked by digest): labels, named files, a directory tree, or the whole image unpacked (whiteouts, links, modes, xattrs) |
 | `internal/container` | How to install a container: partitions and installer kernel/initramfs, resolved from the node, the image config and the container's `pi.provision.*` labels (a partition list or an Ignition config), and checked ([containers](containers.md)) |
 | `internal/image` | Image config files (`images/<name>.yaml`), download and SHA-256 check into the cache, boot files out of the image's boot partition |
@@ -108,7 +110,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
   driver always logs out.
 - `.secrets` takes `password:` or `loginHash:` (the value the older
   `../lab/setup/switch.py` stored). This lab currently uses `loginHash:`.
-- Port labels on the switch are the machine names, so `stage0 get ports` is
+- Port labels on the switch are the machine names, so `labctl get ports` is
   also the lab inventory.
 - **Writes** post the forms the web UI posts; the switch's replies carry
   nothing useful, so each write re-reads the switch in the same session and

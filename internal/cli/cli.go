@@ -1,5 +1,5 @@
-// Package cli is stage0's command line: verb first, then the thing acted on
-// ("stage0 get ports"). Every command can print JSON (-o json) so a person and
+// Package cli is the command line of stage0 and labctl: verb first, then
+// the thing acted on ("stage0 get nodes", "labctl get ports"). Every command can print JSON (-o json) so a person and
 // an agent can drive the same steps.
 package cli
 
@@ -48,15 +48,38 @@ type App struct {
 }
 
 // New returns the stage0 root command wired to the real world.
-func New() *cobra.Command {
-	return (&App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic, Executable: os.Executable, FindAddress: neigh.Find, Reach: reach.Wait, OpenTap: vswitch.Tap, StartVM: startQEMU}).Command()
+func New() *cobra.Command { return realApp().Command() }
+
+// NewLab returns the labctl root command wired to the real world.
+func NewLab() *cobra.Command { return realApp().LabCommand() }
+
+func realApp() *App {
+	return &App{Stdout: os.Stdout, OpenSwitch: openSwitch, OpenConsole: console.Open, OpenNetwork: openNetwork, CheckStatic: initrd.CheckStatic, Executable: os.Executable, FindAddress: neigh.Find, Reach: reach.Wait, OpenTap: vswitch.Tap, StartVM: startQEMU}
 }
 
-// Command builds the command tree.
+// Command builds stage0's command tree: installing and serving.
 func (a *App) Command() *cobra.Command {
+	root := a.root("stage0", "Install a head node from nothing but this repo and the provisioning network")
+	root.PersistentFlags().StringVar(&a.statePath, "state", "", "records of installed nodes (default: $XDG_STATE_HOME/stage0 or ~/.local/state/stage0)")
+	root.AddCommand(getCommand(a.addressCommand(), a.nodesCommand()), a.serveCommand(), a.buildCommand(), a.installCommand(),
+		a.checkCommand(), a.vswitchCommand(), a.versionCommand(), agentCommand())
+	return root
+}
+
+// LabCommand builds labctl's command tree: the lab's switch, power,
+// consoles and the Pis' BMCs, for stage0's users and stage 1 alike.
+func (a *App) LabCommand() *cobra.Command {
+	root := a.root("labctl", "Drive the lab: switch ports and VLANs, PoE power, serial consoles, the Pis' BMCs")
+	root.AddCommand(getCommand(a.switchGetCommands()...), a.powerCommand(), a.setCommand(), a.consoleCommand(),
+		a.bmcCommand(), a.versionCommand())
+	return root
+}
+
+// root is a root command with the flags both trees share.
+func (a *App) root(use, short string) *cobra.Command {
 	root := &cobra.Command{
-		Use:           "stage0",
-		Short:         "Install a head node from nothing but this repo and the provisioning network",
+		Use:           use,
+		Short:         short,
 		SilenceUsage:  true,
 		SilenceErrors: true,
 	}
@@ -66,9 +89,6 @@ func (a *App) Command() *cobra.Command {
 	f.StringVarP(&a.output, "output", "o", "text", "output format: text or json")
 	f.DurationVar(&a.timeout, "timeout", 30*time.Second, "time limit for the whole command")
 	f.StringVar(&a.switchName, "switch", "", "switch to use (default: the only one in the site config)")
-	f.StringVar(&a.statePath, "state", "", "records of installed nodes (default: $XDG_STATE_HOME/stage0 or ~/.local/state/stage0)")
-
-	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand(), a.installCommand(), a.checkCommand(), a.vswitchCommand(), a.bmcCommand(), a.versionCommand(), agentCommand())
 	return root
 }
 

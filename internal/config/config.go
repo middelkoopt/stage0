@@ -76,7 +76,7 @@ type Node struct {
 	FirstBoot string          `yaml:"firstBoot,omitempty"`
 	CloudInit image.CloudInit `yaml:"cloudInit,omitempty"`
 
-	// BMC makes `stage0 bmc` answer IPMI for the node (docs/bmc.md).
+	// BMC makes `labctl bmc` answer IPMI for the node (docs/bmc.md).
 	BMC *BMC `yaml:"bmc,omitempty"`
 }
 
@@ -404,7 +404,7 @@ func (s *Site) Switch(name string) (Switch, error) {
 // Secrets is .secrets.
 type Secrets struct {
 	Switches map[string]SwitchSecret `yaml:"switches"`
-	// BMC is the login of the nodes' virtual BMCs (stage0 bmc).
+	// BMC is the login of the nodes' virtual BMCs (labctl bmc).
 	BMC *BMCSecret `yaml:"bmc,omitempty"`
 	// Registries are container registry logins by host (e.g. quay.io,
 	// localhost:5000), for private repositories.

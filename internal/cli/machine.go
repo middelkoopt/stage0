@@ -84,7 +84,7 @@ func (a *App) newPoEMachine(ctx context.Context, node config.Node, n config.Netw
 			return nil, fmt.Errorf("network %q: %w", n.Name, err)
 		}
 		if port.PVID != v.ID && !setPort {
-			return nil, fmt.Errorf("%s has PVID %d, not %s(%d); move it with --set-port or: stage0 set port %s --pvid %s",
+			return nil, fmt.Errorf("%s has PVID %d, not %s(%d); move it with --set-port or: labctl set port %s --pvid %s",
 				label(port), port.PVID, v.Name, v.ID, node.Name, v.Name)
 		}
 		if port.PVID != v.ID {

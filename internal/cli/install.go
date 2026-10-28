@@ -76,7 +76,7 @@ func (a *App) installCommand() *cobra.Command {
 			"  the disk; stop serving, power it off and on again, and wait for the\n" +
 			"  installed system's prompt.\n" +
 			"The node's switch port must be on the network's VLAN: --set-port moves it\n" +
-			"there (stage0 set port does it by hand). Console output goes to logs/<node>.log, serve's to logs/<node>-serve.log.",
+			"there (labctl set port does it by hand). Console output goes to logs/<node>.log, serve's to logs/<node>-serve.log.",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.checkOutput(); err != nil {

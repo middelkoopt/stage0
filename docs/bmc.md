@@ -1,6 +1,6 @@
 # Virtual BMC
 
-`stage0 bmc` answers IPMI for nodes that have no BMC of their own (the
+`labctl bmc` answers IPMI for nodes that have no BMC of their own (the
 Pis), so stage-1 tools can drive them like servers: chassis power switches
 the node's PoE port, Serial-over-LAN bridges its serial console. Code: `ipmi` (the protocol),
 `internal/cli/bmc.go` (nodes, switch).
@@ -14,7 +14,7 @@ the node's PoE port, Serial-over-LAN bridges its serial console. Code: `ipmi` (t
   k400 6238.
 - `.secrets`: the login, `bmc: {user: …, password: …}` (password at most
   20 bytes, IPMI 2.0's limit), the same for every node.
-- `stage0 bmc [node…]` serves them until interrupted, each on stage0's
+- `labctl bmc [node…]` serves them until interrupted, each on stage0's
   address on the node's network (`10.0.3.1` on pinet) unless `--listen`
   gives another. It opens the switch once and changes one port at a time.
 
@@ -51,7 +51,7 @@ line.)
   (enabled, 115200 baud, channel 1, this UDP port), Activate and
   Deactivate Payload, Get Payload Activation Status; one SOL session per
   node. Activating opens the node's serial console (its `console:` in
-  `site.yaml`) and deactivating closes it, so `stage0 console` and SOL
+  `site.yaml`) and deactivating closes it, so `labctl console` and SOL
   can't hold the port at once. Output goes in packets of up to 200
   characters, one in flight, resent every 500 ms up to 7 times until
   acknowledged; typed characters are written to the console and

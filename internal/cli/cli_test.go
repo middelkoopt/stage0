@@ -14,6 +14,7 @@ import (
 
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/netswitch"
+	"github.com/spf13/cobra"
 )
 
 // fakeSwitch serves a fixed status and records writes instead of making them.
@@ -89,21 +90,42 @@ networks:
   - {name: vnet, interface: stage0tap0, address: 10.0.9.1/24, pool: 10.0.9.100-10.0.9.199}
 `
 
-// run executes the CLI against testSite, with the switch served by sw.
+// run executes stage0 against testSite, with the switch served by sw.
 func run(t *testing.T, sw netswitch.Controller, args ...string) (string, error) {
 	t.Helper()
-	return runApp(t, &App{
+	return runApp(t, switchApp(t, sw), args...)
+}
+
+// runLab is run for labctl.
+func runLab(t *testing.T, sw netswitch.Controller, args ...string) (string, error) {
+	t.Helper()
+	return runLabApp(t, switchApp(t, sw), args...)
+}
+
+func switchApp(t *testing.T, sw netswitch.Controller) *App {
+	return &App{
 		OpenSwitch: func(c config.Switch, _ config.SwitchSecret) (netswitch.Controller, error) {
 			if c.Name != "lab" {
 				t.Errorf("opened switch %q", c.Name)
 			}
 			return sw, nil
 		},
-	}, args...)
+	}
 }
 
-// runApp executes the CLI against testSite with app's hooks.
+// runApp executes stage0 against testSite with app's hooks.
 func runApp(t *testing.T, app *App, args ...string) (string, error) {
+	t.Helper()
+	return runTree(t, app, app.Command, args...)
+}
+
+// runLabApp is runApp for labctl.
+func runLabApp(t *testing.T, app *App, args ...string) (string, error) {
+	t.Helper()
+	return runTree(t, app, app.LabCommand, args...)
+}
+
+func runTree(t *testing.T, app *App, tree func() *cobra.Command, args ...string) (string, error) {
 	t.Helper()
 	dir := t.TempDir()
 	site := filepath.Join(dir, "site.yaml")
@@ -112,11 +134,14 @@ func runApp(t *testing.T, app *App, args ...string) (string, error) {
 	}
 	var out bytes.Buffer
 	app.Stdout = &out
-	cmd := app.Command()
+	cmd := tree()
+	flags := []string{"--site", site, "--secrets", filepath.Join(dir, ".secrets")}
 	// --state defaults to an empty directory, so tests never read the real
 	// install records; a later --state in args wins.
-	cmd.SetArgs(append([]string{"--site", site, "--secrets", filepath.Join(dir, ".secrets"),
-		"--state", filepath.Join(dir, "state")}, args...))
+	if cmd.PersistentFlags().Lookup("state") != nil {
+		flags = append(flags, "--state", filepath.Join(dir, "state"))
+	}
+	cmd.SetArgs(append(flags, args...))
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	err := cmd.ExecuteContext(context.Background())
@@ -124,7 +149,7 @@ func runApp(t *testing.T, app *App, args ...string) (string, error) {
 }
 
 func TestGetPortsText(t *testing.T) {
-	out, err := run(t, &fakeSwitch{st: testStatus()}, "get", "ports")
+	out, err := runLab(t, &fakeSwitch{st: testStatus()}, "get", "ports")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -146,7 +171,7 @@ func TestGetPortsText(t *testing.T) {
 }
 
 func TestGetPortsJSON(t *testing.T) {
-	out, err := run(t, &fakeSwitch{st: testStatus()}, "get", "ports", "-o", "json")
+	out, err := runLab(t, &fakeSwitch{st: testStatus()}, "get", "ports", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -160,7 +185,7 @@ func TestGetPortsJSON(t *testing.T) {
 }
 
 func TestGetVLANs(t *testing.T) {
-	out, err := run(t, &fakeSwitch{st: testStatus()}, "get", "vlans")
+	out, err := runLab(t, &fakeSwitch{st: testStatus()}, "get", "vlans")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -170,14 +195,14 @@ func TestGetVLANs(t *testing.T) {
 }
 
 func TestGetPortsSwitchError(t *testing.T) {
-	_, err := run(t, &fakeSwitch{err: errors.New("boom")}, "get", "ports")
+	_, err := runLab(t, &fakeSwitch{err: errors.New("boom")}, "get", "ports")
 	if err == nil || !strings.Contains(err.Error(), "boom") {
 		t.Errorf("err = %v", err)
 	}
 }
 
 func TestUnknownOutputFormat(t *testing.T) {
-	if _, err := run(t, &fakeSwitch{st: testStatus()}, "get", "ports", "-o", "xml"); err == nil {
+	if _, err := runLab(t, &fakeSwitch{st: testStatus()}, "get", "ports", "-o", "xml"); err == nil {
 		t.Error("want error for -o xml")
 	}
 }
@@ -204,7 +229,7 @@ func TestBMCNode(t *testing.T) {
 
 func TestBMCRefuses(t *testing.T) {
 	// testSite has no bmc: nodes, and no .secrets.
-	if _, err := run(t, &fakeSwitch{st: testStatus()}, "bmc"); err == nil || !strings.Contains(err.Error(), "bmc:") {
+	if _, err := runLab(t, &fakeSwitch{st: testStatus()}, "bmc"); err == nil || !strings.Contains(err.Error(), "bmc:") {
 		t.Errorf("err = %v", err)
 	}
 }

@@ -26,7 +26,7 @@ func (a *App) consoleCommand() *cobra.Command {
 			"logs/<node>.log. Runs until interrupted, until --timeout if given, or until\n" +
 			"the output matches --until. With -o json, prints only a summary at the end.\n" +
 			"--send types text first (Go escapes: \\r for Enter, \\x03 for Ctrl-C), e.g.\n" +
-			"  stage0 console k52 --send 'root\\r' --until 'Password:'",
+			"  labctl console k52 --send 'root\\r' --until 'Password:'",
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if err := a.checkOutput(); err != nil {
@@ -72,9 +72,9 @@ func (a *App) consoleCommand() *cobra.Command {
 				return err
 			}
 			defer port.Close()
-			fmt.Fprintf(log, "\n=== stage0 console %s %s %s ===\n", node.Name, node.Console.Device, time.Now().Format(time.RFC3339))
+			fmt.Fprintf(log, "\n=== labctl console %s %s %s ===\n", node.Name, node.Console.Device, time.Now().Format(time.RFC3339))
 			if text != "" {
-				fmt.Fprintf(log, "=== stage0 console %s sent %q ===\n", node.Name, text)
+				fmt.Fprintf(log, "=== labctl console %s sent %q ===\n", node.Name, text)
 				if _, err := io.WriteString(port, text); err != nil {
 					return fmt.Errorf("console %s: sending: %w", node.Name, err)
 				}

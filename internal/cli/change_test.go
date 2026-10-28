@@ -9,7 +9,7 @@ import (
 
 func TestPowerOn(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	out, err := run(t, sw, "power", "on", "k52")
+	out, err := runLab(t, sw, "power", "on", "k52")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -23,7 +23,7 @@ func TestPowerOn(t *testing.T) {
 
 func TestPowerOffByPortNumber(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	if _, err := run(t, sw, "power", "off", "2"); err != nil {
+	if _, err := runLab(t, sw, "power", "off", "2"); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(sw.writes, []string{"poe 2 false"}) {
@@ -32,7 +32,7 @@ func TestPowerOffByPortNumber(t *testing.T) {
 }
 
 func TestPowerAlreadyOn(t *testing.T) {
-	out, err := run(t, &fakeSwitch{st: testStatus()}, "power", "on", "k53")
+	out, err := runLab(t, &fakeSwitch{st: testStatus()}, "power", "on", "k53")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -43,7 +43,7 @@ func TestPowerAlreadyOn(t *testing.T) {
 
 func TestPowerCycle(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	out, err := run(t, sw, "power", "cycle", "k53")
+	out, err := runLab(t, sw, "power", "cycle", "k53")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,7 +54,7 @@ func TestPowerCycle(t *testing.T) {
 
 func TestPowerCycleOffPortRefusedBeforeWriting(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	_, err := run(t, sw, "power", "cycle", "k52")
+	_, err := runLab(t, sw, "power", "cycle", "k52")
 	if err == nil || !strings.Contains(err.Error(), "off") || len(sw.writes) != 0 {
 		t.Errorf("err = %v, writes = %q; want a PoE-is-off error and no write", err, sw.writes)
 	}
@@ -62,7 +62,7 @@ func TestPowerCycleOffPortRefusedBeforeWriting(t *testing.T) {
 
 func TestPowerDryRun(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	out, err := run(t, sw, "power", "on", "k52", "--dry-run")
+	out, err := runLab(t, sw, "power", "on", "k52", "--dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -76,19 +76,19 @@ func TestPowerDryRun(t *testing.T) {
 
 func TestPowerNoPoE(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	if _, err := run(t, sw, "power", "on", "16"); err == nil || len(sw.writes) != 0 {
+	if _, err := runLab(t, sw, "power", "on", "16"); err == nil || len(sw.writes) != 0 {
 		t.Errorf("err = %v, writes = %q; want an error and no write", err, sw.writes)
 	}
 }
 
 func TestPowerUnknownNode(t *testing.T) {
-	if _, err := run(t, &fakeSwitch{st: testStatus()}, "power", "on", "k99"); err == nil {
+	if _, err := runLab(t, &fakeSwitch{st: testStatus()}, "power", "on", "k99"); err == nil {
 		t.Error("want error for unknown node")
 	}
 }
 
 func TestPowerJSON(t *testing.T) {
-	out, err := run(t, &fakeSwitch{st: testStatus()}, "power", "on", "k52", "-o", "json")
+	out, err := runLab(t, &fakeSwitch{st: testStatus()}, "power", "on", "k52", "-o", "json")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -111,7 +111,7 @@ func TestPowerJSON(t *testing.T) {
 
 func TestSetPort(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	out, err := run(t, sw, "set", "port", "k53", "--pvid", "piwulf", "--tagged", "pinet,23")
+	out, err := runLab(t, sw, "set", "port", "k53", "--pvid", "piwulf", "--tagged", "pinet,23")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -126,7 +126,7 @@ func TestSetPort(t *testing.T) {
 
 func TestSetPortKeepsWhatIsNotGiven(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	if _, err := run(t, sw, "set", "port", "k53", "--tagged", "23"); err != nil {
+	if _, err := runLab(t, sw, "set", "port", "k53", "--tagged", "23"); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(sw.writes, []string{"vlans 2 3 [23]"}) {
@@ -136,7 +136,7 @@ func TestSetPortKeepsWhatIsNotGiven(t *testing.T) {
 
 func TestSetPortClearTagged(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	if _, err := run(t, sw, "set", "port", "k53", "--tagged="); err != nil {
+	if _, err := runLab(t, sw, "set", "port", "k53", "--tagged="); err != nil {
 		t.Fatal(err)
 	}
 	if !reflect.DeepEqual(sw.writes, []string{"vlans 2 3 []"}) {
@@ -146,21 +146,21 @@ func TestSetPortClearTagged(t *testing.T) {
 
 func TestSetPortNeedsAChange(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	if _, err := run(t, sw, "set", "port", "k53"); err == nil || len(sw.writes) != 0 {
+	if _, err := runLab(t, sw, "set", "port", "k53"); err == nil || len(sw.writes) != 0 {
 		t.Errorf("err = %v, writes = %q; want an error asking for --pvid or --tagged", err, sw.writes)
 	}
 }
 
 func TestSetPortUnknownVLAN(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	if _, err := run(t, sw, "set", "port", "k53", "--pvid", "cable"); err == nil || len(sw.writes) != 0 {
+	if _, err := runLab(t, sw, "set", "port", "k53", "--pvid", "cable"); err == nil || len(sw.writes) != 0 {
 		t.Errorf("err = %v, writes = %q; want an error and no write", err, sw.writes)
 	}
 }
 
 func TestSetPortDryRun(t *testing.T) {
 	sw := &fakeSwitch{st: testStatus()}
-	out, err := run(t, sw, "set", "port", "k53", "--pvid", "piwulf", "--tagged", "pinet,coffee", "--dry-run")
+	out, err := runLab(t, sw, "set", "port", "k53", "--pvid", "piwulf", "--tagged", "pinet,coffee", "--dry-run")
 	if err != nil {
 		t.Fatal(err)
 	}

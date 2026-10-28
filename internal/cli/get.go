@@ -12,11 +12,18 @@ import (
 	"github.com/middelkoopt/stage0/netswitch"
 )
 
-func (a *App) getCommand() *cobra.Command {
+// getCommand is "get" with subs under it.
+func getCommand(subs ...*cobra.Command) *cobra.Command {
 	get := &cobra.Command{
 		Use:   "get",
 		Short: "Show the current state of something",
 	}
+	get.AddCommand(subs...)
+	return get
+}
+
+// switchGetCommands are labctl's get ports and get vlans.
+func (a *App) switchGetCommands() []*cobra.Command {
 	status := func(cmd *cobra.Command) (netswitch.Status, error) {
 		if err := a.checkOutput(); err != nil {
 			return netswitch.Status{}, err
@@ -30,8 +37,7 @@ func (a *App) getCommand() *cobra.Command {
 		return r.Status(ctx)
 	}
 
-	get.AddCommand(a.addressCommand(), a.nodesCommand())
-	get.AddCommand(&cobra.Command{
+	ports := &cobra.Command{
 		Use:   "ports",
 		Short: "Switch ports: label, link, PoE and VLANs",
 		Args:  cobra.NoArgs,
@@ -45,8 +51,8 @@ func (a *App) getCommand() *cobra.Command {
 			}
 			return a.writePorts(st)
 		},
-	})
-	get.AddCommand(&cobra.Command{
+	}
+	vlans := &cobra.Command{
 		Use:   "vlans",
 		Short: "VLANs defined on the switch",
 		Args:  cobra.NoArgs,
@@ -65,8 +71,8 @@ func (a *App) getCommand() *cobra.Command {
 			}
 			return w.Flush()
 		},
-	})
-	return get
+	}
+	return []*cobra.Command{ports, vlans}
 }
 
 func (a *App) writePorts(st netswitch.Status) error {

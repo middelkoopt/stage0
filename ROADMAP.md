@@ -127,7 +127,7 @@ HTTP), the agent, initramfs and seed builders (see
    which needs Go 1.27.3 or later (stage0 is on 1.26). The raw-socket
    port waits for it, as stage0 must serve through a netstack port there.
 3. Pi 5 over IPv6. Done (`install --ipv6`, k52).
-4. **Pis' virtual BMC:** done (`stage0 bmc`: IPMI 2.0 with power by PoE and
+4. **Pis' virtual BMC:** done (`labctl bmc`: IPMI 2.0 with power by PoE and
    SOL by the serial console, [bmc](docs/bmc.md); `stage0 get nodes -o
    json` for stage 1).
 5. Ignition for container partitioning, and first-boot configuration by
@@ -141,7 +141,9 @@ HTTP), the agent, initramfs and seed builders (see
    Pis) and none (k400) ([network modes](docs/network-modes.md)).
 
 Dropped (BE1): install-once state and workflow plans (nothing needs
-them); state export is `stage0 get nodes -o json`, above.
+them); state export is `stage0 get nodes -o json`, above. Dropped (BK2,
+BM2): a resident serve that installs hand work to; `stage0 serve` stays
+optional, for mode own, to keep installed nodes' addresses.
 
 ## Out of scope
 

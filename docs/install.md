@@ -35,7 +35,7 @@ Platform facts are in [`netboot.md`](netboot.md), image facts in
 
 `install` does steps 2-9 below; step 1 is set up once.
 
-1. **Network.** The node's switch port has PVID `pinet` (`stage0 set port`);
+1. **Network.** The node's switch port has PVID `pinet` (`labctl set port`);
    the host's `eth0.3` carries `10.0.3.1/24` (systemd-networkd, not stage0).
 2. **Stage.** Download the image into `~/.cache/stage0` (once; checked
    against its SHA-256), copy its boot partition's files out (in Go, cached

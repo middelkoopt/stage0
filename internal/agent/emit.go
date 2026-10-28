@@ -7,7 +7,7 @@ import (
 	"net/http"
 )
 
-// What the agent tells stage0: on the console, as lines stage0 console
+// What the agent tells stage0: on the console, as lines labctl console
 // --until can wait for, and, with stage0.report=<url> on the command line,
 // by HTTP POST to <url>/<kind>, for nodes without a serial console.
 const (
