@@ -22,6 +22,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/image"
 	"github.com/middelkoopt/stage0/internal/initrd"
 	"github.com/middelkoopt/stage0/internal/oci"
+	"github.com/middelkoopt/stage0/internal/osconfig"
 	"github.com/middelkoopt/stage0/internal/uki"
 )
 
@@ -299,6 +300,19 @@ func (a *App) stageContainer(run, layout string, img image.Config, node config.N
 		return fmt.Errorf("container %s for %s: firstBoot: ignition needs an Ignition config (ignition: on the node or image, or the pi.provision.ignition label)", img.Container, node.Name)
 	}
 	switch fb.Mode {
+	case "stage0":
+		// The agent writes the system's network, hostname and keys.
+		tool := img.Network
+		if v, ok := ci.Labels["pi.provision.network"]; ok && tool == "" {
+			if err := json.Unmarshal([]byte(v), &tool); err != nil {
+				return fmt.Errorf("container %s: label pi.provision.network: %w", img.Container, err)
+			}
+		}
+		if tool != osconfig.Networkd && tool != osconfig.NetworkManager {
+			return fmt.Errorf("container %s for %s: firstBoot stage0 needs its network tool: network: %s or %s in the image config, or the pi.provision.network label (got %q)",
+				img.Container, node.Name, osconfig.Networkd, osconfig.NetworkManager, tool)
+		}
+		spec.System = &osconfig.System{Hostname: fb.Hostname, Keys: fb.Keys, Network: tool, Interfaces: fb.Interfaces}
 	case "ignition":
 		spec.FirstBoot = fb.Mode
 	case "cloud-init":
@@ -466,10 +480,13 @@ type firstBoot struct {
 	CloudInit image.CloudInit
 	Node      string
 	Hostname  string
+	Keys      []string // root's SSH keys, from site.yaml
+	// Interfaces are the node's, for a container in mode stage0.
+	Interfaces []osconfig.Interface
 }
 
 func resolveFirstBoot(node config.Node, img image.Config) firstBoot {
-	fb := firstBoot{Mode: "stage0", Node: node.Name, Hostname: node.Hostname}
+	fb := firstBoot{Mode: "stage0", Node: node.Name, Hostname: node.Hostname, Interfaces: node.Interfaces}
 	switch {
 	case node.FirstBoot != "":
 		fb.Mode, fb.CloudInit = node.FirstBoot, node.CloudInit

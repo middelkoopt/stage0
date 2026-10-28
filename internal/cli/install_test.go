@@ -31,6 +31,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/cpio"
 	"github.com/middelkoopt/stage0/internal/image"
 	"github.com/middelkoopt/stage0/internal/oci/ocitest"
+	"github.com/middelkoopt/stage0/internal/osconfig"
 	"github.com/middelkoopt/stage0/internal/reach"
 	"github.com/middelkoopt/stage0/internal/uki/ukitest"
 	"github.com/middelkoopt/stage0/internal/vswitch"
@@ -728,13 +729,25 @@ func TestStageContainer(t *testing.T) {
 	// k52's own layout wins over the labels'.
 	node := config.Node{Name: "k52", Hostname: "k52", Partitions: []container.Partition{
 		{Name: "fw", Size: "256MiB", Type: "vfat", Path: "/boot/efi"}, {Name: "root", Type: "ext4", Path: "/"}}}
-	if err := a.stageContainer(run, layout, img, node, firstBoot{Mode: "stage0", Node: "k52", Hostname: "k52"}, "root=PARTLABEL=root", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err != nil {
+	ifs := []osconfig.Interface{{Settings: osconfig.Settings{DHCP: true}, VLANs: []osconfig.VLAN{{ID: 23, Settings: osconfig.Settings{DHCP: true}}}}}
+	fb := firstBoot{Mode: "stage0", Node: "k52", Hostname: "k52", Keys: []string{"ssh-ed25519 AAAA a@b"}, Interfaces: ifs}
+	// Without the image's network tool, the agent couldn't write its network.
+	if err := a.stageContainer(run, layout, img, node, fb, "root=PARTLABEL=root", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err == nil ||
+		!strings.Contains(err.Error(), "network tool") {
+		t.Errorf("no network tool: %v", err)
+	}
+	img.Network = osconfig.NetworkManager
+	if err := a.stageContainer(run, layout, img, node, fb, "root=PARTLABEL=root", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err != nil {
 		t.Fatal(err)
 	}
 	var spec container.Spec
 	if b, err := os.ReadFile(filepath.Join(run, "layout.json")); err != nil || json.Unmarshal(b, &spec) != nil ||
 		len(spec.Partitions) != 2 || spec.Partitions[0].Name != "fw" || spec.Installer.Kernel != "/boot/efi/kernel8.img" {
 		t.Errorf("layout.json: %+v, %v", spec, err)
+	}
+	if s := spec.System; s == nil || s.Hostname != "k52" || s.Network != osconfig.NetworkManager || len(s.Keys) != 1 ||
+		len(s.Interfaces) != 1 || s.Interfaces[0].VLANs[0].ID != 23 {
+		t.Errorf("system: %+v", spec.System)
 	}
 	cfg, _ := os.ReadFile(filepath.Join(run, "config.txt"))
 	for _, l := range []string{"kernel=kernel8.img", "initramfs " + initrdName + " followkernel", "dtoverlay=disable-bt"} {
@@ -767,6 +780,7 @@ func TestStageContainerIPv6(t *testing.T) {
 	ocitest.Write(t, layout, map[string]string{
 		"pi.provision.partition": `[{"name":"piboot","size":"512MiB","type":"vfat","path":"/boot/efi"},{"name":"piroot","type":"ext4","path":"/"}]`,
 		"pi.provision.installer": `{"kernel":"/boot/efi/kernel8.img","initramfs":"/boot/installer.img"}`,
+		"pi.provision.network":   `"networkd"`, // the tool from the label
 	}, map[string][]byte{"boot/efi": nil, "boot/efi/config.txt": []byte("arm_64bit=1\n"), "boot/installer.img": []byte("DRACUT")})
 	agent := filepath.Join(dir, "stage0")
 	os.WriteFile(agent, []byte("AGENT"), 0o755)
@@ -804,7 +818,7 @@ func TestStageContainerIgnition(t *testing.T) {
 	}
 	node := config.Node{Name: "k52", Hostname: "k52", Partitions: ps, IgnitionConfig: ign}
 	run := filepath.Join(dir, "run")
-	if err := a.stageContainer(run, layout, image.Config{Name: "ct", Container: "rocky"}, node, firstBoot{Mode: "stage0", Node: "k52", Hostname: "k52"},
+	if err := a.stageContainer(run, layout, image.Config{Name: "ct", Container: "rocky", Network: osconfig.Networkd}, node, firstBoot{Mode: "stage0", Node: "k52", Hostname: "k52"},
 		"root=PARTLABEL=piroot", "mmcblk0", "10.0.3.1", filepath.Join(dir, "boot")); err != nil {
 		t.Fatal(err)
 	}

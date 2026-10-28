@@ -124,6 +124,12 @@ func installContainer(out io.Writer, plan bootplan.Plan) (Result, error) {
 		return res, err
 	}
 	switch spec.FirstBoot {
+	case "":
+		if spec.System != nil {
+			if res.Configured, err = configureSystem(out, mnt, *spec.System, plan.OCI); err != nil {
+				return res, err
+			}
+		}
 	case "cloud-init":
 		fmt.Fprintln(out, "stage0 agent: writing the cloud-init seed")
 		if err := writeNoCloud(mnt, spec.CloudInit); err != nil {

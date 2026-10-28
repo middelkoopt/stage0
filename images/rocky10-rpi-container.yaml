@@ -10,3 +10,6 @@ cmdline: console=serial0,115200 console=tty1 root=PARTLABEL=piroot rootfstype=ex
 # A Pi 4's GPIO serial console (serial0) is off without enable_uart.
 config:
   - enable_uart=1
+
+# The agent writes the node's network for it (firstBoot stage0).
+network: networkmanager

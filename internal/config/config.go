@@ -22,6 +22,7 @@ import (
 
 	"github.com/middelkoopt/stage0/internal/container"
 	"github.com/middelkoopt/stage0/internal/image"
+	"github.com/middelkoopt/stage0/internal/osconfig"
 )
 
 // Default file names, relative to the working directory.
@@ -75,6 +76,11 @@ type Node struct {
 	// FirstBoot and CloudInit override the image config's (docs/firstboot.md).
 	FirstBoot string          `yaml:"firstBoot,omitempty"`
 	CloudInit image.CloudInit `yaml:"cloudInit,omitempty"`
+
+	// Interfaces, for a container configured by stage0 on first boot, are
+	// the installed system's network (docs/firstboot.md); none: DHCP on
+	// the NIC it boots on.
+	Interfaces []osconfig.Interface `yaml:"interfaces,omitempty"`
 
 	// BMC makes `labctl bmc` answer IPMI for the node (docs/bmc.md).
 	BMC *BMC `yaml:"bmc,omitempty"`
@@ -212,6 +218,9 @@ func (s *Site) normalize(dir string) error {
 				return fmt.Errorf("node %q: bmc port %d is %s's too", n.Name, b.Port, bmcPorts[b.Port])
 			}
 			bmcPorts[b.Port] = n.Name
+		}
+		if err := osconfig.Check(n.Interfaces); err != nil {
+			return fmt.Errorf("node %q: %w", n.Name, err)
 		}
 		if err := image.CheckFirstBoot(n.FirstBoot, n.CloudInit); err != nil {
 			return fmt.Errorf("node %q: %w", n.Name, err)

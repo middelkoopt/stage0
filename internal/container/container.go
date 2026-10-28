@@ -11,6 +11,8 @@ import (
 	"path"
 	"strconv"
 	"strings"
+
+	"github.com/middelkoopt/stage0/internal/osconfig"
 )
 
 // Partition is one partition to make, in order on the disk.
@@ -42,6 +44,9 @@ type Spec struct {
 	// own (docs/firstboot.md).
 	FirstBoot string     `json:"firstBoot,omitempty"`
 	CloudInit *CloudInit `json:"cloudInit,omitempty"`
+	// System, with stage0's own first boot, is what the agent configures
+	// in the installed system: network, hostname, root's keys.
+	System *osconfig.System `json:"system,omitempty"`
 }
 
 // CloudInit is a NoCloud seed's files.

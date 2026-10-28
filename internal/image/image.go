@@ -28,6 +28,7 @@ import (
 	"github.com/middelkoopt/stage0/internal/container"
 	"github.com/middelkoopt/stage0/internal/deb"
 	"github.com/middelkoopt/stage0/internal/fat"
+	"github.com/middelkoopt/stage0/internal/osconfig"
 	"github.com/middelkoopt/stage0/internal/ptable"
 	"github.com/middelkoopt/stage0/internal/registry"
 )
@@ -99,12 +100,19 @@ type Config struct {
 
 	// FirstBoot is how the installed system is configured on first boot
 	// (a node's overrides it): "stage0" (default: hostname and root's
-	// keys as systemd settings on the kernel command line), "ignition"
+	// keys as systemd settings on the kernel command line; for a
+	// container, the agent writes them and the network, see Network),
+	// "ignition"
 	// (the Ignition config's files, users and units, applied by the
 	// installer's Ignition; containers only) or "cloud-init" (CloudInit's
 	// user-data, with meta-data from stage0). docs/firstboot.md.
 	FirstBoot string    `yaml:"firstBoot,omitempty"`
 	CloudInit CloudInit `yaml:"cloudInit,omitempty"`
+
+	// Network, for a container configured by stage0 on first boot, is
+	// its network tool, which the agent writes the node's interfaces for:
+	// "networkd" or "networkmanager". Else the label pi.provision.network.
+	Network string `yaml:"network,omitempty"`
 
 	// NoCloud: the image's cloud-init takes its hostname and keys from
 	// NoCloud data that stage0 serves.
@@ -215,6 +223,12 @@ func Load(dir, name string) (Config, error) {
 	}
 	if c.FirstBoot == "ignition" && c.Container == "" {
 		return c, fmt.Errorf("%s: firstBoot: ignition is for containers (their installer runs Ignition)", p)
+	}
+	switch {
+	case c.Network != "" && c.Container == "":
+		return c, fmt.Errorf("%s: network: is for containers (disk images keep their own network config)", p)
+	case c.Network != "" && c.Network != osconfig.Networkd && c.Network != osconfig.NetworkManager:
+		return c, fmt.Errorf("%s: network %q: want %s or %s", p, c.Network, osconfig.Networkd, osconfig.NetworkManager)
 	}
 	if c.Container != "" {
 		switch {

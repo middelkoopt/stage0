@@ -54,6 +54,8 @@ type Result struct {
 	MBps     float64  `json:"MBps"`
 	Checksum string   `json:"sha256"`
 	Seeded   []string `json:"seeded,omitempty"` // first-boot files written to the boot partition
+	// Configured: the installed system's files stage0 wrote (containers).
+	Configured []string `json:"configured,omitempty"`
 }
 
 // Install checks the payload against wantSHA, then decompresses it onto

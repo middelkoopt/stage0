@@ -1,6 +1,7 @@
 # First-boot configuration
 
-How an installed system gets its hostname, users and keys: `firstBoot:`
+How an installed system gets its hostname, users, keys and (containers)
+network: `firstBoot:`
 on a node in `site.yaml` or in an image config (the node's wins), one of
 three, exclusively. With ignition or cloud-init, stage0 adds no hostname or
 keys of its own, so two tools never write the same files.
@@ -9,9 +10,50 @@ keys of its own, so two tools never write the same files.
 
 | `firstBoot` | Who configures | Needs | Verified |
 | --- | --- | --- | --- |
-| `stage0` (default) | stage0: `systemd.hostname=` and root's keys as a systemd credential on the installed `cmdline.txt`; cloud-init images' `user-data` gets the hostname | nothing in the image | every install so far |
+| `stage0` (default) | stage0. Disk images: `systemd.hostname=` and root's keys as a systemd credential on the installed `cmdline.txt`; cloud-init images' `user-data` gets the hostname. Containers: the agent writes the network, hostname and root's keys into the root ([below](#stage0-on-the-container-route)) | containers: the image's network tool named | every install so far; containers' network on k52, 2026-10-28 |
 | `ignition` | the installer's Ignition applies the config's `passwd` (users, keys), `storage.files` and `systemd` units | a container with Ignition in its installer and an SELinux policy | k52, 2026-10-28 |
 | `cloud-init` | cloud-init on first boot, from the user's `user-data` (and `network-config`) and stage0's `meta-data` | cloud-init in the image | k400 (container), k52 (Ubuntu disk image), vm1 (Rocky cloud image), 2026-10-28 |
+
+## stage0 on the container route
+
+The agent writes the installed system's own configuration, as the OS
+would keep it, after unpacking and before SELinux labelling:
+
+- **Network**, for the image's tool: `network: networkd` or `network:
+  networkmanager` in the image config, else the label
+  `pi.provision.network` (a JSON string); stage0 refuses the install
+  without one. Interfaces come from the node's `interfaces:` in
+  `site.yaml`; none means DHCP on the NIC it boots on:
+
+  ```yaml
+  interfaces:
+    - dhcp: true                 # no mac: the NIC it boots on
+      vlans: [{id: 23, dhcp: true}]
+    - mac: d8:3a:dd:00:00:01     # another NIC, static
+      addresses: [10.0.4.5/24]
+      gateway: 10.0.4.1
+      dns: [10.0.4.1]
+  ```
+
+  NICs are matched by MAC (the boot NIC's is the one that reaches stage0),
+  so kernel names (`eth0`, `end0`) don't matter. `dhcp` means DHCPv4 and
+  IPv6 autoconfiguration; without it, only the addresses given. A tagged
+  VLAN is the interface `vlan<id>`. networkd gets
+  `/etc/systemd/network/10-stage0-*` (before the image's own files);
+  NetworkManager gets keyfiles `stage0-*.nmconnection` (mode 600, fixed
+  UUIDs per node).
+- **Hostname:** `/etc/hostname`. **Root's keys:** `/root/.ssh/authorized_keys`
+  (`sshKeys:` in `site.yaml`). Nothing goes on the kernel command line.
+- **Identity:** an image's `/etc/machine-id` is emptied, so systemd makes a
+  new one on first boot; `containers/rocky10-rpi` shipped one, so every
+  node had the same machine ID (and DHCP identity). An image's SSH host
+  keys are replaced by its own `ssh-keygen -A` (chrooted); not yet seen,
+  as the Rocky container ships none.
+- The result's `configured` lists what was written.
+
+Verified (k52, Rocky container, NetworkManager): hostname `k52`; a new
+machine ID; `stage0-eth0` on `end0` with its lease and SLAAC address;
+`vlan23` with an address and the default route from VLAN 23's DHCP.
 
 ## ignition
 

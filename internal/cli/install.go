@@ -319,12 +319,15 @@ func (a *App) planInstall(o installOptions) (installPlan, error) {
 		return p, errors.New("containers install on Pis only, for now")
 	}
 	p.fb = resolveFirstBoot(node, img)
+	p.fb.Keys = p.site.SSHKeys
 	if p.fb.Mode == "ignition" && img.Container == "" {
 		return p, fmt.Errorf("%s: firstBoot: ignition is for containers", node.Name)
 	}
 	p.ready, _ = regexp.Compile(img.Ready) // checked by Load
 	if !img.VM() {
-		if p.fb.Mode != "stage0" { // the chosen tool sets hostname and keys
+		// The chosen tool sets hostname and keys; for a container in mode
+		// stage0, the agent writes them into the root.
+		if p.fb.Mode != "stage0" || img.Container != "" {
 			p.installed = strings.TrimSpace(img.Cmdline)
 		} else if p.installed, err = installedCmdline(img.Cmdline, node.Hostname, p.site.SSHKeys); err != nil {
 			return p, err
