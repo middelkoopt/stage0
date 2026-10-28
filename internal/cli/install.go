@@ -23,6 +23,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/middelkoopt/stage0/internal/agent"
+	"github.com/middelkoopt/stage0/internal/bootplan"
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/console"
 	"github.com/middelkoopt/stage0/internal/container"
@@ -226,8 +227,8 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		if o.ipv6 {
 			base = "http://[" + n.Server6.String() + "]"
 		}
-		cmdline := fmt.Sprintf("console=ttyAMA0 stage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.report=%s/stage0/report",
-			disk, img.SHA256, base, img.File(), base)
+		cmdline := "console=ttyAMA0 " + bootplan.Plan{Disk: disk, SHA256: img.SHA256,
+			URL: base + "/images/" + img.File(), Report: base + "/stage0/report"}.Encode()
 		err = a.stageVM(ctx, run, img, imgPath, node, site.SSHKeys, fb, cmdline, o.cache, progress)
 	} else {
 		server := n.Server.String()
@@ -514,8 +515,8 @@ func (a *App) stage(run, imgPath string, img image.Config, fb firstBoot, install
 		netcfg = "" // IPv6: the agent waits for SLAAC itself
 	}
 	// serial0 is the Pi's console UART.
-	cmdline := fmt.Sprintf("console=serial0,115200 %sstage0.disk=%s stage0.sha256=%s stage0.url=%s/images/%s stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
-		netcfg, disk, img.SHA256, base, img.File(), base, base)
+	cmdline := "console=serial0,115200 " + netcfg + bootplan.Plan{Disk: disk, SHA256: img.SHA256,
+		URL: base + "/images/" + img.File(), Seed: base + "/seed.cpio", Report: base + "/stage0/report"}.Encode() + "\n"
 	// The firmware reads cmdline.txt and initramfs under the image's boot
 	// directory (os_prefix).
 	if err := os.WriteFile(filepath.Join(run, img.BootDir, "cmdline.txt"), []byte(cmdline), 0o644); err != nil {
@@ -816,8 +817,8 @@ func (a *App) stageContainer(run, layout string, img image.Config, node config.N
 			return err
 		}
 	}
-	cmdline := fmt.Sprintf("console=serial0,115200 rd.neednet=1 %s%sstage0.disk=%s stage0.sha256=%s stage0.oci=%s/oci stage0.layout=%s/layout.json stage0.seed=%s/seed.cpio stage0.report=%s/stage0/report\n",
-		dhcpClass, ignition, disk, digest, base, base, base, base)
+	cmdline := "console=serial0,115200 rd.neednet=1 " + dhcpClass + ignition + bootplan.Plan{Disk: disk, SHA256: digest,
+		OCI: base + "/oci", Layout: base + "/layout.json", Seed: base + "/seed.cpio", Report: base + "/stage0/report"}.Encode() + "\n"
 	if err := os.WriteFile(filepath.Join(run, "cmdline.txt"), []byte(cmdline), 0o644); err != nil {
 		return err
 	}

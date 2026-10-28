@@ -5,7 +5,6 @@ import (
 	"fmt"
 	"io"
 	"net/http"
-	"strings"
 )
 
 // What the agent tells stage0: on the console, as lines stage0 console
@@ -45,14 +44,4 @@ func (e emitter) emit(kind string, body []byte) {
 	if err != nil {
 		fmt.Fprintf(e.out, "stage0 agent: report not delivered to %s: %v\n", e.url, err)
 	}
-}
-
-// reportURL reads stage0.report= from a kernel command line.
-func reportURL(cmdline string) string {
-	for _, f := range strings.Fields(cmdline) {
-		if v, ok := strings.CutPrefix(f, "stage0.report="); ok && strings.HasPrefix(v, "http://") {
-			return v
-		}
-	}
-	return ""
 }

@@ -11,7 +11,6 @@ import (
 	"os"
 	"os/exec"
 	"slices"
-	"strings"
 	"syscall"
 	"time"
 	"unsafe"
@@ -169,17 +168,6 @@ func addAddr(index int, p netip.Prefix) error {
 		}
 	}
 	return nil
-}
-
-// wantsIPv6 reports whether the command line's image URL is an IPv6
-// literal: the install then runs over IPv6 alone.
-func wantsIPv6(cmdline string) bool {
-	for _, f := range strings.Fields(cmdline) {
-		if v, ok := strings.CutPrefix(f, "stage0.url="); ok {
-			return strings.HasPrefix(v, "http://[")
-		}
-	}
-	return false
 }
 
 // firstGlobal6 returns the first global IPv6 address among addrs.

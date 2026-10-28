@@ -2,13 +2,10 @@ package agent
 
 import (
 	"bufio"
-	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"regexp"
-	"strings"
 	"time"
 
 	"github.com/ulikunitz/xz"
@@ -18,77 +15,6 @@ import (
 
 // InstalledPrefix starts the line the agent prints after writing the disk.
 const InstalledPrefix = "STAGE0-INSTALLED "
-
-// Plan is an install the kernel command line asks for. The agent writes a
-// disk only when the command line names both the disk and the payload's
-// checksum, so booting the agent never wipes a disk by accident.
-type Plan struct {
-	Disk   string // name under /dev, e.g. mmcblk0
-	SHA256 string // of the payload, an xz-compressed raw disk image
-	URL    string // where to fetch the payload; empty: it is in the initramfs
-	Seed   string // where to fetch first-boot files for the boot partition; optional
-	// OCI, instead of URL, is where a container's OCI layout is served;
-	// SHA256 is then its manifest's digest, and Layout (JSON, a
-	// container.Spec) how to partition the disk for it.
-	OCI    string
-	Layout string
-}
-
-var (
-	diskName = regexp.MustCompile(`^[a-z][a-z0-9]*$`)
-	hexSum   = regexp.MustCompile(`^[0-9a-f]{64}$`)
-)
-
-// ParsePlan reads stage0.disk= and stage0.sha256= from a kernel command
-// line; nil when neither is there.
-func ParsePlan(cmdline string) (*Plan, error) {
-	var p Plan
-	for _, f := range strings.Fields(cmdline) {
-		if v, ok := strings.CutPrefix(f, "stage0.disk="); ok {
-			p.Disk = v
-		}
-		if v, ok := strings.CutPrefix(f, "stage0.sha256="); ok {
-			p.SHA256 = v
-		}
-		if v, ok := strings.CutPrefix(f, "stage0.url="); ok {
-			p.URL = v
-		}
-		if v, ok := strings.CutPrefix(f, "stage0.seed="); ok {
-			p.Seed = v
-		}
-		if v, ok := strings.CutPrefix(f, "stage0.oci="); ok {
-			p.OCI = v
-		}
-		if v, ok := strings.CutPrefix(f, "stage0.layout="); ok {
-			p.Layout = v
-		}
-	}
-	switch {
-	case p.Disk == "" && p.SHA256 == "":
-		return nil, nil
-	case p.Disk == "":
-		return nil, errors.New("stage0.sha256 is set but stage0.disk is not")
-	case p.SHA256 == "":
-		return nil, errors.New("stage0.disk is set but stage0.sha256 is not")
-	case !diskName.MatchString(p.Disk):
-		return nil, fmt.Errorf("stage0.disk=%q is not a disk name like mmcblk0", p.Disk)
-	case !hexSum.MatchString(p.SHA256):
-		return nil, fmt.Errorf("stage0.sha256=%q is not 64 hex digits", p.SHA256)
-	case p.URL != "" && !strings.HasPrefix(p.URL, "http://"):
-		return nil, fmt.Errorf("stage0.url=%q: only http:// is supported", p.URL)
-	case p.Seed != "" && !strings.HasPrefix(p.Seed, "http://"):
-		return nil, fmt.Errorf("stage0.seed=%q: only http:// is supported", p.Seed)
-	case p.OCI != "" && !strings.HasPrefix(p.OCI, "http://"):
-		return nil, fmt.Errorf("stage0.oci=%q: only http:// is supported", p.OCI)
-	case p.OCI != "" && p.URL != "":
-		return nil, errors.New("stage0.oci and stage0.url: an image or a container, not both")
-	case (p.OCI != "") != (p.Layout != ""):
-		return nil, errors.New("stage0.oci and stage0.layout go together")
-	case p.Layout != "" && !strings.HasPrefix(p.Layout, "http://"):
-		return nil, fmt.Errorf("stage0.layout=%q: only http:// is supported", p.Layout)
-	}
-	return &p, nil
-}
 
 // Fetch downloads url to path (in the initramfs, so in RAM), printing
 // progress. The checksum is checked later, by Install.

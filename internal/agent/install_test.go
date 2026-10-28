@@ -16,49 +16,6 @@ import (
 	"github.com/ulikunitz/xz"
 )
 
-func TestParsePlan(t *testing.T) {
-	sum := strings.Repeat("ab", 32)
-	tests := []struct {
-		cmdline string
-		want    *Plan
-		err     string
-	}{
-		{"console=ttyAMA10,115200", nil, ""},
-		{"console=ttyAMA10 stage0.disk=mmcblk0 stage0.sha256=" + sum, &Plan{Disk: "mmcblk0", SHA256: sum}, ""},
-		{"stage0.disk=mmcblk0", nil, "stage0.sha256"},
-		{"stage0.sha256=" + sum, nil, "stage0.disk"},
-		{"stage0.disk=../sda stage0.sha256=" + sum, nil, "disk name"},
-		{"stage0.disk=mmcblk0 stage0.sha256=xyz", nil, "sha256"},
-		{"ip=dhcp stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.url=http://10.0.3.1/rocky.raw.xz",
-			&Plan{Disk: "mmcblk0", SHA256: sum, URL: "http://10.0.3.1/rocky.raw.xz"}, ""},
-		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.url=ftp://x/y", nil, "http://"},
-		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.seed=http://10.0.3.1/seed.cpio",
-			&Plan{Disk: "mmcblk0", SHA256: sum, Seed: "http://10.0.3.1/seed.cpio"}, ""},
-		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.seed=/seed.cpio", nil, "http://"},
-		// A container: its layout's URL, and the manifest's digest.
-		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.oci=http://10.0.3.1/oci stage0.layout=http://10.0.3.1/layout.json",
-			&Plan{Disk: "mmcblk0", SHA256: sum, OCI: "http://10.0.3.1/oci", Layout: "http://10.0.3.1/layout.json"}, ""},
-		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.oci=/oci stage0.layout=http://a/l", nil, "http://"},
-		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.oci=http://a/oci stage0.layout=http://a/l stage0.url=http://a/x.xz", nil, "not both"},
-		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.oci=http://a/oci", nil, "go together"},
-		{"stage0.disk=mmcblk0 stage0.sha256=" + sum + " stage0.oci=http://a/oci stage0.layout=/l", nil, "http://"},
-	}
-	for _, tt := range tests {
-		got, err := ParsePlan(tt.cmdline)
-		switch {
-		case tt.err != "":
-			if err == nil || !strings.Contains(err.Error(), tt.err) {
-				t.Errorf("%q: err = %v, want one mentioning %q", tt.cmdline, err, tt.err)
-			}
-		case err != nil:
-			t.Errorf("%q: %v", tt.cmdline, err)
-		case (got == nil) != (tt.want == nil) || got != nil && *got != *tt.want:
-			t.Errorf("%q: plan %+v, want %+v", tt.cmdline, got, tt.want)
-		}
-	}
-}
-
-// xzFile writes data xz-compressed and returns its path and SHA-256.
 func xzFile(t *testing.T, data []byte) (string, string) {
 	t.Helper()
 	var buf bytes.Buffer

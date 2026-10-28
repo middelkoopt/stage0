@@ -19,6 +19,8 @@ import (
 	"strings"
 	"syscall"
 	"time"
+
+	"github.com/middelkoopt/stage0/internal/bootplan"
 )
 
 // Time limits for the agent's waits, in one place; each was set by what
@@ -102,8 +104,8 @@ func Main() {
 	}
 	loadModules(out)
 	cmdline, _ := os.ReadFile("/proc/cmdline")
-	if needsNetwork(string(cmdline)) {
-		if err := bringUpNetwork(out, wantsIPv6(string(cmdline))); err != nil {
+	if plan, _ := bootplan.Parse(string(cmdline)); plan.NeedsNetwork() {
+		if err := bringUpNetwork(out, plan.IPv6()); err != nil {
 			fmt.Fprintf(out, "stage0 agent: network: %v\n", err)
 		}
 	}
@@ -123,7 +125,11 @@ func Hook() {
 
 // run reports, installs as the command line says, then waits.
 func run(out io.Writer, cmdline string) {
-	e := emitter{out: out, url: reportURL(cmdline)}
+	plan, perr := bootplan.Parse(cmdline)
+	e := emitter{out: out}
+	if strings.HasPrefix(plan.Report, "http://") { // even if the rest is wrong
+		e.url = plan.Report
+	}
 	r, err := settle("/", settleQuiet, settleMin, settleMax)
 	if err != nil {
 		e.emit(kindError, fmt.Appendf(nil, "report: %v", err))
@@ -131,23 +137,23 @@ func run(out io.Writer, cmdline string) {
 		b, _ := json.Marshal(r)
 		e.emit(kindReport, b)
 	}
-	install(e, cmdline)
+	install(e, plan, perr)
 	fmt.Fprintln(out, "stage0 agent: done; waiting to be powered off")
 	for {
 		time.Sleep(time.Hour)
 	}
 }
 
-// install writes the disk if the command line asks for it.
-func install(e emitter, cmdline string) {
+// install writes the disk if the plan asks for it; err is the plan's
+// parse error.
+func install(e emitter, plan bootplan.Plan, err error) {
 	out := e.out
 	fail := func(what string, err error) { e.emit(kindError, fmt.Appendf(nil, "%s: %v", what, err)) }
-	plan, err := ParsePlan(cmdline)
 	switch {
 	case err != nil:
 		fail("install", err)
 		return
-	case plan == nil:
+	case !plan.Installs():
 		return
 	}
 	// A card can be found after the first driver pass (a Pi 5's SD card
@@ -182,7 +188,7 @@ func install(e emitter, cmdline string) {
 
 // installImage writes the disk image (fetched first if plan.URL is set,
 // else the payload in the initramfs) to the disk.
-func installImage(out io.Writer, plan *Plan) (Result, error) {
+func installImage(out io.Writer, plan bootplan.Plan) (Result, error) {
 	if plan.URL != "" {
 		fmt.Fprintf(out, "stage0 agent: fetching %s\n", plan.URL)
 		if _, err := Fetch(plan.URL, "/"+PayloadPath, out); err != nil {
@@ -191,19 +197,6 @@ func installImage(out io.Writer, plan *Plan) (Result, error) {
 	}
 	fmt.Fprintf(out, "stage0 agent: installing the payload on /dev/%s\n", plan.Disk)
 	return Install("/"+PayloadPath, "/dev/"+plan.Disk, plan.SHA256, out)
-}
-
-// needsNetwork reports whether the command line asks for anything over
-// the network.
-func needsNetwork(cmdline string) bool {
-	for _, f := range strings.Fields(cmdline) {
-		for _, p := range []string{"stage0.url=", "stage0.seed=", "stage0.report="} {
-			if strings.HasPrefix(f, p) {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 // settle gathers until the disk list has stayed the same for quiet (disks

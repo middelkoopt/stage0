@@ -14,6 +14,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/middelkoopt/stage0/internal/bootplan"
 	"github.com/middelkoopt/stage0/internal/container"
 	"github.com/middelkoopt/stage0/internal/oci"
 )
@@ -25,7 +26,7 @@ import (
 // copies what belongs on the other partitions (the Pi's boot files) onto
 // them, and writes fstab, hosts and resolv.conf. Every blob is checked
 // against its digest, from the manifest's (plan.SHA256) down.
-func installContainer(out io.Writer, plan *Plan) (Result, error) {
+func installContainer(out io.Writer, plan bootplan.Plan) (Result, error) {
 	setClock(out, plan.OCI+"/index.json")
 	start := time.Now()
 	dev := "/dev/" + plan.Disk

@@ -24,15 +24,6 @@ func TestNewAddrMessage(t *testing.T) {
 	}
 }
 
-func TestWantsIPv6(t *testing.T) {
-	if !wantsIPv6("console=ttyAMA10 stage0.url=http://[fd00:10:3::1]/images/x.img.xz") {
-		t.Error("IPv6 literal URL not seen")
-	}
-	if wantsIPv6("ip=dhcp stage0.url=http://10.0.3.1/images/x.img.xz") {
-		t.Error("IPv4 URL taken for IPv6")
-	}
-}
-
 func TestGlobalIPv6(t *testing.T) {
 	addrs := []netip.Prefix{
 		netip.MustParsePrefix("fe80::1/64"),

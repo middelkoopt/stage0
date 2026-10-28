@@ -59,12 +59,3 @@ func TestEmitUnreachable(t *testing.T) {
 		t.Errorf("%q", out.String())
 	}
 }
-
-func TestReportURL(t *testing.T) {
-	if u := reportURL("console=x stage0.report=http://10.0.3.1/stage0/report y"); u != "http://10.0.3.1/stage0/report" {
-		t.Errorf("url %q", u)
-	}
-	if u := reportURL("stage0.report=ftp://x"); u != "" {
-		t.Errorf("non-http accepted: %q", u)
-	}
-}
