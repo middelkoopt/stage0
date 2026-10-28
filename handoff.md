@@ -17,20 +17,16 @@ container (installed over IPv6), k400 Rocky from the container.
 serial console.
 
 ## Open decisions
-- BJ1: a live test of proxy mode needs the stand-in DHCP server
-  (`tools/standin-dhcp.sh`, sudo) on the VM test network's tap
-  `stage0tap0` (approval so far covers pinet's `eth0.3`), or k400's EEPROM
-  set to `USE_IPV6=0` (its bootloader tries IPv6 only now) — recommended:
-  the tap; turns on how proxy mode gets verified.
+(none)
 
 ## Next session
-1. Network modes: verify proxy live (BJ1), then boot-only (IPv6) and none
+1. Network modes: proxy works (VM, k400); next boot-only (IPv6) and none
    ([`docs/network-modes.md`](docs/network-modes.md)).
 2. First-boot configuration is built ([`docs/firstboot.md`](docs/firstboot.md)):
    stage0, Ignition or cloud-init per node or image. VMs with cloud-init
    untested.
-3. Nodes: k52 runs Ubuntu (cloud-init first boot test), k400 the Rocky
-   container configured by cloud-init (user `cloud`). The Rocky container
+3. Nodes: k52 runs Ubuntu (cloud-init first boot test); k400 the Rocky
+   container, installed in proxy mode, EEPROM now `USE_IPV6=0`. The Rocky container
    now has SELinux (enforcing), cloud-init and Ignition. k53 is powered
    off; it may be powered and used as root, stopping (not disabling) its
    services. Its `sudo` needs a password stage0 doesn't have.

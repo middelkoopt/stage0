@@ -13,7 +13,19 @@ in `site.yaml`.
 
 ## proxy
 
-Built and unit-tested (`internal/dhcpd`); **not yet verified live**:
+**Works** (2026-10-28) with dnsmasq as the other server, on a VM and on a
+Pi:
+
+- vm1 (UEFI HTTP boot): its firmware took `10.0.9.58` from dnsmasq and
+  `http://10.0.9.1/uki.efi` from stage0's proxy offer (class
+  `HTTPClient`); the agent's DHCP went to dnsmasq too; up on its
+  link-local address in 127 s.
+- k400 (Pi 400, `USE_IPV6=0`): its bootloader took `10.0.3.86` from
+  dnsmasq and option 43 from stage0's proxy offer, then fetched over
+  stage0's TFTP; installed, up in 235 s. (It aborted a size probe after
+  the first block, which serve logs as a failed transfer: harmless.)
+
+How it works:
 
 - A boot DISCOVER (class `PXEClient` or `HTTPClient`) gets a ProxyDHCP
   OFFER: no address (`yiaddr` 0.0.0.0, no lease time or mask), stage0 as
@@ -36,8 +48,6 @@ Testing: `tools/standin-dhcp.sh start <interface> <address/prefix>
 macvlan of the interface (stage0 holds port 67 on the host), handing out
 addresses and no boot options; `stop` removes it.
 
-What was seen (2026-10-27): the stand-in on pinet leased k400's installed
-Rocky (`10.0.3.86`). But k400's bootloader never asked DHCPv4: with
-`USE_IPV6=1` in its EEPROM it tries IPv6 only (about 45 s, then the SD
-card), so ProxyDHCP never came into it. A live test needs a Pi with
-`USE_IPV6=0`, or a VM on the test bed with the stand-in on its tap.
+A Pi with `USE_IPV6=1` in its EEPROM netboots over IPv6 only (k400, about
+45 s, then the SD card): it never asks DHCPv4, so IPv4 proxy mode needs
+`USE_IPV6=0` (k400 has it since 2026-10-28; k52 keeps `USE_IPV6=1`).

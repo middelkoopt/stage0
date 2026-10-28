@@ -137,9 +137,9 @@ HTTP), the agent, initramfs and seed builders (see
 6. UEFI and x86_64: aarch64 VMs netboot the agent as a UKI by UEFI HTTP
    boot, or PXE (done, [test bed](docs/testbed.md)); next x86_64, the
    installer ISO route, an IPMI client against real BMCs (in another lab).
-7. Network modes beyond *own* (now, BH1): proxy built, not yet verified
-   live ([network modes](docs/network-modes.md)); then boot-only (IPv6)
-   and none.
+7. Network modes beyond *own* (now, BH1): proxy done (VM and Pi,
+   [network modes](docs/network-modes.md)); then boot-only (IPv6) and
+   none.
 
 Dropped (BE1): install-once state and workflow plans (nothing needs
 them); state export is `stage0 get nodes -o json`, above.

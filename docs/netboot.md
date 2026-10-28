@@ -130,7 +130,7 @@ SD card) the bootloader flashes it and removes the files.
 | Node | Before | After | Settings kept |
 | --- | --- | --- | --- |
 | k52 (Pi 5) | 2025-12-08 | 2026-09-25 | `BOOT_UART=1`, `BOOT_ORDER=0xf412`, `POWER_OFF_ON_HALT=0`, `USE_IPV6=0`, `TFTP_FILE_TIMEOUT=60000`, `PSU_MAX_CURRENT=5000` |
-| k400 (Pi 400) | 2025-11-05 | 2026-09-23 | `BOOT_UART=1`, `BOOT_ORDER=0xf412` |
+| k400 (Pi 400) | 2025-11-05 | 2026-09-23 | `BOOT_UART=1`, `BOOT_ORDER=0xf412`; `USE_IPV6=0` since 2026-10-28 (it was 1), for IPv4 netboot ([network modes](network-modes.md)) |
 
 An installed system needs a lease to be reached after the reboot: run
 `stage0 serve pinet`.
