@@ -26,8 +26,8 @@ serial console. Nothing is pushed.
    BM4); `netswitch`, `ipmi` and `console` are importable packages.
    Then BN1, the switch lock and the test-bed container
    ([`ROADMAP.md`](ROADMAP.md#next)).
-2. Nodes: k52 runs the Rocky container, configured by stage0 (BO2: its
-   network with `vlan23`, hostname, a fresh machine ID); k400 Raspberry Pi OS, EEPROM
+2. Nodes: k52 runs the Debian 13 container (networkd, `vlan23`), configured
+   by stage0; k400 Raspberry Pi OS, EEPROM
    `USE_IPV6=0` (no static settings); vm1 stopped. Nothing serves DHCP on
    pinet now. k53's port has PoE on but no link (2026-10-28); it may be
    powered and used as root, stopping (not disabling) its services. Its

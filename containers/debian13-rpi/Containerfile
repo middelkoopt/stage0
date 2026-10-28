@@ -1,0 +1,66 @@
+# Debian 13 (trixie) for Raspberry Pi, as a container stage0 installs from
+# (docs/containers.md), with systemd-networkd. Adapted from
+# ../piwulf/containers/debian13: Warewulf's dracut module and its dracut
+# patch left out; the Raspberry Pi archive verified by its keyring package
+# (pinned) instead of unauthenticated; an installer initramfs added, built
+# last.
+FROM registry.ipv6.docker.com/library/debian:13
+
+ENV LANG=C.UTF-8
+ENV DEBIAN_FRONTEND=noninteractive
+
+## Debian, then the Raspberry Pi archive (kernel and firmware). Its key
+## comes in its keyring package, fetched over HTTPS and checked: the key
+## it publishes as raspberrypi.gpg.key is bound with SHA-1, which trixie's
+## apt refuses since 2026-02-01.
+ARG RPI_KEYRING=raspberrypi-archive-keyring_2025.1+rpt1_all.deb
+ARG RPI_KEYRING_SHA256=2e727149d7acb8cc7f604e66d0049161039c8aa1eaf1175e54f9e69d963d60e4
+RUN apt-get update && \
+    apt-get dist-upgrade --yes --purge && \
+    apt-get install --yes --no-install-recommends ca-certificates curl && \
+    curl -fsSL -o /tmp/keyring.deb https://archive.raspberrypi.com/debian/pool/main/r/raspberrypi-archive-keyring/${RPI_KEYRING} && \
+    echo "${RPI_KEYRING_SHA256}  /tmp/keyring.deb" | sha256sum -c && \
+    dpkg -i /tmp/keyring.deb && rm /tmp/keyring.deb && \
+    printf 'Types: deb\nURIs: http://archive.raspberrypi.com/debian/\nSuites: trixie\nComponents: main\nSigned-By: /usr/share/keyrings/raspberrypi-archive-keyring.pgp\n' \
+      > /etc/apt/sources.list.d/raspi.sources && \
+    apt-get update && \
+    apt-get dist-upgrade --yes
+
+## The system: systemd with networkd, resolved and timesyncd (a Pi has no
+## clock battery; DHCP hands out NTP servers), and sshd
+RUN apt-get install --yes --no-install-recommends \
+      init udev dbus systemd-resolved systemd-timesyncd \
+      openssh-server iproute2 iputils-ping procps less nano bash-completion && \
+    systemctl enable systemd-networkd.service
+
+## dracut, which replaces initramfs-tools below, builds every initramfs
+## for any hardware: built in a container, host-only would fit the builder.
+RUN mkdir -p /etc/dracut.conf.d && echo 'hostonly="no"' > /etc/dracut.conf.d/10-stage0.conf
+
+## Kernel and firmware: Raspberry Pi's kernel puts kernel8.img and
+## initramfs8 in /boot/firmware, the boot partition; no package writes its
+## config.txt
+COPY config.txt /boot/firmware/config.txt
+RUN apt-get install --yes --no-install-recommends \
+      raspi-firmware linux-image-rpi-v8 firmware-brcm80211 wireless-regdb bluez-firmware && \
+    chmod 644 /boot/firmware/initramfs8 && \
+    rm -fv /vmlinuz* /initrd.img*
+
+## Provisioner metadata (docs/containers.md)
+LABEL pi.provision.partition='[{"name":"piboot","size":"512MiB","type":"vfat","path":"/boot/firmware"},{"name":"piroot","type":"ext4","path":"/"}]'
+LABEL pi.provision.hosts='["127.0.0.1 localhost", "::1       localhost"]'
+LABEL pi.provision.resolv='"../run/systemd/resolve/stub-resolv.conf"'
+LABEL pi.provision.network='"networkd"'
+
+## An empty root password opens the serial console only: sshd refuses
+## empty passwords.
+RUN passwd -d root
+
+## Installer initramfs: dracut brings the network up (systemd-networkd);
+## stage0 appends its agent and a hook. The partitioning tools come along.
+RUN apt-get install --yes --no-install-recommends dracut dracut-network gdisk e2fsprogs dosfstools && \
+    kver=$(ls /usr/lib/modules | head -1) && \
+    dracut --no-hostonly --add "systemd-networkd" \
+      --install "sgdisk mkfs.ext4 mkfs.vfat" \
+      --kver "$kver" /boot/stage0-installer.img
+LABEL pi.provision.installer='{"kernel":"/boot/firmware/kernel8.img","initramfs":"/boot/stage0-installer.img"}'

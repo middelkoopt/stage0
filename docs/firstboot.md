@@ -47,13 +47,15 @@ would keep it, after unpacking and before SELinux labelling:
 - **Identity:** an image's `/etc/machine-id` is emptied, so systemd makes a
   new one on first boot; `containers/rocky10-rpi` shipped one, so every
   node had the same machine ID (and DHCP identity). An image's SSH host
-  keys are replaced by its own `ssh-keygen -A` (chrooted); not yet seen,
-  as the Rocky container ships none.
-- The result's `configured` lists what was written.
+  keys are replaced by its own `ssh-keygen -A` (chrooted); the Debian
+  container ships them, the Rocky one doesn't.
+- The result's `configured` lists what was written. `ssh-keygen` runs
+  with the node's `/dev` bound into the root (it opens `/dev/null`).
 
 Verified (k52, Rocky container, NetworkManager): hostname `k52`; a new
 machine ID; `stage0-eth0` on `end0` with its lease and SLAAC address;
-`vlan23` with an address and the default route from VLAN 23's DHCP.
+`vlan23` with an address and the default route from VLAN 23's DHCP. And
+(k52, Debian 13 container, networkd): the same, plus new SSH host keys.
 
 ## ignition
 

@@ -1,10 +1,13 @@
 # Installing from a container
 
 How `stage0 install` installs a container image (route A), and the facts
-it rests on, as seen on k52. The container is
-[`containers/rocky10-rpi`](../containers/rocky10-rpi/Containerfile).
+it rests on, as seen on k52. The containers are
+[`containers/rocky10-rpi`](../containers/rocky10-rpi/Containerfile)
+(NetworkManager) and
+[`containers/debian13-rpi`](../containers/debian13-rpi/Containerfile)
+(systemd-networkd).
 
-> Last verified: 2026-10-27
+> Last verified: 2026-10-28
 
 ## How it works
 
@@ -76,7 +79,25 @@ without `enable_uart=1`, now in the image config.
    ([first boot](firstboot.md)), then seeds the boot partition as for disk
    images.
 
-Not yet: VMs.
+Not yet: VMs (`install` refuses a container for a VM node).
+
+**Debian 13** (k52, 2026-10-28, `images/debian13-rpi-container.yaml`):
+installed in 34 s, up 176 s after power-on, with stage0's networkd files
+([first boot](firstboot.md#stage0-on-the-container-route)), a new machine
+ID and new SSH host keys (the image had both baked in), and the clock
+from the DHCP-given NTP server (timesyncd). Facts from building it:
+
+- **No package writes `config.txt`** on Raspberry Pi OS (its image builder
+  does), so the container ships its own in `/boot/firmware`; Raspberry
+  Pi's kernel package puts `kernel8.img` and `initramfs8` there.
+- **dracut replaces initramfs-tools** and rebuilds `initramfs8` at once,
+  so `hostonly="no"` is set before it is installed (host-only, built in a
+  container, would fit the builder).
+- **The Raspberry Pi archive's key:** the key it publishes as
+  `raspberrypi.gpg.key` is bound with SHA-1, which trixie's apt (sqv)
+  refuses since 2026-02-01 ("SHA1 is not considered secure"); the
+  `raspberrypi-archive-keyring` package (2025.1) has one apt takes. The
+  Containerfile fetches that package over HTTPS, pinned by SHA-256.
 
 ## Partitioning by Ignition
 
@@ -160,6 +181,16 @@ agent only mounts them and unpacks; up in 208 s.
   so `stage0 serve` answers it as it answers the agent. Without it, a node
   that netbooted over IPv6 has no IPv4 lease on record, and serve ignores
   the plain request ("not a PXE client and never booted here").
+- **dracut's systemd-networkd** (Debian) DHCPs every link by its
+  `zzzz-dracut-default.network` and takes no vendor class from the command
+  line, so stage0's appended archive adds the drop-in
+  `zzzz-dracut-default.network.d/90-stage0.conf`
+  (`VendorClassIdentifier=stage0-agent`); NetworkManager installers ignore
+  it. Its `systemd-networkd-wait-online` counted the link online with the
+  SLAAC address from stage0's router advertisement, before any DHCPv4
+  lease, and the pre-mount hook ran with no route to stage0 ("network is
+  unreachable"), so the agent first waits for a route to stage0's address
+  (up to 30 s).
 - With no `root=` dracut runs its stages to the end and fails at
   switch-root, then enters emergency mode. The installer initramfs has
   the container's `/etc/passwd` but no `/etc/shadow`; whether its

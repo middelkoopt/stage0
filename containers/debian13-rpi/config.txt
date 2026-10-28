@@ -1,0 +1,7 @@
+# The installed system's boot configuration (Raspberry Pi OS writes one
+# from its image builder; no package does). A headless server: 64-bit
+# kernel with its initramfs, and the serial console.
+arm_64bit=1
+kernel=kernel8.img
+initramfs initramfs8 followkernel
+enable_uart=1

@@ -1,0 +1,8 @@
+# Debian 13 (trixie) for Raspberry Pi with systemd-networkd, installed from
+# a container (containers/debian13-rpi, docs/containers.md). Build it first:
+#   podman build -t stage0/debian13-rpi containers/debian13-rpi
+# Its labels give the layout, the installer and the network tool.
+container: podman:localhost/stage0/debian13-rpi
+
+# Root by the partition's GPT name (pi.provision.partition).
+cmdline: console=serial0,115200 console=tty1 root=PARTLABEL=piroot rootfstype=ext4 rootwait
