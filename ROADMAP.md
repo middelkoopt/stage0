@@ -22,7 +22,7 @@ so different stage-1 provisioners can be CI-tested on real and virtual hardware.
 | 0.2 | The agent identifies the node and gets its plan | Built: the plan is the node's `cmdline.txt`, written by `install` |
 | 0.3 | Write the image to disk, then the first-boot files | Built |
 | 0.4 | First boot from disk; hostname, network, SSH key set; node reports "up" (console prompt, or lease plus ping and SSH) | Hostname and root's SSH key set (kernel command line); IPv4 lease from stage0 and IPv6 link-local, both printed; root filesystem not grown; "up" is the console's login prompt |
-| 0.5 | Mark the node installed (stop answering its PXE), stop | Built; the port stays on the provisioning VLAN (the head provisions stage 1 on another VLAN; decided WW2) |
+| 0.5 | Mark the node installed (stop answering its PXE), move its port to its production VLAN, stop | Built, except the move: the port stays on the provisioning VLAN (planned, BN1, replacing WW2) |
 
 Boot order stays **network first**: no answer means the node falls through to
 disk, which is safe for Pis and in general. Stage0 must therefore stop
@@ -31,6 +31,16 @@ reboot.
 
 ## Next
 
+0. **Production VLAN (BN1):** a node's `site.yaml` names the network its
+   port ends on (e.g. `coffee`, VLAN 23, or `work`, VLAN 4); once the
+   installed system is up, `install` sets the port's PVID to it, untagged,
+   so the node needs no VLAN configuration. Tagged VLANs on the node (BO1)
+   come from the user's own config, kept stock: cloud-init's
+   `network-config`, or systemd-networkd files in the container image;
+   stage0 writes nothing into disk images' root filesystems.
+   **Switch lock (BL2 dropped):** `install` keeps driving the switch
+   itself; it and `labctl bmc` take a file lock around each switch
+   session, as the switch allows few.
 1. **First-boot settings (stage 0.4), the rest:** hostname and root's SSH
    key are built (systemd settings on the kernel command line; see
    [`docs/install.md`](docs/install.md#first-boot-settings)). Installed

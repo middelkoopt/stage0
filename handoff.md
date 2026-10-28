@@ -16,15 +16,9 @@ boot server), IPv4 and IPv6 ([`docs/network-modes.md`](docs/network-modes.md)).
 serial console. Nothing is pushed.
 
 ## Open decisions
-- **BK3:** a VM-capable container for CI (QEMU inside podman)? —
-  recommend yes, TCG fallback; it decides how CI runs vm1.
-- **BL2:** `install` powers nodes through IPMI (`labctl bmc` for Pis, real
-  BMCs later) instead of driving the switch? — recommend yes; then only
-  the BMC logs in to the switch.
-- **BN1:** after an install, move the node's port to its real network
-  (here `coffee`, VLAN 23), reversing WW2 (the port stays on pinet)? —
-  recommend yes, as a node setting in `site.yaml`; it decides whether
-  stage 0.5 touches the switch again.
+- **BK3:** a test-bed container for CI (QEMU and stage0 in podman,
+  self-hosted on pilab, TCG fallback)? — leaning yes; open: whether
+  stage0 serves through a userspace network stack instead of a tap.
 
 ## Next session
 1. Refactor (BK1), step 3: committed test scenarios (`tests/sites/*.yaml`,
@@ -32,6 +26,7 @@ serial console. Nothing is pushed.
    kinds (disk image, container, VM) so each route checks its own fields.
    Steps 1 and 2 are done, and the lab commands moved to `labctl` (BM1,
    BM4); `netswitch`, `ipmi` and `console` are importable packages.
+   Then BN1 and the switch lock ([`ROADMAP.md`](ROADMAP.md#next)).
 2. Nodes: k52 runs the Rocky container; k400 Raspberry Pi OS, EEPROM
    `USE_IPV6=0` (no static settings); vm1 stopped. Nothing serves DHCP on
    pinet now. k53's port has PoE on but no link (2026-10-28); it may be
