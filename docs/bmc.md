@@ -2,7 +2,7 @@
 
 `stage0 bmc` answers IPMI for nodes that have no BMC of their own (the
 Pis), so stage-1 tools can drive them like servers: chassis power switches
-the node's PoE port, Serial-over-LAN bridges its serial console. Code: `internal/ipmi` (the protocol),
+the node's PoE port, Serial-over-LAN bridges its serial console. Code: `ipmi` (the protocol),
 `internal/cli/bmc.go` (nodes, switch).
 
 > Last verified: 2026-10-27
@@ -61,7 +61,7 @@ Verified with ipmitool 1.8.19 on pilab (2026-10-27): power status, off, on
 and cycle on k400, which came back up; `mc info`; a wrong password is
 refused; SOL on k52 showed `k52 login:`, took `root` and gave a root shell
 (k400 printed nothing: it was installed before its image config had
-`enable_uart=1`). `go test ./internal/ipmi` runs the same with ipmitool
+`enable_uart=1`). `go test ./ipmi` runs the same with ipmitool
 against a fake node and console (skipped where ipmitool isn't installed);
 the race detector can't run on pilab's kernel ("unsupported VMA range").
 

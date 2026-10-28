@@ -8,7 +8,7 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/netswitch"
 )
 
 func fixtureStatus(t *testing.T) netswitch.Status {

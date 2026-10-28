@@ -9,7 +9,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/netswitch"
 )
 
 // Writes post the same forms as the switch's web UI, as sent by the older lab

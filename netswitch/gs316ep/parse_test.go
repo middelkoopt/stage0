@@ -6,7 +6,7 @@ import (
 	"reflect"
 	"testing"
 
-	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/netswitch"
 )
 
 // The fixtures in testdata were captured from a real GS316EP (firmware as of

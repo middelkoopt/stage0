@@ -9,7 +9,7 @@ import (
 
 	"github.com/spf13/cobra"
 
-	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/netswitch"
 )
 
 func (a *App) getCommand() *cobra.Command {

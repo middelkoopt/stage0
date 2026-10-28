@@ -13,8 +13,8 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/middelkoopt/stage0/console"
 	"github.com/middelkoopt/stage0/internal/config"
-	"github.com/middelkoopt/stage0/internal/console"
 )
 
 func (a *App) consoleCommand() *cobra.Command {

@@ -18,7 +18,7 @@ import (
 	"net/url"
 	"strings"
 
-	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/netswitch"
 )
 
 // Credentials authenticate to the switch. Set Password, or LoginHash for a

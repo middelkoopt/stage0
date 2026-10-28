@@ -13,7 +13,7 @@ import (
 	"testing"
 
 	"github.com/middelkoopt/stage0/internal/config"
-	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/netswitch"
 )
 
 // fakeSwitch serves a fixed status and records writes instead of making them.

@@ -30,11 +30,11 @@ import (
 	"github.com/middelkoopt/stage0/internal/container"
 	"github.com/middelkoopt/stage0/internal/cpio"
 	"github.com/middelkoopt/stage0/internal/image"
-	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/oci/ocitest"
 	"github.com/middelkoopt/stage0/internal/reach"
 	"github.com/middelkoopt/stage0/internal/uki/ukitest"
 	"github.com/middelkoopt/stage0/internal/vswitch"
+	"github.com/middelkoopt/stage0/netswitch"
 )
 
 // The fakes answer at once: look for installed systems often.

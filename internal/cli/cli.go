@@ -14,15 +14,15 @@ import (
 
 	"github.com/spf13/cobra"
 
+	"github.com/middelkoopt/stage0/console"
 	"github.com/middelkoopt/stage0/internal/agent"
 	"github.com/middelkoopt/stage0/internal/config"
-	"github.com/middelkoopt/stage0/internal/console"
 	"github.com/middelkoopt/stage0/internal/initrd"
 	"github.com/middelkoopt/stage0/internal/neigh"
-	"github.com/middelkoopt/stage0/internal/netswitch"
-	"github.com/middelkoopt/stage0/internal/netswitch/gs316ep"
 	"github.com/middelkoopt/stage0/internal/reach"
 	"github.com/middelkoopt/stage0/internal/vswitch"
+	"github.com/middelkoopt/stage0/netswitch"
+	"github.com/middelkoopt/stage0/netswitch/gs316ep"
 )
 
 // App holds what commands need from the outside world, so tests can replace it.

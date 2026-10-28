@@ -6,7 +6,7 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/netswitch"
 )
 
 // parseStatus builds a Status from the three status pages. It is strict:

@@ -13,9 +13,9 @@ import (
 
 	"github.com/middelkoopt/stage0/internal/config"
 	"github.com/middelkoopt/stage0/internal/image"
-	"github.com/middelkoopt/stage0/internal/netswitch"
 	"github.com/middelkoopt/stage0/internal/qemu"
 	"github.com/middelkoopt/stage0/internal/vswitch"
+	"github.com/middelkoopt/stage0/netswitch"
 )
 
 // A machine is how install powers a node and reaches its console: a Pi on

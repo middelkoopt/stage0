@@ -15,8 +15,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/middelkoopt/stage0/internal/config"
-	"github.com/middelkoopt/stage0/internal/ipmi"
-	"github.com/middelkoopt/stage0/internal/netswitch"
+	"github.com/middelkoopt/stage0/ipmi"
+	"github.com/middelkoopt/stage0/netswitch"
 )
 
 func (a *App) bmcCommand() *cobra.Command {

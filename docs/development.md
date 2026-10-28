@@ -34,7 +34,7 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/uki` | Builds a Unified Kernel Image: systemd's EFI stub plus `.osrel`, `.cmdline`, `.initrd`, `.linux` sections; unwraps arm64 zboot kernels |
 | `internal/deb` | Reads one file out of a `.deb` (ar, then `data.tar.{xz,zst,gz}`), for the VMs' UEFI firmware and the UKI stub |
 | `internal/registry` | Pulls a container from an OCI registry (anonymous or with credentials: Basic, or bearer tokens; linux/arm64 from an index) into an OCI layout in the cache, every blob checked by digest |
-| `internal/ipmi` | A small IPMI 2.0 BMC over the LAN (RMCP+, cipher suites 3 and 17) for `stage0 bmc`: chassis power and SOL backed by a node's PoE port and console ([bmc](bmc.md)) |
+| `ipmi` | A small IPMI 2.0 BMC over the LAN (RMCP+, cipher suites 3 and 17) for `stage0 bmc`: chassis power and SOL backed by a node's PoE port and console ([bmc](bmc.md)) |
 | `internal/oci` | Reads an OCI image layout (from a directory or over HTTP, every blob checked by digest): labels, named files, a directory tree, or the whole image unpacked (whiteouts, links, modes, xattrs) |
 | `internal/container` | How to install a container: partitions and installer kernel/initramfs, resolved from the node, the image config and the container's `pi.provision.*` labels (a partition list or an Ignition config), and checked ([containers](containers.md)) |
 | `internal/image` | Image config files (`images/<name>.yaml`), download and SHA-256 check into the cache, boot files out of the image's boot partition |
@@ -45,9 +45,9 @@ kernel here (ThreadSanitizer needs a 48-bit address space; the Pi kernel has
 | `internal/vswitch` | Virtual Ethernet switch for the QEMU test bed (`stage0 vswitch`): QEMU joins over a Unix socket (`-netdev stream`, 4-byte big-endian length per frame), the host through a tap port (`/dev/net/tun`, attached before Go's poller sees it); learns MACs, floods the rest |
 | `internal/qcow2` | Read-only qcow2 (plain and zlib clusters) as a raw disk; refuses backing files, encryption, external data, extended L2, zstd |
 | `internal/cpio` | newc cpio reader and writer (the initramfs format), no root or host tools |
-| `internal/console` | Serial console capture: copy to screen and log, stop on a pattern (`--until`) |
-| `internal/netswitch` | Switch model (ports, PoE, VLANs), port and VLAN lookup, change planning, the `Reader` and `Controller` interfaces |
-| `internal/netswitch/gs316ep` | NETGEAR GS316EP driver over its web UI |
+| `console` | Serial console capture: copy to screen and log, stop on a pattern (`--until`) |
+| `netswitch` | Switch model (ports, PoE, VLANs), port and VLAN lookup, change planning, the `Reader` and `Controller` interfaces |
+| `netswitch/gs316ep` | NETGEAR GS316EP driver over its web UI |
 
 ## Conventions
 
