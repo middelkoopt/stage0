@@ -24,13 +24,13 @@ serial console.
   the tap; turns on how proxy mode gets verified.
 
 ## Next session
-1. First-boot configuration (BI1, agreed): per node or image, exclusive —
-   stage0's own (credentials, seed), Ignition's files/users/units applied
-   by the installer's Ignition, or cloud-init's NoCloud seed written to
-   the disk.
-2. Network modes: verify proxy live (BJ1), then boot-only and none
+1. Network modes: verify proxy live (BJ1), then boot-only (IPv6) and none
    ([`docs/network-modes.md`](docs/network-modes.md)).
-3. k52 runs Rocky from the container partitioned by Ignition; k400 Rocky
-   from the container. k53 is powered off; it may be powered and used as
-   root, stopping (not disabling) its services. Its `sudo` needs a
-   password stage0 doesn't have.
+2. First-boot configuration is built ([`docs/firstboot.md`](docs/firstboot.md)):
+   stage0, Ignition or cloud-init per node or image. VMs with cloud-init
+   untested.
+3. Nodes: k52 runs Ubuntu (cloud-init first boot test), k400 the Rocky
+   container configured by cloud-init (user `cloud`). The Rocky container
+   now has SELinux (enforcing), cloud-init and Ignition. k53 is powered
+   off; it may be powered and used as root, stopping (not disabling) its
+   services. Its `sudo` needs a password stage0 doesn't have.

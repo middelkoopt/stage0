@@ -64,7 +64,10 @@ without `enable_uart=1`, now in the image config.
    root's tree, unpacks the layers onto it (owners, modes, links, xattrs;
    whiteouts applied), copies the FAT partitions' files onto them (FAT
    keeps no owners or links), writes `/etc/fstab` (by `PARTLABEL`), hosts
-   and resolv.conf, then seeds the boot partition as for disk images.
+   and resolv.conf, applies the first-boot configuration and labels the
+   files for SELinux when the image has a policy
+   ([first boot](firstboot.md)), then seeds the boot partition as for disk
+   images.
 
 Not yet: VMs, private registries (credentials).
 

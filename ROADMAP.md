@@ -71,8 +71,7 @@ IPv6 ([containers](docs/containers.md)). A container comes from a
 registry, podman's local store (`podman:<image>`) or a saved layout; its
 layout from the node, the image config or the labels (BB1), as a
 partition list or an Ignition config that the installer's Ignition
-applies. Next for it: private registries; Ignition's files, users and
-units on the installed system. Later, bootc (E) for UEFI machines,
+applies. Next for it: private registries. Later, bootc (E) for UEFI machines,
 testable in QEMU with Ubuntu's firmware
 ([netboot](docs/netboot.md#qemu-aarch64)).
 
@@ -131,9 +130,10 @@ HTTP), the agent, initramfs and seed builders (see
 4. **Pis' virtual BMC:** done (`stage0 bmc`: IPMI 2.0 with power by PoE and
    SOL by the serial console, [bmc](docs/bmc.md); `stage0 get nodes -o
    json` for stage 1).
-5. Ignition for container partitioning: done (the installer's Ignition
-   partitions, [containers](docs/containers.md#partitioning-by-ignition));
-   its files, users and units aren't applied yet.
+5. Ignition for container partitioning, and first-boot configuration by
+   stage0, Ignition or cloud-init (BI1): done
+   ([containers](docs/containers.md#partitioning-by-ignition),
+   [first boot](docs/firstboot.md)).
 6. UEFI and x86_64: aarch64 VMs netboot the agent as a UKI by UEFI HTTP
    boot, or PXE (done, [test bed](docs/testbed.md)); next x86_64, the
    installer ISO route, an IPMI client against real BMCs (in another lab).
