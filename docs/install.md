@@ -177,15 +177,18 @@ MAC it netbooted on, its network and IPv4 address) in
 
 ## The agent's command line
 
-The agent acts only on these kernel parameters (in `cmdline.txt` on a Pi).
+The agent acts only on these kernel parameters (in `cmdline.txt` on a Pi;
+defined in `internal/bootplan`).
 Without `stage0.disk=` and `stage0.sha256=` it reports and does nothing
 else, so booting it never wipes a disk by accident.
 
 | Parameter | Meaning |
 | --- | --- |
 | `stage0.disk=mmcblk0` | Disk to write, by name under `/dev` |
-| `stage0.sha256=<64 hex>` | SHA-256 of the xz image; nothing is written unless it matches |
-| `stage0.url=http://…` | Fetch the image from here (needs `ip=dhcp`); otherwise use `/payload` |
+| `stage0.sha256=<64 hex>` | SHA-256 of the image, or a container's manifest digest; nothing is written unless it matches |
+| `stage0.url=http://…` | Fetch the image from here; otherwise use `/payload`. An IPv6 literal (`http://[…]/`) makes the agent take its address by SLAAC instead of DHCP |
+| `stage0.oci=http://…` | Instead of `stage0.url=`: install the container whose OCI layout is served here ([containers](containers.md)) |
+| `stage0.layout=http://…` | With `stage0.oci=`: how to partition the disk (JSON) |
 | `stage0.seed=http://…` | First-boot files to unpack over partition 1 after writing |
 | `stage0.report=http://…` | Also POST the report, result or error to `<url>/<kind>` |
 

@@ -16,13 +16,21 @@ boot server), IPv4 and IPv6 ([`docs/network-modes.md`](docs/network-modes.md)).
 serial console. Nothing is pushed.
 
 ## Open decisions
-(none)
+- **BK2:** make stage0 a lab service (one long-running `stage0 serve`
+  that installs on request) rather than one process per install? —
+  recommend yes, after step 3; it decides whether installs share serve.
+- **BK3:** a VM-capable container for CI (QEMU with KVM or TCG inside
+  podman)? — recommend yes, TCG fallback; it decides how CI runs vm1.
 
 ## Next session
-1. Choose the next arc ([`ROADMAP.md`](ROADMAP.md#milestones-order-tentative)):
-   x86_64 and real BMCs (another lab), or what the roadmap lists later.
-2. Nodes: k52 runs the Rocky container (from the private-registry test);
-   k400 Raspberry Pi OS, EEPROM `USE_IPV6=0` (no static settings); vm1
-   stopped. Nothing serves DHCP on pinet now. k53 is powered off; it may be powered
-   and used as root, stopping (not disabling) its services. Its `sudo`
-   needs a password stage0 doesn't have.
+1. Refactor (BK1), step 3: committed test scenarios (`tests/sites/*.yaml`,
+   image variants) and `tools/lab-matrix.sh` to run them; image-config
+   kinds (disk image, container, VM) so each route checks its own fields.
+   Steps 1 and 2 are done (up rule, stale-copy check, plain logs;
+   `internal/bootplan`, `initrd.Append`, `install()` split).
+2. Steps 4 and 5 wait on BK3 and BK2.
+3. Nodes: k52 runs the Rocky container; k400 Raspberry Pi OS, EEPROM
+   `USE_IPV6=0` (no static settings); vm1 stopped. Nothing serves DHCP on
+   pinet now. k53 is powered off; it may be powered and used as root,
+   stopping (not disabling) its services. Its `sudo` needs a password
+   stage0 doesn't have.
