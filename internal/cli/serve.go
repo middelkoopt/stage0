@@ -84,6 +84,7 @@ func (a *App) newLeases(n config.Network, installed map[string]netip.Addr, log *
 		Server: n.Server, Subnet: n.Subnet,
 		PoolFirst: n.PoolFirst, PoolLast: n.PoolLast, LeaseTime: leaseTime, NTP: n.NTPServers,
 		Installed: installed, InstalledLeaseTime: installedLeaseTime,
+		Proxy: n.Mode == "proxy",
 	}, log)
 }
 
@@ -112,6 +113,9 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 		"installed", len(leases.InstalledNodes()))
 	g, ctx := errgroup.WithContext(ctx)
 	g.Go(func() error { return leases.Serve(ctx, socks.DHCP) })
+	if socks.DHCPProxy != nil {
+		g.Go(func() error { return leases.ServeProxy(ctx, socks.DHCPProxy) })
+	}
 	if n.IPv6Prefix.IsValid() {
 		g.Go(func() error {
 			// Without CAP_NET_RAW, the rest still runs.
@@ -164,6 +168,7 @@ func (a *App) serve(ctx context.Context, n config.Network, root string, leases *
 // the network has no IPv6 prefix, or the interface lacks <prefix>::1.
 type Sockets struct {
 	DHCP, TFTP   net.PacketConn
+	DHCPProxy    net.PacketConn // port 4011, in proxy mode
 	HTTP         net.Listener
 	DHCP6, TFTP6 net.PacketConn
 	HTTP6        net.Listener
@@ -179,6 +184,12 @@ func openNetwork(ctx context.Context, n config.Network) (Sockets, error) {
 	var err error
 	if s.DHCP, err = dhcpd.Listen(ctx, n.Interface); err != nil {
 		return s, err
+	}
+	if n.Mode == "proxy" {
+		if s.DHCPProxy, err = dhcpd.ListenProxy(ctx, n.Interface, n.Server); err != nil {
+			s.DHCP.Close()
+			return s, err
+		}
 	}
 	if s.TFTP, err = tftpd.Listen(ctx, n.Interface, n.Server); err != nil {
 		s.DHCP.Close()

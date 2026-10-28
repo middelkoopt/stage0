@@ -106,6 +106,10 @@ type Network struct {
 	Pool      string `yaml:"pool"`              // addresses to lease: first-last
 	VLAN      string `yaml:"vlan,omitempty"`    // the switch VLAN (name or ID) nodes must be on to install
 	Prefix6   string `yaml:"prefix6,omitempty"` // IPv6 /64 to advertise for SLAAC, e.g. fd00:10:3::/64
+	// Mode: "own" (default: stage0 hands out the addresses) or "proxy"
+	// (another DHCP server does; stage0 answers boot requests only, as
+	// ProxyDHCP, and needs no pool). docs/network-modes.md.
+	Mode string `yaml:"mode,omitempty"`
 	// NTP servers (IPv4 addresses) DHCP hands out: installed Pis have no
 	// clock battery. stage0 doesn't serve NTP; e.g. chrony on its host.
 	NTP []string `yaml:"ntp,omitempty"`
@@ -298,6 +302,19 @@ func (n *Network) parse() error {
 		a := n.IPv6Prefix.Addr().As16()
 		a[15] = 1
 		n.Server6 = netip.AddrFrom16(a)
+	}
+	switch n.Mode {
+	case "":
+		n.Mode = "own"
+	case "own", "proxy":
+	default:
+		return fmt.Errorf("mode %q: own or proxy", n.Mode)
+	}
+	if n.Mode == "proxy" {
+		if n.Pool != "" {
+			return errors.New("pool: in proxy mode the other DHCP server hands out addresses")
+		}
+		return nil
 	}
 	first, last, ok := strings.Cut(n.Pool, "-")
 	if !ok {

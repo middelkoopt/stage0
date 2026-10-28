@@ -160,6 +160,24 @@ func (a *App) address(ctx context.Context, r installResult, n config.Network) (s
 	return ad.String(), nil
 }
 
+// waitAddress looks for the node's IPv6 address every few seconds until
+// it is found (its system is up on the network) or ctx is done.
+func (a *App) waitAddress(ctx context.Context, r installResult, n config.Network) (string, error) {
+	for {
+		lctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+		addr, err := a.address(lctx, r, n)
+		cancel()
+		if err == nil {
+			return addr, nil
+		}
+		select {
+		case <-ctx.Done():
+			return "", err
+		case <-time.After(3 * time.Second):
+		}
+	}
+}
+
 func (a *App) addressCommand() *cobra.Command {
 	var network string
 	cmd := &cobra.Command{

@@ -383,3 +383,65 @@ func TestBootIPv6(t *testing.T) {
 		t.Error("the installed system went unanswered")
 	}
 }
+
+func proxyServer(t *testing.T) *Server {
+	t.Helper()
+	return New(Config{
+		Server: netip.MustParseAddr("10.0.3.1"), Subnet: netip.MustParsePrefix("10.0.3.0/24"),
+		LeaseTime: time.Hour, Proxy: true,
+	}, slog.New(slog.NewTextHandler(io.Discard, nil)))
+}
+
+func TestProxyOffers(t *testing.T) {
+	s := proxyServer(t)
+	// A Pi: boot options, no address.
+	r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", piClass))
+	if r == nil || r.MessageType() != dhcpv4.MessageTypeOffer {
+		t.Fatalf("no proxy offer to a Pi: %v", r)
+	}
+	if !r.YourIPAddr.IsUnspecified() || r.IPAddressLeaseTime(0) != 0 || r.ServerIPAddr.String() != "10.0.3.1" ||
+		r.GetOneOption(dhcpv4.OptionVendorSpecificInformation) == nil || r.ClassIdentifier() != "PXEClient" {
+		t.Errorf("Pi proxy offer: %v", r.Summary())
+	}
+	// UEFI HTTP boot: its URL, no address.
+	d := discover(t, "52:54:00:12:34:56", "HTTPClient:Arch:00019:UNDI:003000")
+	d.UpdateOption(dhcpv4.OptClientArch(iana.EFI_ARM64_HTTP))
+	if r := s.Reply(d); r == nil || !r.YourIPAddr.IsUnspecified() || r.BootFileName != "http://10.0.3.1/uki.efi" {
+		t.Errorf("UEFI HTTP proxy offer: %v", r)
+	}
+	// The agent and installed systems: silence; the other server leases.
+	if r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", AgentClass)); r != nil {
+		t.Errorf("answered the agent: %v", r.Summary())
+	}
+	if r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", "")); r != nil {
+		t.Errorf("answered a plain client: %v", r.Summary())
+	}
+	// A request to the other server goes unanswered.
+	if r := s.Reply(request(t, "d8:3a:dd:c5:c1:f3", "10.0.3.50", "10.0.3.254")); r != nil {
+		t.Errorf("answered a request for another server: %v", r.Summary())
+	}
+}
+
+func TestProxyRequest4011(t *testing.T) {
+	// UEFI PXE asks the proxy itself (port 4011) for the boot file, from
+	// the address the other server gave it.
+	s := proxyServer(t)
+	req, _ := dhcpv4.New(dhcpv4.WithHwAddr(mac("52:54:00:12:34:56")), dhcpv4.WithMessageType(dhcpv4.MessageTypeRequest),
+		dhcpv4.WithOption(dhcpv4.OptClassIdentifier("PXEClient:Arch:00011:UNDI:003000")),
+		dhcpv4.WithOption(dhcpv4.OptClientArch(iana.EFI_ARM64)), dhcpv4.WithClientIP(net.ParseIP("10.0.3.50")))
+	r := s.ReplyProxy(req)
+	if r == nil || r.MessageType() != dhcpv4.MessageTypeAck || r.BootFileName != UEFIBootFile || !r.YourIPAddr.IsUnspecified() {
+		t.Errorf("4011 reply: %v", r)
+	}
+}
+
+func TestProxyInstalled(t *testing.T) {
+	// Installed nodes are marked without a lease, and their PXE ignored.
+	s := proxyServer(t)
+	if _, ok := s.Install(mac("d8:3a:dd:c5:c1:f3")); !ok || !s.IsInstalled(mac("d8:3a:dd:c5:c1:f3")) {
+		t.Error("not marked installed")
+	}
+	if r := s.Reply(discover(t, "d8:3a:dd:c5:c1:f3", piClass)); r != nil {
+		t.Errorf("answered an installed node's PXE: %v", r.Summary())
+	}
+}

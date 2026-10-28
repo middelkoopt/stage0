@@ -30,6 +30,11 @@ type Config struct {
 	LeaseTime           time.Duration
 	NTP                 []netip.Addr // NTP servers to hand out (option 42), if any
 
+	// Proxy: another server hands out addresses; stage0 answers boot
+	// requests only, with ProxyDHCP offers (no address, the boot options),
+	// and UEFI's requests on port 4011 (ReplyProxy).
+	Proxy bool
+
 	// Installed nodes (MAC -> address) boot from their disks: their PXE
 	// requests get no answer, their systems' plain requests get their
 	// address for InstalledLeaseTime (default LeaseTime).
@@ -90,16 +95,17 @@ func New(cfg Config, log *slog.Logger) *Server {
 }
 
 // Install marks the node with mac installed (see Config.Installed) and
-// returns its address; false if it has no lease.
+// returns its address; false if it has no lease. In proxy mode it has
+// none (invalid address) and is marked anyway.
 func (s *Server) Install(mac net.HardwareAddr) (netip.Addr, bool) {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	ip, ok := s.leases[mac.String()]
-	if ok {
+	if ok || s.cfg.Proxy { // in proxy mode the other server leases
 		s.installed[mac.String()] = true
 		delete(s.acked, mac.String()) // Acked now reports the installed system
 	}
-	return ip, ok
+	return ip, ok || s.cfg.Proxy
 }
 
 // InstalledNodes returns the installed nodes' MACs.
@@ -198,6 +204,51 @@ func (s *Server) Serve(ctx context.Context, conn net.PacketConn) error {
 	}
 }
 
+// ProxyPort is where UEFI PXE asks a ProxyDHCP server for its boot file.
+const ProxyPort = 4011
+
+// ListenProxy opens the ProxyDHCP port on addr, pinned to the interface.
+func ListenProxy(ctx context.Context, ifname string, addr netip.Addr) (net.PacketConn, error) {
+	lc := net.ListenConfig{Control: func(_, _ string, c syscall.RawConn) error {
+		var serr error
+		err := c.Control(func(fd uintptr) {
+			serr = syscall.SetsockoptString(int(fd), syscall.SOL_SOCKET, syscall.SO_BINDTODEVICE, ifname)
+		})
+		return errors.Join(err, serr)
+	}}
+	pc, err := lc.ListenPacket(ctx, "udp4", netip.AddrPortFrom(addr, ProxyPort).String())
+	if err != nil {
+		return nil, fmt.Errorf("proxy dhcp on %s: %w", ifname, err)
+	}
+	return pc, nil
+}
+
+// ServeProxy answers requests on the ProxyDHCP port until ctx is done,
+// replying to the sender.
+func (s *Server) ServeProxy(ctx context.Context, conn net.PacketConn) error {
+	stop := context.AfterFunc(ctx, func() { conn.Close() })
+	defer stop()
+	buf := make([]byte, 1500)
+	for {
+		n, from, err := conn.ReadFrom(buf)
+		if err != nil {
+			if ctx.Err() != nil {
+				return nil
+			}
+			return fmt.Errorf("proxy dhcp: %w", err)
+		}
+		req, err := dhcpv4.FromBytes(buf[:n])
+		if err != nil {
+			continue
+		}
+		if reply := s.ReplyProxy(req); reply != nil {
+			if _, err := conn.WriteTo(reply.ToBytes(), from); err != nil {
+				s.log.Warn("dhcp: proxy send failed", "mac", req.ClientHWAddr, "err", err)
+			}
+		}
+	}
+}
+
 // Reply returns the answer to req, or nil when stage0 should stay silent.
 func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 	if req.OpCode != dhcpv4.OpcodeBootRequest || len(req.ClientHWAddr) != 6 {
@@ -223,6 +274,14 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 	if pxe && v6 {
 		log.Debug("dhcp: ignored, the node netboots over IPv6", "type", req.MessageType())
 		return nil
+	}
+	if s.cfg.Proxy {
+		if !pxe || req.MessageType() != dhcpv4.MessageTypeDiscover {
+			log.Debug("dhcp: ignored, proxy mode answers boot discovers only", "type", req.MessageType())
+			return nil
+		}
+		log.Info("dhcp: proxy offer")
+		return s.reply(req, dhcpv4.MessageTypeOffer, netip.IPv4Unspecified(), true)
 	}
 	if !pxe && !agent {
 		s.mu.Lock()
@@ -270,6 +329,20 @@ func (s *Server) Reply(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
 	return nil
 }
 
+// ReplyProxy answers a request to the ProxyDHCP port (4011): UEFI PXE
+// asking for its boot file, from the address another server gave it.
+func (s *Server) ReplyProxy(req *dhcpv4.DHCPv4) *dhcpv4.DHCPv4 {
+	if req.OpCode != dhcpv4.OpcodeBootRequest || len(req.ClientHWAddr) != 6 || req.MessageType() != dhcpv4.MessageTypeRequest ||
+		!strings.HasPrefix(req.ClassIdentifier(), "PXEClient") {
+		return nil
+	}
+	if s.IsInstalled(req.ClientHWAddr) {
+		return nil
+	}
+	s.log.Info("dhcp: proxy ack", "mac", req.ClientHWAddr.String(), "from", req.ClientIPAddr)
+	return s.reply(req, dhcpv4.MessageTypeAck, netip.IPv4Unspecified(), true)
+}
+
 // lease returns mac's address, giving it the first free one if it has none.
 func (s *Server) lease(mac string) (netip.Addr, bool) {
 	s.mu.Lock()
@@ -307,7 +380,7 @@ func (s *Server) reply(req *dhcpv4.DHCPv4, typ dhcpv4.MessageType, ip netip.Addr
 		dhcpv4.WithBroadcast(true),
 		dhcpv4.WithOption(dhcpv4.OptServerIdentifier(server)),
 	}
-	if typ != dhcpv4.MessageTypeNak {
+	if typ != dhcpv4.MessageTypeNak && !ip.IsUnspecified() {
 		mods = append(mods,
 			dhcpv4.WithYourIP(net.IP(ip.AsSlice())),
 			dhcpv4.WithNetmask(net.CIDRMask(s.cfg.Subnet.Bits(), 32)),

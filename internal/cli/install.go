@@ -374,7 +374,10 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 				ip, ok = leases.Reserve(m)
 			}
 			if ok {
-				res.MAC, res.IPv4 = m.String(), ip.String()
+				res.MAC = m.String()
+				if ip.IsValid() { // none in proxy mode: the other server leases
+					res.IPv4 = ip.String()
+				}
 				break
 			}
 		}
@@ -416,7 +419,25 @@ waitReady:
 	if res.MAC == "" && quiet {
 		return fmt.Errorf("%s: no MAC with a lease in the agent's report, so no way to tell it's up", node.Name)
 	}
-	if res.MAC != "" {
+	if n.Mode == "proxy" && res.MAC != "" {
+		// Another server leases its address; reach it on its IPv6
+		// link-local address, found by MAC.
+		actx, cancel := context.WithTimeout(ctx, leaseWait)
+		addr, err := a.waitAddress(actx, res, n)
+		if err == nil {
+			r := a.Reach(actx, addr)
+			res.Reach, res.Address = &r, addr
+			if r.OK() {
+				say("%s: %s answers ping and ssh (%s)\n  ssh root@%s", node.Name, addr, r.SSH, addr)
+			} else if quiet {
+				err = fmt.Errorf("not reachable: %s", r.Err)
+			}
+		}
+		cancel()
+		if err != nil && quiet {
+			return fmt.Errorf("%s: installed, but not reachable on IPv6 link-local: %w", node.Name, err)
+		}
+	} else if res.MAC != "" {
 		hw, _ := net.ParseMAC(res.MAC)
 		if waitAcked(ctx, leases, hw, leaseWait) {
 			// The goal: it answers ping and SSH.
