@@ -88,6 +88,9 @@ func (a *App) installCommand() *cobra.Command {
 			if err := a.checkOutput(); err != nil {
 				return err
 			}
+			if err := a.checkFreshExe(); err != nil {
+				return err
+			}
 			if imageName == "" {
 				return errors.New("--image is required (a file in " + imagesDir + "/)")
 			}
@@ -209,7 +212,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 	if err != nil {
 		return err
 	}
-	say("image %s: %s", img.Name, imgPath)
+	say("stage0 %s; image %s: %s", version(), img.Name, imgPath)
 	run := filepath.Join(o.cache, "run", node.Name)
 	if img.VM() {
 		// Over IPv6 the agent takes its address by SLAAC itself.
@@ -278,7 +281,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 		follow(portIO)
 	}
 	report := func(from, kind string, body []byte) {
-		w.send(event{map[string]string{"report": agent.ReportPrefix, "installed": agent.InstalledPrefix, "error": errorPrefix}[kind], string(body)})
+		w.send(event{kind: map[string]string{"report": agent.ReportPrefix, "installed": agent.InstalledPrefix, "error": errorPrefix}[kind], text: string(body), http: true})
 	}
 
 	// Serve for the whole install: the agent, then the installed system's
@@ -350,6 +353,7 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 
 	actx, cancel := context.WithTimeout(ctx, agentWait)
 	defer cancel()
+	reportByHTTP := false
 	for done := false; !done; {
 		select {
 		case <-actx.Done():
@@ -358,17 +362,19 @@ func (a *App) install(ctx context.Context, o installOptions) error {
 			return fmt.Errorf("serve stopped: %v (log: %s)", serveErr, res.ServeLog)
 		case e := <-w.events:
 			switch e.kind {
-			// The report and the result come by console and by HTTP; on the
-			// console other output can garble them (systemd's status lines
-			// in an installer), so only valid JSON counts.
+			// The report and the result come by HTTP and by console. HTTP
+			// is the authority: a console copy counts only until an HTTP
+			// one arrives, and never replaces it (other output can garble
+			// the console's: systemd's status lines in an installer). Only
+			// valid JSON counts either way.
 			case agent.ReportPrefix:
-				if !json.Valid([]byte(e.text)) {
+				if !takeReport(e, reportByHTTP) {
 					continue
 				}
 				if res.Report == nil {
 					say("%s: agent running", node.Name)
 				}
-				res.Report = json.RawMessage(e.text)
+				res.Report, reportByHTTP = json.RawMessage(e.text), reportByHTTP || e.http
 			case agent.InstalledPrefix:
 				if !json.Valid([]byte(e.text)) {
 					continue // the other copy follows
@@ -994,7 +1000,16 @@ const (
 	readyEvent  = "ready"
 )
 
-type event struct{ kind, text string }
+// takeReport reports whether a report event counts: valid JSON, and not
+// a console copy once an HTTP one has come (HTTP is the authority).
+func takeReport(e event, haveHTTP bool) bool {
+	return json.Valid([]byte(e.text)) && (e.http || !haveHTTP)
+}
+
+type event struct {
+	kind, text string
+	http       bool // from the agent's HTTP report, not the console
+}
 
 // watcher scans console output for the agent's lines and, once armed, the
 // installed system's ready pattern.
@@ -1040,19 +1055,19 @@ func (w *watcher) Write(p []byte) (int, error) {
 		w.buf = w.buf[i+1:]
 		for _, k := range []string{agent.ReportPrefix, agent.InstalledPrefix, errorPrefix} {
 			if j := strings.Index(line, k); j >= 0 {
-				found = append(found, event{k, line[j+len(k):]})
+				found = append(found, event{kind: k, text: line[j+len(k):]})
 			}
 		}
 		if w.armed {
 			if m := w.ready.FindString(line); m != "" {
-				found = append(found, event{readyEvent, m})
+				found = append(found, event{kind: readyEvent, text: m})
 			}
 		}
 	}
 	// A prompt has no newline after it.
 	if w.armed {
 		if m := w.ready.Find(w.buf); m != nil {
-			found = append(found, event{readyEvent, string(m)})
+			found = append(found, event{kind: readyEvent, text: string(m)})
 			w.buf = nil
 		}
 	}

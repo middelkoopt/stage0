@@ -845,3 +845,23 @@ func TestInstallGarbledConsole(t *testing.T) {
 		t.Errorf("install record: %s, %v", b, err)
 	}
 }
+
+func TestTakeReport(t *testing.T) {
+	good, garbled := `{"interfaces":[]}`, `{"interf`+"\x1b[K"
+	for _, tt := range []struct {
+		e        event
+		haveHTTP bool
+		want     bool
+	}{
+		{event{text: good}, false, true},             // console, first
+		{event{text: good, http: true}, false, true}, // HTTP
+		{event{text: good, http: true}, true, true},  // HTTP replaces
+		{event{text: good}, true, false},             // console never replaces HTTP
+		{event{text: garbled}, false, false},         // garbled
+		{event{text: garbled, http: true}, false, false},
+	} {
+		if got := takeReport(tt.e, tt.haveHTTP); got != tt.want {
+			t.Errorf("takeReport(%+v, %v) = %v", tt.e, tt.haveHTTP, got)
+		}
+	}
+}

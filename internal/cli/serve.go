@@ -40,6 +40,9 @@ func (a *App) serveCommand() *cobra.Command {
 			if err := a.checkOutput(); err != nil {
 				return err
 			}
+			if err := a.checkFreshExe(); err != nil {
+				return err
+			}
 			site, err := config.LoadSite(a.sitePath)
 			if err != nil {
 				return err

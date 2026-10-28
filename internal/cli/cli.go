@@ -68,7 +68,7 @@ func (a *App) Command() *cobra.Command {
 	f.StringVar(&a.switchName, "switch", "", "switch to use (default: the only one in the site config)")
 	f.StringVar(&a.statePath, "state", "", "records of installed nodes (default: $XDG_STATE_HOME/stage0 or ~/.local/state/stage0)")
 
-	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand(), a.installCommand(), a.checkCommand(), a.vswitchCommand(), a.bmcCommand(), agentCommand())
+	root.AddCommand(a.getCommand(), a.powerCommand(), a.setCommand(), a.consoleCommand(), a.serveCommand(), a.buildCommand(), a.installCommand(), a.checkCommand(), a.vswitchCommand(), a.bmcCommand(), a.versionCommand(), agentCommand())
 	return root
 }
 
